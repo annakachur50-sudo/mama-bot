@@ -2,6 +2,8 @@ import asyncio
 import html
 import logging
 import os
+from aiohttp import web
+
 import random
 import re
 import sqlite3
@@ -462,6 +464,13 @@ async def main() -> None:
         await bot.set_my_commands(BOT_COMMANDS)
         await bot.set_chat_menu_button(menu_button=MenuButtonCommands())
         logger.info("Telegram Menu button configured with %d commands", len(BOT_COMMANDS))
+        app = web.Application()
+        app.router.add_get("/", lambda r: web.Response(text="Bot is running!"))
+        runner = web.AppRunner(app)
+        await runner.setup()
+        port = int(os.getenv("PORT", 8080))
+        site = web.TCPSite(runner, "0.0.0.0", port)
+        await site.start()
         await dispatcher.start_polling(bot)
     finally:
         await bot.session.close()
