@@ -1,0 +1,2 @@
+aiogram>=3.13,<4
+google-genai>=2.25.0,<3
