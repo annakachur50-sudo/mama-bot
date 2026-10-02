@@ -3,6 +3,7 @@ import html
 import logging
 import os
 from aiohttp import web
+import time
 
 import random
 import re
@@ -244,14 +245,25 @@ def generate_reply(
     contents: list[types.Content],
     user_name: str | None = None,
 ) -> str:
-    response = client.models.generate_content(
-        model=GEMINI_MODEL,
-        contents=contents,
-        config=types.GenerateContentConfig(
-            system_instruction=personalized_system_prompt(user_name),
-        ),
-    )
-    return (response.text or "").strip()
+    last_error = None
+    for attempt in range(3):
+        try:
+            response = client.models.generate_content(
+                model=GEMINI_MODEL,
+                contents=contents,
+                config=types.GenerateContentConfig(
+                    system_instruction=personalized_system_prompt(user_name),
+                ),
+            )
+            return (response.text or "").strip()
+        except Exception as error:
+            last_error = error
+            logger.warning("Gemini attempt %s failed: %s", attempt + 1, error)
+            if attempt < 2:
+                time.sleep(2)
+    if last_error:
+        raise last_error
+    return ""
 
 
 async def download_voice_audio(file_id: str) -> bytes:
