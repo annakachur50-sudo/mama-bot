@@ -344,44 +344,34 @@ async def answer_with_gemini(
 
             history = conversation_history_by_user.get(user_id, [])
             request_contents = [*history, user_content]
-            reply = await asyncio.to_thread(
-                generate_reply,
-                request_contents,
-                user_names.get(user_id),
-            )
-        except Exception as error:
-            if isinstance(error, genai_errors.APIError) and error.code == 429:
-                logger.warning(
-                    "Gemini quota or rate limit reached (model=%s, status=%s): %s",
-                    GEMINI_MODEL,
-                    error.status,
-                    error.message,
+                    reply = None
+        for attempt in range(2):
+            try:
+                reply = await asyncio.to_thread(
+                    generate_reply,
+                    request_contents,
+                    user_names.get(user_id),
                 )
-                error_message = (
-                    "Сейчас достигнут лимит запросов к Gemini. "
-                    "Попробуй позже — я рядом."
-                )
-            else:
-                logger.exception(
-                    "Message processing failed (model=%s): %s",
-                    GEMINI_MODEL,
-                    error,
-                )
-                error_message = (
-                    "Не получилось получить ответ. "
-                    "Попробуй ещё раз чуть позже — я рядом."
-                )
-            await delete_thinking_message(message, temporary_message)
-            await message.answer(
-                error_message,
-                reply_markup=MENU_KEYBOARD,
-            )
-            return
+                if reply:
+                    break
+            except Exception as error:
+                logger.warning("Attempt %s failed: %s", attempt + 1, error)
+                if attempt == 0:
+                    await asyncio.sleep(2)
+                else:
+                    error_message = (
+                        "Ой, милая, у меня на секунду закружилась голова от забот! 🙈 "
+                        "Сделай глоток чая — нажми ещё разок, я уже на связи ☕️✨"
+                    )
+                    await delete_thinking_message(message.chat.id, thinking_message.message_id)
+                    await message.answer(error_message, reply_markup=MENU_KEYBOARD)
+                    return
+
 
         await delete_thinking_message(message, temporary_message)
         if not reply:
             await message.answer(
-                "Не получилось сформировать ответ. Напиши мне ещё раз, пожалуйста.",
+                "Ой, милая, отвлеклась на секунду! Нажми ещё разок, пожалуйста ☕️✨",
                 reply_markup=MENU_KEYBOARD,
             )
             return
