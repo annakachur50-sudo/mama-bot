@@ -360,28 +360,28 @@ async def answer_with_gemini(
 
             history = conversation_history_by_user.get(user_id, [])
             request_contents = [*history, user_content]
-        reply = None
-        for attempt in range(2):
-            try:
-                reply = await asyncio.to_thread(
-                    generate_reply,
-                    request_contents,
-                    user_names.get(user_id),
-                )
-                if reply:
-                    break
-            except Exception as error:
-                logger.warning("Attempt %s failed: %s", attempt + 1, error)
-                if attempt == 0:
-                    await asyncio.sleep(2)
-                else:
-                    error_message = (
-                        "Ой, милая, у меня на секунду закружилась голова от забот! 🙈 "
-                        "Сделай глоток чая — нажми ещё разок, я уже на связи ☕️️✨"
+            reply = None
+            for attempt in range(2):
+                try:
+                    reply = await asyncio.to_thread(
+                        generate_reply,
+                        request_contents,
+                        user_names.get(user_id),
                     )
-                    await delete_thinking_message(message.chat.id, thinking_message.message_id)
-                    await message.answer(error_message, reply_markup=MENU_KEYBOARD)
-                    return
+                    if reply:
+                        break
+                except Exception as error:
+                    logger.warning("Attempt %s failed: %s", attempt + 1, error)
+                    if attempt == 0:
+                        await asyncio.sleep(2)
+                    else:
+                        error_message = (
+                            "Ой, милая, у меня на секунду закружилась голова от забот! 🙈 "
+                            "Сделай глоток чая — нажми ещё разок, я уже на связи ☕️✨"
+                        )
+                        await delete_thinking_message(message.chat.id, temporary_message.message_id)
+                        await message.answer(error_message, reply_markup=MENU_KEYBOARD)
+                        return
 
 
 
