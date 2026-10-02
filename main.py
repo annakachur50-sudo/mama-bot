@@ -348,7 +348,7 @@ async def answer_with_gemini(
 
             history = conversation_history_by_user.get(user_id, [])
             request_contents = [*history, user_content]
-                    reply = None
+        reply = None
         for attempt in range(2):
             try:
                 reply = await asyncio.to_thread(
@@ -365,11 +365,12 @@ async def answer_with_gemini(
                 else:
                     error_message = (
                         "Ой, милая, у меня на секунду закружилась голова от забот! 🙈 "
-                        "Сделай глоток чая — нажми ещё разок, я уже на связи ☕️✨"
+                        "Сделай глоток чая — нажми ещё разок, я уже на связи ☕️️✨"
                     )
                     await delete_thinking_message(message.chat.id, thinking_message.message_id)
                     await message.answer(error_message, reply_markup=MENU_KEYBOARD)
                     return
+
 
 
         await delete_thinking_message(message, temporary_message)
