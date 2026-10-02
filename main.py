@@ -460,7 +460,7 @@ async def handle_text(message: Message) -> None:
 async def main() -> None:
     logger.info("Starting Telegram bot with model %s", GEMINI_MODEL)
     initialize_user_state()
-        try:
+    try:
         # 1. Сначала мгновенно поднимаем веб-сервер для Render
         app = web.Application()
         async def health_check(request):
