@@ -460,17 +460,29 @@ async def handle_text(message: Message) -> None:
 async def main() -> None:
     logger.info("Starting Telegram bot with model %s", GEMINI_MODEL)
     initialize_user_state()
-    try:
-        await bot.set_my_commands(BOT_COMMANDS)
-        await bot.set_chat_menu_button(menu_button=MenuButtonCommands())
-        logger.info("Telegram Menu button configured with %d commands", len(BOT_COMMANDS))
+        try:
+        # 1. Сначала мгновенно поднимаем веб-сервер для Render
         app = web.Application()
-        app.router.add_get("/", lambda r: web.Response(text="Bot is running!"))
+        async def health_check(request):
+            return web.Response(text="OK")
+        app.router.add_get("/", health_check)
+        app.router.add_get("/health", health_check)
+
         runner = web.AppRunner(app)
         await runner.setup()
-        port = int(os.getenv("PORT", 8080))
+        port = int(os.getenv("PORT", "10000"))
         site = web.TCPSite(runner, "0.0.0.0", port)
         await site.start()
+        logger.info(f"Web server started on port {port}")
+
+        # 2. Настраиваем команды и запускаем бота
+        try:
+            await bot.set_my_commands(BOT_COMMANDS)
+            await bot.set_chat_menu_button()
+        except Exception as e:
+            logger.warning(f"Failed to set bot commands: {e}")
+
+        logger.info("Starting polling...")
         await dispatcher.start_polling(bot)
     finally:
         await bot.session.close()
