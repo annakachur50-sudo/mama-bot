@@ -27,7 +27,7 @@ GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.5-flash")
 TELEGRAM_MESSAGE_LIMIT = 4096
 TELEGRAM_CHUNK_SIZE = TELEGRAM_MESSAGE_LIMIT - 256
-MAX_HISTORY_MESSAGES = 8
+MAX_HISTORY_MESSAGES = 20
 STATE_DB_PATH = os.path.join(os.path.dirname(__file__), "bot_state.sqlite3")
 THINKING_MESSAGES = (
     "Завариваю чаёк и думаю... ☕️",
