@@ -348,8 +348,8 @@ async def answer_with_gemini(
 
             history = conversation_history_by_user.get(user_id, [])
             request_contents = [*history, user_content]
-            reply = None
-            for attempt in range(2):
+                    reply = None
+        for attempt in range(2):
             try:
                 reply = await asyncio.to_thread(
                     generate_reply,
