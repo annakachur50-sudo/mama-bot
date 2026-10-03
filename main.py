@@ -382,16 +382,13 @@ async def answer_with_gemini(
                         await delete_thinking_message(message.chat.id, temporary_message.message_id)
                         await message.answer(error_message, reply_markup=MENU_KEYBOARD)
                         return
-
-
-
-        await delete_thinking_message(message, temporary_message)
-        if not reply:
-            await message.answer(
-                "Ой, милая, отвлеклась на секунду! Нажми ещё разок, пожалуйста ☕️✨",
-                reply_markup=MENU_KEYBOARD,
-            )
-            return
+    await delete_thinking_message(message, temporary_message)
+    if not reply:
+        await message.answer(
+            "Ой, милая, отвлеклась на секунду! Нажми ещё разок, пожалуйста ☕️✨",
+            reply_markup=MENU_KEYBOARD,
+        )
+        return
 async def answer_with_gemini(
     message: Message,
     prompt: str | None = None,
