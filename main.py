@@ -392,17 +392,50 @@ async def answer_with_gemini(
                 reply_markup=MENU_KEYBOARD,
             )
             return
+async def answer_with_gemini(
+    message: Message,
+    prompt: str | None = None,
+    voice_file_id: str | None = None,
+) -> None:
+    user_id = message.from_user.id if message.from_user else message.chat.id
+    if prompt is None and voice_file_id is None:
+        return
 
-        updated_history = [
-            *history,
-            user_content,
-            types.Content(
-                role="model",
-                parts=[types.Part.from_text(text=reply)],
-            ),
-        ]
-        conversation_history_by_user[user_id] = updated_history[-MAX_HISTORY_MESSAGES:]
-        await send_final_response(message, reply)
+    async with get_user_request_lock(user_id):
+        temporary_message = await send_thinking_message(message)
+        try:
+            if voice_file_id is not None:
+                audio_bytes = await download_voice_audio(voice_file_id)
+                user_content = voice_user_content(audio_bytes)
+            else:
+                user_content = text_user_content(prompt or "")
+
+            history = conversation_history_by_user.get(user_id, [])
+            request_contents = [*history, user_content]
+            reply = await asyncio.to_thread(
+                generate_reply,
+                request_contents,
+                user_names.get(user_id),
+            )
+
+            await delete_thinking_message(message.chat.id, temporary_message.message_id)
+            if not reply:
+                await message.answer(
+                    "Ой, милая, отвлеклась на секунду! 🙈 Нажми ещё разок, пожалуйста ☕️",
+                    reply_markup=MENU_KEYBOARD,
+                )
+                return
+
+            append_history(user_id, user_content, reply)
+            await send_final_response(message, reply)
+        except Exception as general_error:
+            logger.exception("General error in answer_with_gemini: %s", general_error)
+            await delete_thinking_message(message.chat.id, temporary_message.message_id)
+            await message.answer(
+                "Ой, милая, у меня на секунду закружилась голова от забот! 🙈 "
+                "Сделай глоток чая — нажми ещё разок, я уже на связи ☕️✨",
+                reply_markup=MENU_KEYBOARD,
+            )
 
 
 @dispatcher.message(F.voice)
