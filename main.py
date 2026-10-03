@@ -379,7 +379,7 @@ async def answer_with_gemini(
                             "Ой, милая, у меня на секунду закружилась голова от забот! 🙈 "
                             "Сделай глоток чая — нажми ещё разок, я уже на связи ☕️✨"
                         )
-                        await delete_thinking_message(message.chat.id, temporary_message.message_id)
+                        await delete_thinking_message(message, temporary_message.message_id)
                         await message.answer(error_message, reply_markup=MENU_KEYBOARD)
                         return
         finally:                 
