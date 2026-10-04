@@ -258,18 +258,19 @@ async def handle_start(message: Message) -> None:
 
 def personalized_system_prompt(user_name: str | None) -> str:
     rules = (
-        "\n\nПРАВИЛА ОБЩЕНИЯ:\n"
-        "1. Отвечай заботливо, структурированно, без канцелярщины и лишней воды. "
-        "Разделяй мысли абзацами, чтобы текст легко читался с телефона.\n"
+        "\n\nПРАВИЛА ОФОРМЛЕНИЯ И СТРУКТУРЫ:\n"
+        "1. Структурируй ответ обязательно из двух частей, разделив их точной меткой: ===SPLIT===\n"
+        "   - Первая часть (до метки): короткое тёплое приветствие, сочувствие или вводная фраза (1-3 коротких предложения).\n"
+        "   - Вторая часть (после метки): основная практическая суть, подробный рецепт с шагами, план или глубокий совет.\n"
+        "2. Не пиши сплошной простынёй, разделяй абзацы пустой строкой.\n"
     )
     if user_name:
         rules += (
-            f"2. Собеседницу зовут {user_name}. Используй её имя естественно и ненавязчиво — "
-            f"например, в приветствии или когда хочешь особенно тепло поддержать. "
-            f"НЕ вставляй имя в каждый ответ и в каждую фразу, чтобы это не звучало шаблонно.\n"
+            f"3. Собеседницу зовут {user_name}. Используй её имя естественно и ненавязчиво — "
+            f"например, в первой вводной части. Не части с именем.\n"
         )
     else:
-        rules += "2. Обращайся к собеседнице тепло и по-доброму (милая, дорогая).\n"
+        rules += "3. Обращайся к собеседнице тепло и по-доброму (милая, дорогая).\n"
     
     return f"{SYSTEM_PROMPT}\n{rules}"
 
@@ -369,12 +370,23 @@ def voice_user_content(audio_bytes: bytes) -> types.Content:
 
 
 async def send_final_response(message: Message, reply: str) -> None:
-    for chunk in split_response(reply):
+    parts = [p.strip() for p in reply.split("===SPLIT===") if p.strip()]
+    if not parts:
+        parts = [reply]
+
+    chunks = []
+    for part in parts:
+        chunks.extend(split_response(part))
+
+    for idx, chunk in enumerate(chunks):
+        is_last = (idx == len(chunks) - 1)
         await message.answer(
             format_telegram_html(chunk),
-            reply_markup=MENU_KEYBOARD,
+            reply_markup=MENU_KEYBOARD if is_last else None,
             parse_mode=ParseMode.HTML,
         )
+        if not is_last:
+            await asyncio.sleep(0.8)
 
 
 async def answer_with_gemini(
