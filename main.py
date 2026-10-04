@@ -111,6 +111,17 @@ dispatcher = Dispatcher()
 user_names: dict[int, str] = {}
 conversation_history_by_user: dict[int, list[types.Content]] = {}
 user_request_locks: dict[int, asyncio.Lock] = {}
+def append_history(user_id: int, user_content: types.Content, model_text: str) -> None:
+    history = conversation_history_by_user.setdefault(user_id, [])
+    history.append(user_content)
+    history.append(
+        types.Content(
+            role="model",
+            parts=[types.Part.from_text(text=model_text)],
+        )
+    )
+    if len(history) > 20:
+        conversation_history_by_user[user_id] = history[-20:]
 
 
 def initialize_user_state() -> None:
