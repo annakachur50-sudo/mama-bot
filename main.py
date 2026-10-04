@@ -528,9 +528,35 @@ async def handle_reset_me(message: Message) -> None:
 @dispatcher.message(F.text)
 async def handle_text(message: Message) -> None:
     prompt = (message.text or "").strip()
-    if prompt:
-        await answer_with_gemini(message, prompt)
+    if not prompt:
+        return
 
+    if message.from_user is None:
+        return
+
+    user_id = message.from_user.id
+
+    # Если имя ещё не сохранено и это не нажатие кнопки меню
+    if user_id not in user_names and prompt not in MENU_BUTTONS:
+        clean_name = prompt.split()[0].capitalize()[:30]
+        user_names[user_id] = clean_name
+        try:
+            with sqlite3.connect(STATE_DB_PATH) as conn:
+                conn.execute(
+                    "INSERT OR REPLACE INTO users (user_id, name) VALUES (?, ?)",
+                    (user_id, clean_name),
+                )
+        except Exception as err:
+            logger.warning("Could not save name to db: %s", err)
+
+        await message.answer(
+            f"Очень приятно познакомиться, {clean_name}! 🫂✨\n\n"
+            f"Теперь мы на связи. Чем могу тебе сегодня помочь?",
+            reply_markup=MENU_KEYBOARD,
+        )
+        return
+
+    await answer_with_gemini(message, prompt)
 
 async def main() -> None:
     logger.info("Starting Telegram bot with model %s", GEMINI_MODEL)
