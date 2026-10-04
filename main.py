@@ -299,16 +299,19 @@ async def send_thinking_message(message: Message) -> Message:
 
 
 async def delete_thinking_message(
-    message: Message,
-    temporary_message: Message,
+    message: Message | int,
+    temporary_message: Message | None,
 ) -> None:
+    if not temporary_message:
+        return
     try:
+        chat_id = message.chat.id if hasattr(message, "chat") else message
         await bot.delete_message(
-            chat_id=message.chat.id,
+            chat_id=chat_id,
             message_id=temporary_message.message_id,
         )
     except Exception:
-        logger.warning("Could not delete the temporary thinking message", exc_info=True)
+        logger.warning("Could not delete thinking message")
 
 
 def text_user_content(prompt: str) -> types.Content:
