@@ -234,11 +234,26 @@ def split_response(text: str, limit: int = TELEGRAM_CHUNK_SIZE) -> list[str]:
 
 @dispatcher.message(CommandStart())
 async def handle_start(message: Message) -> None:
-    await message.answer(
-        START_MESSAGE,
-        reply_markup=MENU_KEYBOARD,
-        parse_mode=ParseMode.HTML,
-    )
+    if message.from_user is None:
+        return
+    user_id = message.from_user.id
+    user_name = user_names.get(user_id)
+
+    if not user_name:
+        await message.answer(
+            "Привет, милая! 🌸\n\n"
+            "Я твой тёплый помощник «Мама 24/7». Помогу с идеями для обеда, домашним хаосом "
+            "или просто поддержу добрым словом, когда силы на исходе ☕️\n\n"
+            "Подскажи, <b>как к тебе обращаться?</b> Напиши просто своё имя в ответ сообщением 👇",
+            parse_mode=ParseMode.HTML,
+        )
+    else:
+        await message.answer(
+            f"С возвращением, {user_name}! 💖\n"
+            "Я рядом. Выбирай нужный раздел в меню или просто напиши, что у тебя на душе ☕️",
+            reply_markup=MENU_KEYBOARD,
+            parse_mode=ParseMode.HTML,
+        )
 
 
 def personalized_system_prompt(user_name: str | None) -> str:
