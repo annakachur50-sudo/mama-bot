@@ -242,14 +242,19 @@ async def handle_start(message: Message) -> None:
 
 
 def personalized_system_prompt(user_name: str | None) -> str:
-    if not user_name:
-        return SYSTEM_PROMPT
-    return (
-        f"{SYSTEM_PROMPT}\n\n"
-        f"Имя собеседницы — {user_name}. Используй его лишь изредка и естественно, "
-        "не повторяй в каждом ответе. Тёплые обращения вроде «милая» или "
-        "«дорогая» выбирай только к месту."
+    rules = (
+        "\n\nВАЖНЫЕ ПРАВИЛА ФОРМАТА ДЛЯ МОБИЛЬНОГО ЭКРАНА:\n"
+        "1. Отвечай ёмко, заботливо и без «воды» — не больше 2-3 коротких абзацев (до 8-10 строк суммарно), "
+        "чтобы сообщение целиком помещалось на одном экране смартфона и его не приходилось листать!\n"
     )
+    if user_name:
+        rules += (
+            f"2. Имя собеседницы: {user_name}. Тепло обращайся к ней по имени.\n"
+        )
+    else:
+        rules += "2. Обращайся к собеседнице тепло и по-доброму (милая, дорогая).\n"
+    
+    return f"{SYSTEM_PROMPT}\n{rules}"
 
 
 def generate_reply(
@@ -317,12 +322,13 @@ async def delete_thinking_message(
         return
     try:
         chat_id = message.chat.id if hasattr(message, "chat") else message
+        msg_id = temporary_message.message_id if hasattr(temporary_message, "message_id") else temporary_message
         await bot.delete_message(
             chat_id=chat_id,
-            message_id=temporary_message.message_id,
+            message_id=msg_id,
         )
-    except Exception:
-        logger.warning("Could not delete thinking message")
+    except Exception as err:
+        logger.warning("Could not delete thinking message: %s", err)
 
 
 def text_user_content(prompt: str) -> types.Content:
