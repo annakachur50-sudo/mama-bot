@@ -634,24 +634,25 @@ async def handle_text(message: Message) -> None:
 
     user_id = message.from_user.id
 
-# Если имя ещё не сохранено и это не...
-    if user_id not in user_names and ...:
-        clean_name = prompt.split()[0].capitalize()
+# Если имя ещё не сохранено в памяти, берем его из профиля Telegram:
+    if user_id not in user_names:
+        clean_name = message.from_user.first_name or "дорогая"
         user_names[user_id] = clean_name
         try:
             with sqlite3.connect(STATE_DB) as conn:
                 conn.execute(
                     "INSERT OR REPLACE INTO users (user_id, name) VALUES (?, ?)",
-                    (user_id, clean_name)
+                    (user_id, clean_name),
                 )
         except Exception as err:
-            logger.warning("Could not save name: %s", err)
+            logger.warning("Could not save user name: %s", err)
 
         await message.answer(
-            f"Очень приятно познакомиться..."
-            ...
-        )
-        return
+    f"Очень приятно познакомиться..."
+    f"Теперь мы на связи..."
+    reply_markup=MENU_KEYBOARD,
+)
+return
         
     await answer_with_gemini(message, prompt)
 
