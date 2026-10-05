@@ -198,10 +198,15 @@ HEADER_PATTERN = re.compile(r"^\s{0,3}#{1,6}\s+(.+?)\s*#*\s*$")
 BULLET_PATTERN = re.compile(r"^\s*[-*+•‣▪◦●○◆▫➤→]\ufe0f?\s+(.+?)\s*$")
 NUMBERED_LIST_PATTERN = re.compile(r"^\s*(\d+)[.)]\s+(.+?)\s*$")
 BOLD_PATTERN = re.compile(r"\*\*(.+?)\*\*")
+LINK_PATTERN = re.compile(r"\[([^\]]+)\]\((https?://[^\s\)]+)\)")
 
 def format_inline_markdown(text: str) -> str:
+    # 1. Сначала превращаем markdown-ссылки во временную заглушку или обрабатываем после escape:
     escaped = html.escape(text, quote=False)
+    # Возвращаем жирный шрифт
     formatted = BOLD_PATTERN.sub(r"<b>\1</b>", escaped)
+    # Превращаем [текст](url) в кликабельную ссылку <a href="url">текст</a>
+    formatted = LINK_PATTERN.sub(r'<a href="\2">\1</a>', formatted)
     return formatted.replace("*", "")
 
 
