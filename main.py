@@ -13,9 +13,10 @@ from aiogram import Bot, Dispatcher, F
 from aiogram.enums import ParseMode
 from aiogram.filters import Command, CommandStart
 from aiogram.types import (
-    BotCommand,
+    CallbackQuery,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
     KeyboardButton,
-    MenuButtonCommands,
     Message,
     ReplyKeyboardMarkup,
 )
@@ -144,6 +145,7 @@ bot = Bot(token=TELEGRAM_BOT_TOKEN)
 dispatcher = Dispatcher()
 
 user_names: dict[int, str] = {}
+pending_details: dict[int, str] = {}
 conversation_history_by_user: dict[int, list[types.Content]] = {}
 user_request_locks: dict[int, asyncio.Lock] = {}
 def append_history(user_id: int, user_content: types.Content, model_text: str) -> None:
@@ -410,23 +412,67 @@ def voice_user_content(audio_bytes: bytes) -> types.Content:
 
 async def send_final_response(message: Message, reply: str) -> None:
     parts = [p.strip() for p in reply.split("===SPLIT===") if p.strip()]
-    if not parts:
-        parts = [reply]
 
-    chunks = []
-    for part in parts:
-        chunks.extend(split_response(part))
+    # Если метки нет или ответ всего один — шлём как обычно
+    if len(parts) <= 1:
+        for idx, chunk in enumerate(split_response(reply)):
+            is_last = (idx == len(split_response(reply)) - 1)
+            await message.answer(
+                format_telegram_html(chunk),
+                reply_markup=MENU_KEYBOARD if is_last else None,
+                parse_mode=ParseMode.HTML,
+            )
+        return
 
+    # Если есть 2 части: короткое начало и подробности
+    intro_text = parts[0]
+    details_text = parts[1]
+
+    # Создаём саму инлайн-кнопку
+    expand_keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="📖 Развернуть подробнее", callback_data="expand_details")]
+        ]
+    )
+
+    # Запоминаем подробности для этого пользователя
+    pending_details[message.chat.id] = details_text
+
+    # Отправляем только вводную часть с кнопкой
+    await message.answer(
+        format_telegram_html(intro_text),
+        reply_markup=expand_keyboard,
+        parse_mode=ParseMode.HTML,
+    )
+
+@dispatcher.callback_query(lambda c: c.data == "expand_details")
+async def process_expand_details(callback: CallbackQuery) -> None:
+    chat_id = callback.message.chat.id
+    details = pending_details.pop(chat_id, None)
+
+    # Убираем часики ожидания на кнопке
+    await callback.answer()
+
+    # Если вдруг нажали спустя полдня или память перезапустилась
+    if not details:
+        await callback.message.answer("Подробности уже открыты или устарели ☕️")
+        return
+
+    # Стираем кнопку под первым сообщением, чтобы не кликали дважды
+    try:
+        await callback.message.edit_reply_markup(reply_markup=None)
+    except Exception:
+        pass
+
+    # Отправляем подробную часть и возвращаем нижнее меню с кнопками
+    chunks = split_response(details)
     for idx, chunk in enumerate(chunks):
         is_last = (idx == len(chunks) - 1)
-        await message.answer(
+        await callback.message.answer(
             format_telegram_html(chunk),
             reply_markup=MENU_KEYBOARD if is_last else None,
             parse_mode=ParseMode.HTML,
-        )
-        if not is_last:
-            await asyncio.sleep(0.8)
-
+     )
 
 async def answer_with_gemini(
     message: Message,
