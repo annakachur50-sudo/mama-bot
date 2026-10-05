@@ -646,14 +646,7 @@ async def handle_text(message: Message) -> None:
                 )
         except Exception as err:
             logger.warning("Could not save user name: %s", err)
-
-        await message.answer(
-    f"Очень приятно познакомиться..."
-    f"Теперь мы на связи..."
-    reply_markup=MENU_KEYBOARD,
-)
-return
-        
+  
     await answer_with_gemini(message, prompt)
 
 async def main() -> None:
