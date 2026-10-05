@@ -106,7 +106,7 @@ if not GOOGLE_API_KEY:
 
 client = genai.Client(
     api_key=GOOGLE_API_KEY,
-    http_options={"base_url": "https://api.proxyapi.ru/google/v1beta"}
+    http_options={"base_url": "https://api.proxyapi.ru/google"}
 )
 bot = Bot(token=TELEGRAM_BOT_TOKEN)
 dispatcher = Dispatcher()
