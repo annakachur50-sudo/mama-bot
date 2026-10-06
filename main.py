@@ -280,23 +280,60 @@ async def handle_start(message: Message) -> None:
     if message.from_user is None:
         return
     user_id = message.from_user.id
-    user_name = user_names.get(user_id)
+    
+    # Берём имя из Telegram и убираем лишнее, если там смайлики/символы
+    raw_name = (message.from_user.first_name or "").strip()
+    clean_name = raw_name if raw_name.isalpha() and 2 <= len(raw_name) <= 15 else "дорогая"
+    user_names[user_id] = clean_name
 
-    if not user_name:
-        text = (
-            f"{START_MESSAGE}\n\n"
-            "Подскажи, <b>как к тебе обращаться?</b> "
-            "Напиши своё имя в ответ сообщением 👇"
-        )
-        await message.answer(text, parse_mode=ParseMode.HTML)
-    else:
-        await message.answer(
-            f"С возвращением, {user_name}! 💖\n"
-            "Я рядом 24/7. Выбирай раздел в меню или напиши мне в чат ☕️",
-            reply_markup=MENU_KEYBOARD,
-            parse_mode=ParseMode.HTML,
-        )
+    try:
+        with sqlite3.connect(STATE_DB) as conn:
+            conn.execute(
+                "INSERT OR REPLACE INTO users (user_id, name) VALUES (?, ?)",
+                (user_id, clean_name),
+            )
+    except Exception as err:
+        logger.warning("Could not save start user: %s", err)
 
+    start_inline_kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="🍲 Что приготовить за 20 минут?", callback_data="start_cook")],
+            [InlineKeyboardButton(text="📦 Расхламить хаос за 15 минут", callback_data="start_declutter")],
+            [InlineKeyboardButton(text="💖 Мне тяжело, нужна поддержка", callback_data="start_support")],
+        ]
+    )
+
+    greeting_text = (
+        f"Привет, {clean_name}! 🌸\n\n"
+        "Я Аня, мама троих деток. Прекрасно знаю мамские будни: в голове миллион задач, "
+        "силы на нуле, а ужин сам себя не сварит.\n\n"
+        "Я создала этого бота как тёплую подругу, чтобы за пару минут разгрузить твою голову. "
+        "С чего начнём прямо сейчас? Выбирай кнопку 👇"
+    )
+
+    await message.answer(
+        greeting_text,
+        reply_markup=start_inline_kb,
+        parse_mode=ParseMode.HTML,
+    )
+
+@dispatcher.callback_query(lambda c: c.data in ["start_cook", "start_declutter", "start_support"])
+async def process_start_action(callback: CallbackQuery) -> None:
+    await callback.answer()
+    
+    prompts_map = {
+        "start_cook": "Что быстро приготовить на ужин для всей семьи за 20-30 минут из простых продуктов?",
+        "start_declutter": "Дай простой экспресс-план, как разобрать домашний хаос за 15 минут без надрыва.",
+        "start_support": "Мне сейчас тяжело, устала от быта и детей. Поддержи меня тепло, как подруга.",
+    }
+    
+    selected_prompt = prompts_map.get(callback.data, "")
+    if selected_prompt and callback.message:
+        try:
+            await callback.message.edit_reply_markup(reply_markup=None)
+        except Exception:
+            pass
+        await answer_with_gemini(callback.message, selected_prompt)
 
 def personalized_system_prompt(user_name: str | None) -> str:
     rules = (
