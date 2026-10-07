@@ -275,6 +275,7 @@ def split_response(text: str, limit: int = TELEGRAM_CHUNK_SIZE) -> list[str]:
     return chunks or [""]
 
 ADMIN_ID = 5267406602
+STATE_DB = "bot_state.db"
 
 @dispatcher.message(Command("stats"))
 async def cmd_stats(message: Message) -> None:
