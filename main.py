@@ -308,34 +308,36 @@ async def cmd_stats(message: Message) -> None:
 
 
 @dispatcher.message(CommandStart())
+@dispatcher.message(CommandStart())
 async def handle_start(message: Message) -> None:
     if message.from_user is None:
         return
+
     user_id = message.from_user.id
-    
-    # Берём имя из Telegram и убираем лишнее, если там смайлики/символы
+
+    # Берём имя из Telegram и убираем лишнее, если там смайлы или цифры
     raw_name = (message.from_user.first_name or "").strip()
-    clean_name = raw_name if raw_name.isalpha() and 2 <= len(raw_name) <= 15 else "дорогая"
+    clean_name = raw_name if raw_name.isalpha() and 2 <= len(raw_name) <= 20 else ""
     user_names[user_id] = clean_name
 
-        try:
-            with sqlite3.connect(STATE_DB_PATH) as conn:
-                conn.execute(
-                    "INSERT OR REPLACE INTO user_names (user_id, name) VALUES (?, ?)",
-                    (user_id, clean_name),
-                )
-        except Exception as err:
-            logger.warning("Could not save start user: %s", err)
-
-        try:
-            user_tag = f"@{message.from_user.username}" if message.from_user.username else "без никнейма"
-            await message.bot.send_message(
-                -1004353307194,
-                f"🌸 <b>Новая гостья в домике!</b>\n\n👤 Имя: <b>{clean_name}</b>\n🔗 Тег: {user_tag}\n🆔 ID: <code>{user_id}</code>",
-                parse_mode=ParseMode.HTML,
+    try:
+        with sqlite3.connect(STATE_DB_PATH) as conn:
+            conn.execute(
+                "INSERT OR REPLACE INTO user_names (user_id, name) VALUES (?, ?)",
+                (user_id, clean_name),
             )
-        except Exception as log_err:
-            logger.warning("Could not send log to channel: %s", log_err)
+    except Exception as err:
+        logger.warning("Could not save start user: %s", err)
+
+    try:
+        user_tag = f"@{message.from_user.username}" if message.from_user.username else "без никнейма"
+        await message.bot.send_message(
+            -1004353307194,
+            f"🌸 <b>Новая гостья в домике!</b>\n\n👤 Имя: <b>{clean_name}</b>\n🔗 Тег: {user_tag}\n🆔 ID: <code>{user_id}</code>",
+            parse_mode=ParseMode.HTML,
+        )
+    except Exception as log_err:
+        logger.warning("Could not send log to channel: %s", log_err)
 
     start_inline_kb = InlineKeyboardMarkup(
         inline_keyboard=[
