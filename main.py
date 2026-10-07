@@ -318,9 +318,9 @@ async def handle_start(message: Message) -> None:
     user_names[user_id] = clean_name
 
     try:
-        with sqlite3.connect(STATE_DB) as conn:
+        with sqlite3.connect(STATE_DB_PATH) as conn:
             conn.execute(
-                "INSERT OR REPLACE INTO users (user_id, name) VALUES (?, ?)",
+                "INSERT OR REPLACE INTO user_names (user_id, name) VALUES (?, ?)",
                 (user_id, clean_name),
             )
     except Exception as err:
