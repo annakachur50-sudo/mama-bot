@@ -368,7 +368,13 @@ async def process_start_action(callback: CallbackQuery) -> None:
         await answer_with_gemini(callback.message, selected_prompt)
 
 def personalized_system_prompt(user_name: str | None) -> str:
-        rules = (
+    user_greeting = (
+        f"6. Собеседницу зовут {user_name}. Обращайся по имени легко и естественно, но не части и не ставь его в каждое предложение.\n"
+        if user_name
+        else "6. Обращайся к собеседнице тепло и по-доброму (милая, дорогая).\n"
+    )
+
+    rules = (
         "\n\nПРАВИЛА ОФОРМЛЕНИЯ И ТОНА:\n"
         "1. Пиши живо, заботливо, как лучшая подруга за чашкой кофе. Используй уместные тёплые эмодзи (🌸, ☕️, ✨, 💛, 🌿), но без аляповатости.\n"
         "2. СТРОГО разделяй абзацы пустой строкой. Никаких сплошных простыней текста: 1 мысль = 1 короткий абзац в 2-3 строчки.\n"
@@ -377,18 +383,10 @@ def personalized_system_prompt(user_name: str | None) -> str:
         "5. Структурируй ответ из двух частей, разделив их меткой --DETAILS--:\n"
         "   - Первая часть (до метки): тёплый отклик и главная мысль.\n"
         "   - Вторая часть (после метки): развёрнутый пошаговый план или конкретные советы.\n"
+        f"{user_greeting}"
     )
 
-        if user_name:
-        rules += (
-            f"6. Собеседницу зовут {user_name}. Обращайся по имени ласково и к месту, "
-            f"но не части и не ставь его в каждое предложение.\n"
-        )
-        else:
-        rules += "6. Обращайся к собеседнице тепло и по-доброму (милая, дорогая).\n"
-    
-        return f"{SYSTEM_PROMPT}\n{rules}"
-
+    return f"{SYSTEM_PROMPT}\n{rules}"
 
 def generate_reply(
     contents: list[types.Content],
