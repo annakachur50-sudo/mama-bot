@@ -274,6 +274,37 @@ def split_response(text: str, limit: int = TELEGRAM_CHUNK_SIZE) -> list[str]:
 
     return chunks or [""]
 
+ADMIN_ID = 5267406602
+
+@dispatcher.message(Command("stats"))
+async def cmd_stats(message: Message) -> None:
+    if message.from_user is None or message.from_user.id != ADMIN_ID:
+        return
+
+    try:
+        with sqlite3.connect(STATE_DB) as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM users")
+            total_users = cursor.fetchone()[0]
+            
+            cursor.execute("SELECT name FROM users ORDER BY rowid DESC LIMIT 5")
+            recent_names = [row[0] for row in cursor.fetchall() if row[0]]
+
+        names_preview = ", ".join(recent_names) if recent_names else "пока нет"
+
+        stats_text = (
+            "📊 <b>Статистика бота «Мама 24/7»:</b>\n\n"
+            f"👥 Всего пользователей: <b>{total_users}</b>\n"
+            f"🎯 Цель до платной версии: <b>100</b> (осталось {max(0, 100 - total_users)})\n\n"
+            f"🌸 <i>Последние гости:</i> {names_preview}"
+        )
+        await message.answer(stats_text, parse_mode=ParseMode.HTML)
+
+    except Exception as err:
+        logger.exception("Stats error: %s", err)
+        await message.answer(f"Ошибка получения статистики: {err}")
+
+
 
 @dispatcher.message(CommandStart())
 async def handle_start(message: Message) -> None:
