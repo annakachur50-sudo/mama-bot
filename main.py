@@ -275,6 +275,7 @@ def split_response(text: str, limit: int = TELEGRAM_CHUNK_SIZE) -> list[str]:
     return chunks or [""]
 
 ADMIN_ID = 5267406602
+LOG_CHANNEL_ID = -1004353307194
 
 @dispatcher.message(Command("stats"))
 async def cmd_stats(message: Message) -> None:
@@ -317,14 +318,24 @@ async def handle_start(message: Message) -> None:
     clean_name = raw_name if raw_name.isalpha() and 2 <= len(raw_name) <= 15 else "дорогая"
     user_names[user_id] = clean_name
 
-    try:
-        with sqlite3.connect(STATE_DB_PATH) as conn:
-            conn.execute(
-                "INSERT OR REPLACE INTO user_names (user_id, name) VALUES (?, ?)",
-                (user_id, clean_name),
+        try:
+            with sqlite3.connect(STATE_DB_PATH) as conn:
+                conn.execute(
+                    "INSERT OR REPLACE INTO user_names (user_id, name) VALUES (?, ?)",
+                    (user_id, clean_name),
+                )
+        except Exception as err:
+            logger.warning("Could not save start user: %s", err)
+
+        try:
+            user_tag = f"@{message.from_user.username}" if message.from_user.username else "без никнейма"
+            await message.bot.send_message(
+                -1004353307194,
+                f"🌸 <b>Новая гостья в домике!</b>\n\n👤 Имя: <b>{clean_name}</b>\n🔗 Тег: {user_tag}\n🆔 ID: <code>{user_id}</code>",
+                parse_mode=ParseMode.HTML,
             )
-    except Exception as err:
-        logger.warning("Could not save start user: %s", err)
+        except Exception as log_err:
+            logger.warning("Could not send log to channel: %s", log_err)
 
     start_inline_kb = InlineKeyboardMarkup(
         inline_keyboard=[
