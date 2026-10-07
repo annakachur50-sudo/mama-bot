@@ -379,15 +379,15 @@ def personalized_system_prompt(user_name: str | None) -> str:
         "   - Вторая часть (после метки): развёрнутый пошаговый план или конкретные советы.\n"
     )
 
-    if user_name:
+        if user_name:
         rules += (
             f"6. Собеседницу зовут {user_name}. Обращайся по имени ласково и к месту, "
             f"но не части и не ставь его в каждое предложение.\n"
         )
-    else:
+        else:
         rules += "6. Обращайся к собеседнице тепло и по-доброму (милая, дорогая).\n"
     
-    return f"{SYSTEM_PROMPT}\n{rules}"
+        return f"{SYSTEM_PROMPT}\n{rules}"
 
 
 def generate_reply(
