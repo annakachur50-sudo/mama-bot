@@ -275,7 +275,6 @@ def split_response(text: str, limit: int = TELEGRAM_CHUNK_SIZE) -> list[str]:
     return chunks or [""]
 
 ADMIN_ID = 5267406602
-STATE_DB = "bot_state.db"
 
 @dispatcher.message(Command("stats"))
 async def cmd_stats(message: Message) -> None:
@@ -283,12 +282,12 @@ async def cmd_stats(message: Message) -> None:
         return
 
     try:
-        with sqlite3.connect(STATE_DB) as conn:
+        with sqlite3.connect(STATE_DB_PATH) as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT COUNT(*) FROM users")
+            cursor.execute("SELECT COUNT(*) FROM user_names")
             total_users = cursor.fetchone()[0]
             
-            cursor.execute("SELECT name FROM users ORDER BY rowid DESC LIMIT 5")
+            cursor.execute("SELECT name FROM user_names ORDER BY rowid DESC LIMIT 5")
             recent_names = [row[0] for row in cursor.fetchall() if row[0]]
 
         names_preview = ", ".join(recent_names) if recent_names else "пока нет"
