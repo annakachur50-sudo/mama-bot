@@ -63,7 +63,7 @@ MENU_BUTTONS = (
 )
 BOT_COMMANDS = [
     BotCommand(command="start", description="Главное меню и старт"),
-    BotCommand(command="reset_me", description="Очистить мои данные для теста"),
+    BotCommand(command="reset_me", description="Стереть мои данные"),
 ]
 SYSTEM_PROMPT = """Ты — виртуальная подруга и заботливая помощница для мам «Мама 24/7».
 Общайся тепло, легко, искренне, «на ты», с добрым юмором и поддержкой ☕️🌸.
