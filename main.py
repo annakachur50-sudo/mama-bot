@@ -594,20 +594,24 @@ async def answer_with_gemini(
                     if attempt == 0:
                         await asyncio.sleep(2)
                     else:
-                        error_message = (
-                            "Ой, милая, у меня на секунду закружилась голова от забот! 🙈 "
-                            "Сделай глоток чая — нажми ещё разок, я уже на связи ☕️✨"
-                        )
+                                            error_message = (
+                        "Немножко подвисла связь у серверов 🙈\n\n"
+                        "Сделай пока глоток вкусного чая или кофе ☕️🍪\n"
+                        "Загляни через 15–20 минут — всё как раз наладится, "
+                        "и я буду на связи! 🌸✨"
+                    )
+
                         await delete_thinking_message(message, temporary_message.message_id)
                         await message.answer(error_message, reply_markup=MENU_KEYBOARD)
                         return
         finally:                 
             await delete_thinking_message(message, temporary_message)
         if not reply:
-            await message.answer(
-                "Ой, милая, отвлеклась на секунду! Нажми ещё разок, пожалуйста ☕️✨",
-                reply_markup=MENU_KEYBOARD,
-            )
+                            await message.answer(
+            "Ой, милая, отвлеклась на секунду! Нажми ещё раз на кнопочку меню 🌸",
+            reply_markup=MENU_KEYBOARD,
+        )
+
             return
 async def answer_with_gemini(
     message: Message,
