@@ -70,7 +70,7 @@ BOT_COMMANDS = [
     BotCommand(command="reset_me", description="Очистить мои данные для теста"),
 ]
 SYSTEM_PROMPT = """Ты — виртуальная подруга и заботливая помощница для мам «Мама 24/7».
-Общайся тепло, легко, искренне, «на ты», с добрым юмором и поддержкой ☕️🌸. 
+Общайся тепло, легко, искренне, «на ты», с добрым юмором и поддержкой ☕️🌸.
 
 Правила подачи текста:
 - Обязательно используй эмодзи (в меру, чтобы текст дышал уютом и радостью) ✨🌿.
@@ -87,7 +87,7 @@ SYSTEM_PROMPT = """Ты — виртуальная подруга и забот�
 В ответах сразу переходи к делу без шаблонных формальных вступлений.
 
 ЭКСПЕРТНАЯ ЭКО-МАТРИЦА И ПРАВИЛА РЕКОМЕНДАЦИЙ (GREENWAY GLOBAL):
-Ты выступаешь как чуткая, знающая подруга-эксперт. Ты НЕ навязываешь покупки в каждом сообщении. 
+Ты выступаешь как чуткая, знающая подруга-эксперт. Ты НЕ навязываешь покупки в каждом сообщении.
 Ты даёшь сначала 100% глубокий, полезный ответ на вопрос мамы, и ТОЛЬКО при наличии четкого повода (триггера) добавляешь ОДНУ мягкую органичную рекомендацию со ссылкой.
 
 ОФИЦИАЛЬНАЯ ССЫЛКА НА ИНТЕРНЕТ-МАГАЗИН:
@@ -287,7 +287,7 @@ async def cmd_stats(message: Message) -> None:
             cursor = conn.cursor()
             cursor.execute("SELECT COUNT(*) FROM user_names")
             total_users = cursor.fetchone()[0]
-            
+
             cursor.execute("SELECT name FROM user_names ORDER BY rowid DESC LIMIT 5")
             recent_names = [row[0] for row in cursor.fetchall() if row[0]]
 
@@ -307,7 +307,6 @@ async def cmd_stats(message: Message) -> None:
 
 
 
-@dispatcher.message(CommandStart())
 @dispatcher.message(CommandStart())
 async def handle_start(message: Message) -> None:
     if message.from_user is None:
@@ -364,13 +363,13 @@ async def handle_start(message: Message) -> None:
 @dispatcher.callback_query(lambda c: c.data in ["start_cook", "start_declutter", "start_support"])
 async def process_start_action(callback: CallbackQuery) -> None:
     await callback.answer()
-    
+
     prompts_map = {
         "start_cook": "Что быстро приготовить на ужин для всей семьи за 20-30 минут из простых продуктов?",
         "start_declutter": "Дай простой экспресс-план, как разобрать домашний хаос за 15 минут без надрыва.",
         "start_support": "Мне сейчас тяжело, устала от быта и детей. Поддержи меня тепло, как подруга.",
     }
-    
+
     selected_prompt = prompts_map.get(callback.data, "")
     if selected_prompt and callback.message:
         try:
@@ -580,6 +579,7 @@ async def answer_with_gemini(
             history = conversation_history_by_user.get(user_id, [])
             request_contents = [*history, user_content]
             reply = None
+
             for attempt in range(2):
                 try:
                     reply = await asyncio.to_thread(
@@ -594,55 +594,21 @@ async def answer_with_gemini(
                     if attempt == 0:
                         await asyncio.sleep(2)
                     else:
-                                            error_message = (
-                        "Немножко подвисла связь у серверов 🙈\n\n"
-                        "Сделай пока глоток вкусного чая или кофе ☕️🍪\n"
-                        "Загляни через 15–20 минут — всё как раз наладится, "
-                        "и я буду на связи! 🌸✨"
-                    )
-
-                        await delete_thinking_message(message, temporary_message.message_id)
-                        await message.answer(error_message, reply_markup=MENU_KEYBOARD)
+                        error_message = (
+                            "Немножко подвисла связь у серверов 🙈\n\n"
+                            "Сделай пока глоток вкусного чая или кофе ☕️🍪\n"
+                            "Загляни через 15–20 минут — всё как раз наладится, "
+                            "и я буду на связи! 🌸✨"
+                        )
+                        await message.answer(
+                            error_message,
+                            reply_markup=MENU_KEYBOARD,
+                        )
                         return
-        finally:                 
-            await delete_thinking_message(message, temporary_message)
-        if not reply:
-                            await message.answer(
-            "Ой, милая, отвлеклась на секунду! Нажми ещё раз на кнопочку меню 🌸",
-            reply_markup=MENU_KEYBOARD,
-        )
 
-            return
-async def answer_with_gemini(
-    message: Message,
-    prompt: str | None = None,
-    voice_file_id: str | None = None,
-) -> None:
-    user_id = message.from_user.id if message.from_user else message.chat.id
-    if prompt is None and voice_file_id is None:
-        return
-
-    async with get_user_request_lock(user_id):
-        temporary_message = await send_thinking_message(message)
-        try:
-            if voice_file_id is not None:
-                audio_bytes = await download_voice_audio(voice_file_id)
-                user_content = voice_user_content(audio_bytes)
-            else:
-                user_content = text_user_content(prompt or "")
-
-            history = conversation_history_by_user.get(user_id, [])
-            request_contents = [*history, user_content]
-            reply = await asyncio.to_thread(
-                generate_reply,
-                request_contents,
-                user_names.get(user_id),
-            )
-
-            await delete_thinking_message(message.chat.id, temporary_message.message_id)
             if not reply:
                 await message.answer(
-                    "Ой, милая, отвлеклась на секунду! 🙈 Нажми ещё разок, пожалуйста ☕️",
+                    "Ой, милая, отвлеклась на секунду! Нажми ещё раз на кнопочку меню 🌸",
                     reply_markup=MENU_KEYBOARD,
                 )
                 return
@@ -650,13 +616,17 @@ async def answer_with_gemini(
             append_history(user_id, user_content, reply)
             await send_final_response(message, reply)
         except Exception as general_error:
-            logger.exception("General error in answer_with_gemini: %s", general_error)
-            await delete_thinking_message(message.chat.id, temporary_message.message_id)
+            logger.exception(
+                "General error in answer_with_gemini: %s",
+                general_error,
+            )
             await message.answer(
                 "Ой, милая, у меня на секунду закружилась голова от забот! 🙈 "
                 "Сделай глоток чая — нажми ещё разок, я уже на связи ☕️✨",
                 reply_markup=MENU_KEYBOARD,
             )
+        finally:
+            await delete_thinking_message(message, temporary_message)
 
 
 @dispatcher.message(F.voice)
@@ -722,19 +692,19 @@ async def handle_text(message: Message) -> None:
 
     user_id = message.from_user.id
 
-# Если имя ещё не сохранено в памяти, берем его из профиля Telegram:
+    # Если имя ещё не сохранено в памяти, берем его из профиля Telegram:
     if user_id not in user_names:
         clean_name = message.from_user.first_name or "дорогая"
         user_names[user_id] = clean_name
         try:
-            with sqlite3.connect(STATE_DB) as conn:
+            with sqlite3.connect(STATE_DB_PATH) as conn:
                 conn.execute(
-                    "INSERT OR REPLACE INTO users (user_id, name) VALUES (?, ?)",
+                    "INSERT OR REPLACE INTO user_names (user_id, name) VALUES (?, ?)",
                     (user_id, clean_name),
                 )
         except Exception as err:
             logger.warning("Could not save user name: %s", err)
-  
+
     await answer_with_gemini(message, prompt)
 
 async def main() -> None:
