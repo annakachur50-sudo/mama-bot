@@ -315,24 +315,54 @@ async def handle_start(message: Message) -> None:
     clean_name = raw_name if raw_name.isalpha() and 2 <= len(raw_name) <= 20 else ""
     user_names[user_id] = clean_name
 
+    is_new_user = False
+    guest_count = 0
     try:
         with sqlite3.connect(STATE_DB_PATH) as conn:
-            conn.execute(
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT 1 FROM user_names WHERE user_id = ?",
+                (user_id,),
+            )
+            is_new_user = cursor.fetchone() is None
+
+            cursor.execute(
                 "INSERT OR REPLACE INTO user_names (user_id, name) VALUES (?, ?)",
                 (user_id, clean_name),
             )
+            cursor.execute("SELECT COUNT(DISTINCT user_id) FROM user_names")
+            guest_count = cursor.fetchone()[0]
     except Exception as err:
-        logger.warning("Could not save start user: %s", err)
+        logger.warning("Could not save or count start user: %s", err)
 
-    try:
-        user_tag = f"@{message.from_user.username}" if message.from_user.username else "без никнейма"
-        await message.bot.send_message(
-            -1004353307194,
-            f"🌸 <b>Новая гостья в домике!</b>\n\n👤 Имя: <b>{clean_name}</b>\n🔗 Тег: {user_tag}\n🆔 ID: <code>{user_id}</code>",
-            parse_mode=ParseMode.HTML,
-        )
-    except Exception as log_err:
-        logger.warning("Could not send log to channel: %s", log_err)
+    if is_new_user:
+        try:
+            user_tag = (
+                f"@{message.from_user.username}"
+                if message.from_user.username
+                else "без никнейма"
+            )
+            goal = 100
+            percent = min(100, int((guest_count / goal) * 100))
+            filled = int(percent / 10)
+            bar = "█" * filled + "░" * (10 - filled)
+            left = max(0, goal - guest_count)
+            notification_text = (
+                "🌸 <b>Новая гостья в домике!</b>\n\n"
+                f"👤 Имя: <b>{clean_name or 'Мама'}</b>\n"
+                f"🔗 Тег: {user_tag}\n"
+                f"🆔 ID: <code>{user_id}</code>\n\n"
+                f"📊 <b>Она уже {guest_count}-я по счёту!</b> 🎯\n"
+                f"[{bar}] {percent}%\n"
+                f"⏳ До цели в 100 мам осталось: <b>{left}</b>"
+            )
+            await message.bot.send_message(
+                -1004353307194,
+                notification_text,
+                parse_mode=ParseMode.HTML,
+            )
+        except (genai_errors.APIError, Exception) as log_err:
+            logger.warning("Could not send new-user notification to channel: %s", log_err)
 
     start_inline_kb = InlineKeyboardMarkup(
         inline_keyboard=[
