@@ -281,21 +281,10 @@ async def cmd_stats(message: Message) -> None:
     try:
         with sqlite3.connect(STATE_DB_PATH) as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT COUNT(*) FROM user_names")
+            cursor.execute("SELECT COUNT(DISTINCT user_id) FROM user_names")
             total_users = cursor.fetchone()[0]
 
-            cursor.execute("SELECT name FROM user_names ORDER BY rowid DESC LIMIT 5")
-            recent_names = [row[0] for row in cursor.fetchall() if row[0]]
-
-        names_preview = ", ".join(recent_names) if recent_names else "пока нет"
-
-        stats_text = (
-            "📊 <b>Статистика бота «Мама 24/7»:</b>\n\n"
-            f"👥 Всего пользователей: <b>{total_users}</b>\n"
-            f"🎯 Цель до платной версии: <b>100</b> (осталось {max(0, 100 - total_users)})\n\n"
-            f"🌸 <i>Последние гости:</i> {names_preview}"
-        )
-        await message.answer(stats_text, parse_mode=ParseMode.HTML)
+        await message.answer(f"Всего уникальных мам в боте: {total_users}")
 
     except Exception as err:
         logger.exception("Stats error: %s", err)
