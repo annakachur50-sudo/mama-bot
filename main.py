@@ -43,7 +43,7 @@ VOICE_REPLY_INSTRUCTION = (
     "Прослушай голосовое сообщение пользователя и ответь на него по-русски, "
     "учитывая предыдущий контекст беседы."
 )
-BANNER_PHOTO_ID = ""
+BANNER_PHOTO_ID = "AgACAgIAAyEFAAMBA3oyOgADDGrJSeac9_uyb74Ox1F6RSoCnIOkAAKcIGsbm5xQSpIdI-xhc_hWAQADAgADdwADPQQ"
 
 START_CAPTION = (
     "🌸 <b>Привет, дорогая! Я твой бот «Мама 24/7».</b>\n\n"
