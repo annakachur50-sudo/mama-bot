@@ -124,6 +124,15 @@ MENU_KEYBOARD = ReplyKeyboardMarkup(
     input_field_placeholder="Выбери, чем помочь",
 )
 
+inline_kb = InlineKeyboardMarkup(
+    inline_keyboard=[
+        [InlineKeyboardButton(text="🍳 Накормить семью", callback_data="menu_food")],
+        [InlineKeyboardButton(text="🧹 Разгрести хаос", callback_data="menu_clean")],
+        [InlineKeyboardButton(text="📋 День по полочкам", callback_data="menu_plan")],
+        [InlineKeyboardButton(text="🫂 Тёплая поддержка", callback_data="menu_support")],
+    ]
+)
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
@@ -387,30 +396,32 @@ async def handle_start(message: Message) -> None:
             await message.answer_photo(
                 photo=BANNER_PHOTO_ID,
                 caption=START_CAPTION,
-                reply_markup=MENU_KEYBOARD,
+                reply_markup=inline_kb,
                 parse_mode="HTML",
             )
         except Exception:
             await message.answer(
                 text=START_CAPTION,
-                reply_markup=MENU_KEYBOARD,
+                reply_markup=inline_kb,
                 parse_mode="HTML",
             )
     else:
         await message.answer(
             text=START_CAPTION,
-            reply_markup=MENU_KEYBOARD,
+            reply_markup=inline_kb,
             parse_mode="HTML",
         )
 
-@dispatcher.callback_query(lambda c: c.data in ["start_cook", "start_declutter", "start_support"])
+@dispatcher.callback_query(F.data.in_({"menu_food", "menu_clean", "menu_plan", "menu_support"}))
 async def process_start_action(callback: CallbackQuery) -> None:
+    # Отвечаем на callback сразу, чтобы Telegram убрал индикатор ожидания.
     await callback.answer()
 
     prompts_map = {
-        "start_cook": "Что быстро приготовить на ужин для всей семьи за 20-30 минут из простых продуктов?",
-        "start_declutter": "Дай простой экспресс-план, как разобрать домашний хаос за 15 минут без надрыва.",
-        "start_support": "Мне сейчас тяжело, устала от быта и детей. Поддержи меня тепло, как подруга.",
+        "menu_food": "Что быстро приготовить на ужин для всей семьи за 20-30 минут из простых продуктов?",
+        "menu_clean": "Дай простой экспресс-план, как разобрать домашний хаос за 15 минут без надрыва.",
+        "menu_plan": "Составь спокойный, реалистичный план дня с учётом домашних дел и временем для отдыха.",
+        "menu_support": "Мне сейчас тяжело, устала от быта и детей. Поддержи меня тепло, как подруга.",
     }
 
     selected_prompt = prompts_map.get(callback.data, "")
