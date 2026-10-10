@@ -43,17 +43,18 @@ VOICE_REPLY_INSTRUCTION = (
     "Прослушай голосовое сообщение пользователя и ответь на него по-русски, "
     "учитывая предыдущий контекст беседы."
 )
-START_MESSAGE = (
-    "Привет, дорогая! 🌸\n"
-    "Меня зовут Аня. Я мама троих деток и прекрасно знаю, что такое мамские будни: "
-    "когда в голове тысяча дел, ужин сам себя не сварит, а сил иногда остаётся "
-    "только на то, чтобы доползти до кровати.\n\n"
-    "Я создала этого помощника как тёплую подругу, которая всегда под рукой. Здесь можно:\n"
-    "🍲 Быстро придумать простой обед или ужин из того, что есть в холодильнике\n"
-    "🧹 Разгрести домашний хаос за 15 минут без надрыва\n"
-    "💖 Получить тёплую поддержку и выдохнуть, когда накатило\n\n"
-    "Ты можешь просто нажимать кнопки внизу или наговорить мне голосовое — "
-    "я рядом 24/7. Как твои дела сегодня?"
+BANNER_PHOTO_ID = ""
+
+START_CAPTION = (
+    "🌸 <b>Привет, дорогая! Я твой бот «Мама 24/7».</b>\n\n"
+    "Твоя личная цифровая подруга, когда силы на исходе, в голове миллион задач, "
+    "а дома лёгкий хаос.\n\n"
+    "Я здесь, чтобы беречь твой ресурс и разгружать голову:\n"
+    "🍳 <b>Накормить семью</b> — придумаю быстрый ужин за 20 минут из того, что есть в холодильнике\n"
+    "🧹 <b>Разгрести хаос</b> — подскажу, как навести порядок за 15 минут без едкой химии\n"
+    "📋 <b>День по полочкам</b> — разложу дела без спешки и чувства вины\n"
+    "🫂 <b>Тёплая поддержка</b> — поддержу и напомню выпить горячий чай ☕️\n\n"
+    "<b>С чего начнём сегодня? Выбирай кнопку внизу 👇</b>"
 )
 MENU_BUTTONS = (
     "🍲 Накормить семью",
@@ -303,6 +304,23 @@ async def cmd_stats(message: Message) -> None:
 
 
 
+@dispatcher.message(F.photo)
+async def handle_admin_photo(message: Message) -> None:
+    if (
+        message.from_user is None
+        or message.from_user.id != ADMIN_ID
+        or message.chat.type != "private"
+        or not message.photo
+    ):
+        return
+
+    photo_file_id = message.photo[-1].file_id
+    await message.answer(
+        f"Вот file_id твоего фото:\n<code>{photo_file_id}</code>",
+        parse_mode=ParseMode.HTML,
+    )
+
+
 @dispatcher.message(CommandStart())
 async def handle_start(message: Message) -> None:
     if message.from_user is None:
@@ -364,27 +382,26 @@ async def handle_start(message: Message) -> None:
         except (genai_errors.APIError, Exception) as log_err:
             logger.warning("Could not send new-user notification to channel: %s", log_err)
 
-    start_inline_kb = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text="🍲 Что приготовить за 20 минут?", callback_data="start_cook")],
-            [InlineKeyboardButton(text="📦 Расхламить хаос за 15 минут", callback_data="start_declutter")],
-            [InlineKeyboardButton(text="💖 Мне тяжело, нужна поддержка", callback_data="start_support")],
-        ]
-    )
-
-    greeting_text = (
-        f"Привет, {clean_name}! 🌸\n\n"
-        "Я Аня, мама троих деток. Прекрасно знаю мамские будни: в голове миллион задач, "
-        "силы на нуле, а ужин сам себя не сварит.\n\n"
-        "Я создала этого бота как тёплую подругу, чтобы за пару минут разгрузить твою голову. "
-        "С чего начнём прямо сейчас? Выбирай кнопку 👇"
-    )
-
-    await message.answer(
-        greeting_text,
-        reply_markup=start_inline_kb,
-        parse_mode=ParseMode.HTML,
-    )
+    if BANNER_PHOTO_ID:
+        try:
+            await message.answer_photo(
+                photo=BANNER_PHOTO_ID,
+                caption=START_CAPTION,
+                reply_markup=MENU_KEYBOARD,
+                parse_mode="HTML",
+            )
+        except Exception:
+            await message.answer(
+                text=START_CAPTION,
+                reply_markup=MENU_KEYBOARD,
+                parse_mode="HTML",
+            )
+    else:
+        await message.answer(
+            text=START_CAPTION,
+            reply_markup=MENU_KEYBOARD,
+            parse_mode="HTML",
+        )
 
 @dispatcher.callback_query(lambda c: c.data in ["start_cook", "start_declutter", "start_support"])
 async def process_start_action(callback: CallbackQuery) -> None:
