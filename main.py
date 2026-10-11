@@ -32,6 +32,7 @@ TELEGRAM_MESSAGE_LIMIT = 4096
 TELEGRAM_CHUNK_SIZE = TELEGRAM_MESSAGE_LIMIT - 256
 MAX_HISTORY_MESSAGES = 20
 STATE_DB_PATH = os.path.join(os.path.dirname(__file__), "bot_state.sqlite3")
+START_OFFSET = 12  # Наши первые гости, пришедшие до постоянного счётчика
 THINKING_MESSAGES = (
     "Завариваю чаёк и думаю... ☕️",
     "Секундочку, уже спешу с ответом... 💭",
@@ -184,6 +185,16 @@ def initialize_user_state() -> None:
             )
             """
         )
+        # Реестр уже приветствованных гостей не удаляется командой /reset_me.
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS welcomed_users (
+                user_id INTEGER PRIMARY KEY,
+                first_seen_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+        connection.commit()
         name_rows = connection.execute(
             "SELECT user_id, name FROM user_names"
         ).fetchall()
@@ -191,7 +202,9 @@ def initialize_user_state() -> None:
 
 
 def delete_user_data_from_database(user_id: int) -> None:
-    user_data_tables = ("user_names", "pending_user_names", "welcomed_users")
+    # Сохраняем welcomed_users: сброс личных данных не должен повторно
+    # отправлять уведомление об этом же человеке в канал.
+    user_data_tables = ("user_names", "pending_user_names")
     with sqlite3.connect(STATE_DB_PATH) as connection:
         existing_tables = {
             row[0]
@@ -351,18 +364,35 @@ async def handle_start(message: Message) -> None:
     try:
         with sqlite3.connect(STATE_DB_PATH) as conn:
             cursor = conn.cursor()
+            # Проверяем оба реестра ДО любой отправки в канал.
             cursor.execute(
                 "SELECT 1 FROM user_names WHERE user_id = ?",
                 (user_id,),
             )
-            is_new_user = cursor.fetchone() is None
+            exists_in_user_names = cursor.fetchone() is not None
+            cursor.execute(
+                "SELECT 1 FROM welcomed_users WHERE user_id = ?",
+                (user_id,),
+            )
+            already_welcomed = cursor.fetchone() is not None
+            is_new_user = not (exists_in_user_names or already_welcomed)
 
             cursor.execute(
-                "INSERT OR REPLACE INTO user_names (user_id, name) VALUES (?, ?)",
-                (user_id, clean_name),
+                "INSERT INTO user_names (user_id, name) VALUES (?, ?) "
+                "ON CONFLICT(user_id) DO UPDATE SET name = excluded.name",
+                (user_id, clean_name or "Мама"),
             )
-            cursor.execute("SELECT COUNT(DISTINCT user_id) FROM user_names")
-            guest_count = cursor.fetchone()[0]
+            if is_new_user:
+                cursor.execute(
+                    "INSERT INTO welcomed_users (user_id) VALUES (?)",
+                    (user_id,),
+                )
+            # Фиксируем запись сразу, не полагаясь на закрытие соединения.
+            conn.commit()
+
+            cursor.execute("SELECT COUNT(DISTINCT user_id) FROM welcomed_users")
+            current_unique_in_db = cursor.fetchone()[0]
+            guest_count = current_unique_in_db + START_OFFSET
     except Exception as err:
         logger.warning("Could not save or count start user: %s", err)
 
