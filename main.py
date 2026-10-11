@@ -194,6 +194,13 @@ def initialize_user_state() -> None:
             )
             """
         )
+        # Переносим уже известных пользователей в постоянный реестр без повторных уведомлений.
+        connection.execute(
+            """
+            INSERT OR IGNORE INTO welcomed_users (user_id)
+            SELECT user_id FROM user_names
+            """
+        )
         connection.commit()
         name_rows = connection.execute(
             "SELECT user_id, name FROM user_names"
