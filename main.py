@@ -146,7 +146,11 @@ if not GOOGLE_API_KEY:
 
 client = genai.Client(
     api_key=GOOGLE_API_KEY,
-    http_options={"base_url": "https://api.proxyapi.ru/google"}
+    http_options={
+        "base_url": "https://api.proxyapi.ru/google",
+        # Ограничиваем один запрос к Gemini 30 секундами, чтобы бот не зависал.
+        "timeout": 30000,
+    },
 )
 bot = Bot(token=TELEGRAM_BOT_TOKEN)
 dispatcher = Dispatcher()
@@ -458,25 +462,16 @@ def generate_reply(
     contents: list[types.Content],
     user_name: str | None = None,
 ) -> str:
-    last_error = None
-    for attempt in range(3):
-        try:
-            response = client.models.generate_content(
-                model=GEMINI_MODEL,
-                contents=contents,
-                config=types.GenerateContentConfig(
-                    system_instruction=personalized_system_prompt(user_name),
-                ),
-            )
-            return (response.text or "").strip()
-        except Exception as error:
-            last_error = error
-            logger.warning("Gemini attempt %s failed: %s", attempt + 1, error)
-            if attempt < 2:
-                time.sleep(2)
-    if last_error:
-        raise last_error
-    return ""
+    # Повторные попытки выполняются в answer_with_gemini, поэтому здесь
+    # не создаём ещё один вложенный цикл, который надолго задерживает ответ.
+    response = client.models.generate_content(
+        model=GEMINI_MODEL,
+        contents=contents,
+        config=types.GenerateContentConfig(
+            system_instruction=personalized_system_prompt(user_name),
+        ),
+    )
+    return (response.text or "").strip()
 
 
 async def download_voice_audio(file_id: str) -> bytes:
