@@ -389,11 +389,14 @@ async def handle_start(message: Message) -> None:
                 "ON CONFLICT(user_id) DO UPDATE SET name = excluded.name",
                 (user_id, clean_name or "Мама"),
             )
-            if is_new_user:
-                cursor.execute(
-                    "INSERT INTO welcomed_users (user_id) VALUES (?)",
-                    (user_id,),
-                )
+            # Атомарная защита от двух почти одновременных /start одного человека.
+            cursor.execute(
+                "INSERT OR IGNORE INTO welcomed_users (user_id) VALUES (?)",
+                (user_id,),
+            )
+            welcome_record_created = cursor.rowcount == 1
+            is_new_user = is_new_user and welcome_record_created
+
             # Фиксируем запись сразу, не полагаясь на закрытие соединения.
             conn.commit()
 
