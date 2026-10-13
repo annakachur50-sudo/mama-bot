@@ -46,6 +46,14 @@ VOICE_REPLY_INSTRUCTION = (
 )
 BANNER_PHOTO_ID = "AgACAgIAAyEFAAMBA3oyOgADDGrJSeac9_uyb74Ox1F6RSoCnIOkAAKcIGsbm5xQSpIdI-xhc_hWAQADAgADdwADPQQ"
 
+# Горизонтальные баннеры Telegram. Позже сюда можно добавить несколько file_id на рубрику.
+BANNER_START = [""]  # стартовое приветствие
+BANNER_FOOD = [""]  # накормить семью
+BANNER_CLEAN = [""]  # разгрести хаос
+BANNER_PLAN = [""]  # день по полочкам
+BANNER_SUPPORT = [""]  # тёплая поддержка
+BANNER_ANTISTRESS = [""]  # мамский антистресс
+
 START_CAPTION = (
     "🌸 <b>Привет, дорогая! Я твой бот «Мама 24/7».</b>\n\n"
     "Твоя личная цифровая подруга, когда силы на исходе, в голове миллион задач, "
@@ -371,6 +379,49 @@ async def handle_admin_photo(message: Message) -> None:
     )
 
 
+def choose_banner(banner_ids: list[str] | tuple[str, ...] | None) -> str | None:
+    """Выбирает случайный непустой Telegram file_id; пустые заглушки игнорируются."""
+    available = [item.strip() for item in (banner_ids or []) if isinstance(item, str) and item.strip()]
+    return random.choice(available) if available else None
+
+
+async def answer_with_banner(
+    message: Message,
+    text: str,
+    banner_ids: list[str] | tuple[str, ...] | None,
+    reply_markup=None,
+    parse_mode: ParseMode | str | None = ParseMode.HTML,
+) -> Message:
+    """Пытается отправить баннер с подписью, а при отсутствии ID/ошибке отправляет текст."""
+    photo = choose_banner(banner_ids)
+    if photo:
+        try:
+            return await message.answer_photo(
+                photo=photo,
+                caption=text,
+                reply_markup=reply_markup,
+                parse_mode=parse_mode,
+            )
+        except Exception as error:
+            logger.warning("Could not send banner photo; falling back to text: %s", error)
+
+    return await message.answer(
+        text=text,
+        reply_markup=reply_markup,
+        parse_mode=parse_mode,
+    )
+
+
+async def replace_callback_message(callback: CallbackQuery) -> None:
+    """Удаляет старое сообщение с кнопками, чтобы повторные нажатия не засоряли чат."""
+    if callback.message is None:
+        return
+    try:
+        await callback.message.delete()
+    except Exception as error:
+        logger.debug("Could not delete previous callback message: %s", error)
+
+
 @dispatcher.message(CommandStart())
 async def handle_start(message: Message) -> None:
     if message.from_user is None:
@@ -452,30 +503,17 @@ async def handle_start(message: Message) -> None:
         except (genai_errors.APIError, Exception) as log_err:
             logger.warning("Could not send new-user notification to channel: %s", log_err)
 
-    if BANNER_PHOTO_ID:
-        try:
-            await message.answer_photo(
-                photo=BANNER_PHOTO_ID,
-                caption=START_CAPTION,
-                reply_markup=inline_kb,
-                parse_mode="HTML",
-            )
-        except Exception:
-            await message.answer(
-                text=START_CAPTION,
-                reply_markup=inline_kb,
-                parse_mode="HTML",
-            )
-    else:
-        await message.answer(
-            text=START_CAPTION,
-            reply_markup=inline_kb,
-            parse_mode="HTML",
-        )
+    await answer_with_banner(
+        message,
+        START_CAPTION,
+        BANNER_START,
+        reply_markup=inline_kb,
+        parse_mode=ParseMode.HTML,
+    )
 
 @dispatcher.callback_query(F.data.in_({"menu_food", "menu_clean", "menu_plan", "menu_support"}))
 async def process_start_action(callback: CallbackQuery) -> None:
-    # Отвечаем на callback сразу, чтобы Telegram убрал индикатор ожидания.
+    # Сразу закрываем индикатор ожидания на нажатой кнопке.
     await callback.answer()
 
     prompts_map = {
@@ -484,14 +522,21 @@ async def process_start_action(callback: CallbackQuery) -> None:
         "menu_plan": "Составь спокойный, реалистичный план дня с учётом домашних дел и временем для отдыха.",
         "menu_support": "Мне сейчас тяжело, устала от быта и детей. Поддержи меня тепло, как подруга.",
     }
+    banners_map = {
+        "menu_food": BANNER_FOOD,
+        "menu_clean": BANNER_CLEAN,
+        "menu_plan": BANNER_PLAN,
+        "menu_support": BANNER_SUPPORT,
+    }
 
     selected_prompt = prompts_map.get(callback.data, "")
     if selected_prompt and callback.message:
-        try:
-            await callback.message.edit_reply_markup(reply_markup=None)
-        except Exception:
-            pass
-        await answer_with_gemini(callback.message, selected_prompt)
+        await replace_callback_message(callback)
+        await answer_with_gemini(
+            callback.message,
+            selected_prompt,
+            banner_ids=banners_map.get(callback.data),
+        )
 
 @dispatcher.callback_query(F.data == "menu_antistress")
 async def process_antistress(callback: CallbackQuery) -> None:
@@ -529,11 +574,14 @@ async def process_antistress(callback: CallbackQuery) -> None:
             "☕️ Ты не обязана успевать всё. Ты уже делаешь много — обними себя! ✨"
         )
 
-    try:
-        await message.edit_reply_markup(reply_markup=None)
-    except Exception:
-        pass
-    await message.answer(reply, reply_markup=antistress_kb)
+    await replace_callback_message(callback)
+    await answer_with_banner(
+        message,
+        reply,
+        BANNER_ANTISTRESS,
+        reply_markup=antistress_kb,
+        parse_mode=ParseMode.HTML,
+    )
 
 
 @dispatcher.callback_query(F.data == "back_to_menu")
@@ -541,14 +589,15 @@ async def process_back_to_menu(callback: CallbackQuery) -> None:
     await callback.answer()
     if callback.message is None:
         return
-    try:
-        await callback.message.edit_reply_markup(reply_markup=inline_kb)
-    except Exception:
-        await callback.message.answer(
-            START_CAPTION,
-            reply_markup=inline_kb,
-            parse_mode="HTML",
-        )
+    message = callback.message
+    await replace_callback_message(callback)
+    await answer_with_banner(
+        message,
+        START_CAPTION,
+        BANNER_START,
+        reply_markup=inline_kb,
+        parse_mode=ParseMode.HTML,
+    )
 
 
 def personalized_system_prompt(user_name: str | None) -> str:
@@ -658,40 +707,60 @@ def voice_user_content(audio_bytes: bytes) -> types.Content:
     )
 
 
-async def send_final_response(message: Message, reply: str) -> None:
+async def send_final_response(
+    message: Message,
+    reply: str,
+    banner_ids: list[str] | tuple[str, ...] | None = None,
+) -> None:
     parts = [p.strip() for p in reply.split("===SPLIT===") if p.strip()]
+    has_banner = choose_banner(banner_ids) is not None
+    # При баннере держим первую подпись в пределах лимита Telegram для caption.
+    chunk_limit = 900 if has_banner else TELEGRAM_CHUNK_SIZE
 
-    # Если метки нет или ответ всего один — шлём как обычно
     if len(parts) <= 1:
-        for idx, chunk in enumerate(split_response(reply)):
-            is_last = (idx == len(split_response(reply)) - 1)
-            await message.answer(
-                format_telegram_html(chunk),
-                reply_markup=MENU_KEYBOARD if is_last else None,
-                parse_mode=ParseMode.HTML,
-            )
+        chunks = split_response(reply, limit=chunk_limit)
+        for idx, chunk in enumerate(chunks):
+            is_last = idx == len(chunks) - 1
+            formatted = format_telegram_html(chunk)
+            markup = MENU_KEYBOARD if is_last else None
+            if idx == 0 and banner_ids is not None:
+                await answer_with_banner(
+                    message, formatted, banner_ids,
+                    reply_markup=markup, parse_mode=ParseMode.HTML,
+                )
+            else:
+                await message.answer(
+                    formatted,
+                    reply_markup=markup,
+                    parse_mode=ParseMode.HTML,
+                )
         return
 
-    # Если есть 2 части: короткое начало и подробности
     intro_text = parts[0]
     details_text = parts[1]
-
-    # Создаём саму инлайн-кнопку
     expand_keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="📖 Развернуть подробнее", callback_data="expand_details")]
         ]
     )
-
-    # Запоминаем подробности для этого пользователя
     pending_details[message.chat.id] = details_text
 
-    # Отправляем только вводную часть с кнопкой
-    await message.answer(
-        format_telegram_html(intro_text),
-        reply_markup=expand_keyboard,
-        parse_mode=ParseMode.HTML,
-    )
+    intro_chunks = split_response(intro_text, limit=chunk_limit)
+    for idx, chunk in enumerate(intro_chunks):
+        is_last = idx == len(intro_chunks) - 1
+        markup = expand_keyboard if is_last else None
+        formatted = format_telegram_html(chunk)
+        if idx == 0 and banner_ids is not None:
+            await answer_with_banner(
+                message, formatted, banner_ids,
+                reply_markup=markup, parse_mode=ParseMode.HTML,
+            )
+        else:
+            await message.answer(
+                formatted,
+                reply_markup=markup,
+                parse_mode=ParseMode.HTML,
+            )
 
 @dispatcher.callback_query(lambda c: c.data == "expand_details")
 async def process_expand_details(callback: CallbackQuery) -> None:
@@ -726,6 +795,7 @@ async def answer_with_gemini(
     message: Message,
     prompt: str | None = None,
     voice_file_id: str | None = None,
+    banner_ids: list[str] | tuple[str, ...] | None = None,
 ) -> None:
     user_id = message.from_user.id if message.from_user else message.chat.id
     if prompt is None and voice_file_id is None:
@@ -778,7 +848,7 @@ async def answer_with_gemini(
                 return
 
             append_history(user_id, user_content, reply)
-            await send_final_response(message, reply)
+            await send_final_response(message, reply, banner_ids=banner_ids)
         except Exception as general_error:
             logger.exception(
                 "General error in answer_with_gemini: %s",
