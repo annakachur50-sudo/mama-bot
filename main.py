@@ -131,8 +131,25 @@ inline_kb = InlineKeyboardMarkup(
         [InlineKeyboardButton(text="🧹 Разгрести хаос", callback_data="menu_clean")],
         [InlineKeyboardButton(text="📋 День по полочкам", callback_data="menu_plan")],
         [InlineKeyboardButton(text="🫂 Тёплая поддержка", callback_data="menu_support")],
+        [InlineKeyboardButton(text="🤫 Мамский антистресс", callback_data="menu_antistress")],
     ]
 )
+
+antistress_kb = InlineKeyboardMarkup(
+    inline_keyboard=[
+        [InlineKeyboardButton(text="Ещё порцию 😂🔄", callback_data="menu_antistress")],
+        [InlineKeyboardButton(text="В главное меню ↩️", callback_data="back_to_menu")],
+    ]
+)
+
+ANTISTRESS_SYSTEM_PROMPT = """Ты — остроумная, душевная подруга-мама с отличным чувством юмора.
+Напиши ультра-короткую порцию мамского антистресса (до 300–350 символов).
+Формат сообщения:
+1) 🎭 Твой статус дня: забавный «сорт» мамы (например: «Мама-Ниндзя: перешагнула через скрипучую половицу и съела конфету под шум вытяжки» или «Мама-Философ: смотрит на гору нестиранных вещей и познаёт бесконечность»).
+2) 💡 Закон мамского быта: смешная житейская правда про детей, бардак или еду, которая на 100% снимает чувство вины.
+3) ☕️ Напутствие: одна тёплая ободряющая строчка.
+Стиль: искренний, очень смешной, живой, без душноты и нравоучений, с эмодзи 😂✨."""
+
 
 logging.basicConfig(
     level=logging.INFO,
@@ -475,6 +492,64 @@ async def process_start_action(callback: CallbackQuery) -> None:
         except Exception:
             pass
         await answer_with_gemini(callback.message, selected_prompt)
+
+@dispatcher.callback_query(F.data == "menu_antistress")
+async def process_antistress(callback: CallbackQuery) -> None:
+    # Сразу закрываем индикатор ожидания на нажатой кнопке.
+    await callback.answer()
+    message = callback.message
+    if message is None:
+        return
+
+    try:
+        response = await asyncio.to_thread(
+            client.models.generate_content,
+            model=GEMINI_MODEL,
+            contents=[
+                types.Content(
+                    role="user",
+                    parts=[types.Part.from_text(
+                        text="Придумай новую порцию мамского антистресса. Не повторяй предыдущие варианты."
+                    )],
+                )
+            ],
+            config=types.GenerateContentConfig(
+                system_instruction=ANTISTRESS_SYSTEM_PROMPT,
+                max_output_tokens=220,
+            ),
+        )
+        reply = (response.text or "").strip()
+        if not reply:
+            raise RuntimeError("Gemini returned an empty anti-stress reply")
+    except Exception as error:
+        logger.warning("Anti-stress generation failed: %s", error)
+        reply = (
+            "🎭 Твой статус дня: Мама-Легенда — держится на кофе и загадочном запасе терпения.\n"
+            "💡 Закон мамского быта: если все сыты и никто не в пижаме задом наперёд — это уже успех 😂\n"
+            "☕️ Ты не обязана успевать всё. Ты уже делаешь много — обними себя! ✨"
+        )
+
+    try:
+        await message.edit_reply_markup(reply_markup=None)
+    except Exception:
+        pass
+    await message.answer(reply, reply_markup=antistress_kb)
+
+
+@dispatcher.callback_query(F.data == "back_to_menu")
+async def process_back_to_menu(callback: CallbackQuery) -> None:
+    await callback.answer()
+    if callback.message is None:
+        return
+    try:
+        await callback.message.edit_reply_markup(reply_markup=inline_kb)
+    except Exception:
+        await callback.message.answer(
+            START_CAPTION,
+            reply_markup=inline_kb,
+            parse_mode="HTML",
+        )
+
 
 def personalized_system_prompt(user_name: str | None) -> str:
     user_greeting = (
