@@ -47,7 +47,7 @@ VOICE_REPLY_INSTRUCTION = (
 BANNER_PHOTO_ID = "AgACAgIAAyEFAAMBA3oyOgADDGrJSeac9_uyb74Ox1F6RSoCnIOkAAKcIGsbm5xQSpIdI-xhc_hWAQADAgADdwADPQQ"
 
 # Горизонтальные баннеры Telegram. Позже сюда можно добавить несколько file_id на рубрику.
-BANNER_START = [""]  # стартовое приветствие
+BANNER_START = [BANNER_PHOTO_ID]  # стартовое приветствие
 BANNER_FOOD = [""]  # накормить семью
 BANNER_CLEAN = [""]  # разгрести хаос
 BANNER_PLAN = [""]  # день по полочкам
