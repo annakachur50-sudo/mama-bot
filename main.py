@@ -181,6 +181,7 @@ dispatcher = Dispatcher()
 
 user_names: dict[int, str] = {}
 pending_details: dict[int, str] = {}
+pending_details_food: set[int] = set()
 conversation_history_by_user: dict[int, list[types.Content]] = {}
 user_request_locks: dict[int, asyncio.Lock] = {}
 def append_history(user_id: int, user_content: types.Content, model_text: str) -> None:
@@ -722,15 +723,24 @@ async def send_final_response(
 ) -> None:
     parts = [p.strip() for p in reply.split("===SPLIT===") if p.strip()]
     has_banner = choose_banner(banner_ids) is not None
+    is_food_response = bool(banner_ids) and any(item in FOOD_BANNERS for item in banner_ids)
     # При баннере держим первую подпись в пределах лимита Telegram для caption.
     chunk_limit = 900 if has_banner else TELEGRAM_CHUNK_SIZE
+    another_food_keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="🍲 Ещё вариант", callback_data="another_food")]
+        ]
+    )
 
     if len(parts) <= 1:
         chunks = split_response(reply, limit=chunk_limit)
         for idx, chunk in enumerate(chunks):
             is_last = idx == len(chunks) - 1
             formatted = format_telegram_html(chunk)
-            markup = MENU_KEYBOARD if is_last else None
+            markup = (
+                another_food_keyboard if is_last and is_food_response
+                else MENU_KEYBOARD if is_last else None
+            )
             if idx == 0 and banner_ids is not None:
                 await answer_with_banner(
                     message, formatted, banner_ids,
@@ -752,6 +762,10 @@ async def send_final_response(
         ]
     )
     pending_details[message.chat.id] = details_text
+    if is_food_response:
+        pending_details_food.add(message.chat.id)
+    else:
+        pending_details_food.discard(message.chat.id)
 
     intro_chunks = split_response(intro_text, limit=chunk_limit)
     for idx, chunk in enumerate(intro_chunks):
@@ -770,10 +784,36 @@ async def send_final_response(
                 parse_mode=ParseMode.HTML,
             )
 
+@dispatcher.callback_query(lambda c: c.data == "another_food")
+async def process_another_food(callback: CallbackQuery) -> None:
+    await callback.answer()
+    if callback.message is None:
+        return
+
+    # Следующий вариант запрашиваем в истории той же мамы и берём следующее фото.
+    prompt = (
+        "Предложи ДРУГОЕ блюдо для всей семьи, не похожее на последний рецепт. "
+        "Используй обычные недорогие продукты и минимум активного времени у плиты "
+        "(желательно 15–30 минут). Не повторяй недавние блюда. В конце спроси, "
+        "какие продукты уже есть дома, чтобы потом подобрать рецепт из них."
+    )
+    global food_banner_index
+    banner_ids = FOOD_BANNERS[food_banner_index:] + FOOD_BANNERS[:food_banner_index]
+    food_banner_index = (food_banner_index + 1) % len(FOOD_BANNERS)
+    await answer_with_gemini(
+        callback.message,
+        prompt,
+        banner_ids=banner_ids,
+        request_user_id=callback.from_user.id,
+    )
+
+
 @dispatcher.callback_query(lambda c: c.data == "expand_details")
 async def process_expand_details(callback: CallbackQuery) -> None:
     chat_id = callback.message.chat.id
     details = pending_details.pop(chat_id, None)
+    is_food_details = chat_id in pending_details_food
+    pending_details_food.discard(chat_id)
 
     # Убираем часики ожидания на кнопке
     await callback.answer()
@@ -795,17 +835,26 @@ async def process_expand_details(callback: CallbackQuery) -> None:
         is_last = (idx == len(chunks) - 1)
         await callback.message.answer(
             format_telegram_html(chunk),
-            reply_markup=MENU_KEYBOARD if is_last else None,
+            reply_markup=(
+                InlineKeyboardMarkup(
+                    inline_keyboard=[
+                        [InlineKeyboardButton(text="🍲 Ещё вариант", callback_data="another_food")]
+                    ]
+                )
+                if is_last and is_food_details
+                else MENU_KEYBOARD if is_last else None
+            ),
             parse_mode=ParseMode.HTML,
-     )
+        )
 
 async def answer_with_gemini(
     message: Message,
     prompt: str | None = None,
     voice_file_id: str | None = None,
     banner_ids: list[str] | tuple[str, ...] | None = None,
+    request_user_id: int | None = None,
 ) -> None:
-    user_id = message.from_user.id if message.from_user else message.chat.id
+    user_id = request_user_id or (message.from_user.id if message.from_user else message.chat.id)
     if prompt is None and voice_file_id is None:
         return
 
