@@ -394,8 +394,7 @@ async def answer_with_banner(
         for item in (banner_ids or [])
         if isinstance(item, str) and item.strip()
     ]
-    # Начинаем со случайного фото, но при нерабочем file_id пробуем остальные.
-    random.shuffle(available)
+    # Сохраняем исходный порядок: фото показываются по очереди.
     for photo in available:
         try:
             return await message.answer_photo(
@@ -405,10 +404,9 @@ async def answer_with_banner(
                 parse_mode=parse_mode,
             )
         except Exception as error:
-            logger.warning(
-                "Could not send banner photo (file_id ending %s): %s",
+            logger.exception(
+                "Could not send banner photo (file_id ending %s)",
                 photo[-8:],
-                error,
             )
 
     if available:
