@@ -375,6 +375,39 @@ async def handle_admin_photo(message: Message) -> None:
     )
 
 
+@dispatcher.message(Command("testfoodphoto"))
+async def handle_test_food_photos(message: Message) -> None:
+    """Admin-only diagnostic: test every configured food photo ID in Telegram."""
+    if (
+        message.from_user is None
+        or message.from_user.id != ADMIN_ID
+        or message.chat.type != "private"
+    ):
+        return
+
+    await message.answer("Проверяю все 10 фото по очереди. Успешные пришлю сюда 🌿")
+    results = []
+    for index, photo_id in enumerate(FOOD_BANNERS, start=1):
+        try:
+            await message.answer_photo(
+                photo=photo_id,
+                caption=f"Фото {index}/10 — file_id работает ✅",
+            )
+            results.append(f"{index}: OK")
+        except Exception as error:
+            logger.exception(
+                "Food photo diagnostic failed for index %s (file_id ending %s)",
+                index,
+                photo_id[-8:],
+            )
+            short_error = str(error).replace("\\n", " ")[:180]
+            results.append(f"{index}: ОШИБКА — {type(error).__name__}: {short_error}")
+
+    report = "Результат проверки фото:\\n" + "\\n".join(results)
+    for start in range(0, len(report), 3500):
+        await message.answer(report[start : start + 3500])
+
+
 def choose_banner(banner_ids: list[str] | tuple[str, ...] | None) -> str | None:
     """Выбирает случайный непустой Telegram file_id; пустые заглушки игнорируются."""
     available = [item.strip() for item in (banner_ids or []) if isinstance(item, str) and item.strip()]
