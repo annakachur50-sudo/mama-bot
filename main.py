@@ -605,10 +605,12 @@ async def process_back_to_menu(callback: CallbackQuery) -> None:
 
 
 def personalized_system_prompt(user_name: str | None) -> str:
+    # Не используем латинское имя в русскоязычном общении: лучше «дорогая».
+    usable_name = user_name if user_name and re.fullmatch(r"[А-Яа-яЁё-]+", user_name) else None
     user_greeting = (
-        f"6. Собеседницу зовут {user_name}. Если обращаешься по имени, используй ТОЛЬКО это имя без изменения формы: не придумывай уменьшительные, ласкательные или искажённые варианты (например, из «Анна» нельзя делать «Аннешка»). Если имя звучит неестественно в обращении, просто скажи «дорогая» или ответь без имени. Не ставь обращение в каждое сообщение.\n"
-        if user_name
-        else "6. Обращайся к собеседнице тепло и по-доброму (милая, дорогая).\n"
+        f"6. Собеседницу зовут {usable_name}. Если обращаешься по имени, используй ТОЛЬКО это имя без изменения формы: не придумывай уменьшительные, ласкательные или искажённые варианты (например, из «Анна» нельзя делать «Аннешка»). Если имя звучит неестественно в обращении, просто скажи «дорогая» или ответь без имени. Не ставь обращение в каждое сообщение.\n"
+        if usable_name
+        else "6. Обращайся к собеседнице тепло и по-доброму (милая, дорогая). Если имя записано латиницей, не произноси его в русскоязычном ответе.\n"
     )
 
     rules = (
@@ -943,7 +945,35 @@ async def handle_text(message: Message) -> None:
         except Exception as err:
             logger.warning("Could not save user name: %s", err)
 
-    await answer_with_gemini(message, prompt)
+    # Кнопки ReplyKeyboard приходят как обычный текст, не как callback.
+    # Для рубрики еды важно явно передать список фотографий.
+    menu_prompts = {
+        MENU_BUTTONS[0]: (
+            "Что быстро приготовить на ужин для всей семьи за 20-30 минут "
+            "из простых продуктов?"
+        ),
+        MENU_BUTTONS[1]: (
+            "Дай простой экспресс-план, как разобрать домашний хаос за 15 минут "
+            "без надрыва."
+        ),
+        MENU_BUTTONS[2]: (
+            "Составь спокойный, реалистичный план дня с учётом домашних дел "
+            "и временем для отдыха."
+        ),
+        MENU_BUTTONS[3]: (
+            "Мне сейчас тяжело, устала от быта и детей. Поддержи меня тепло, "
+            "как подруга."
+        ),
+    }
+    selected_prompt = menu_prompts.get(prompt, prompt)
+    if prompt == MENU_BUTTONS[0]:
+        global food_banner_index
+        banner_ids = FOOD_BANNERS[food_banner_index:] + FOOD_BANNERS[:food_banner_index]
+        food_banner_index = (food_banner_index + 1) % len(FOOD_BANNERS)
+        await answer_with_gemini(message, selected_prompt, banner_ids=banner_ids)
+        return
+
+    await answer_with_gemini(message, selected_prompt)
 
 async def main() -> None:
     logger.info("Starting Telegram bot with model %s", GEMINI_MODEL)
