@@ -388,9 +388,15 @@ async def answer_with_banner(
     reply_markup=None,
     parse_mode: ParseMode | str | None = ParseMode.HTML,
 ) -> Message:
-    """Пытается отправить баннер с подписью, а при отсутствии ID/ошибке отправляет текст."""
-    photo = choose_banner(banner_ids)
-    if photo:
+    """Пробует все доступные фото по очереди; текст — только если ни одно не отправилось."""
+    available = [
+        item.strip()
+        for item in (banner_ids or [])
+        if isinstance(item, str) and item.strip()
+    ]
+    # Начинаем со случайного фото, но при нерабочем file_id пробуем остальные.
+    random.shuffle(available)
+    for photo in available:
         try:
             return await message.answer_photo(
                 photo=photo,
@@ -399,8 +405,14 @@ async def answer_with_banner(
                 parse_mode=parse_mode,
             )
         except Exception as error:
-            logger.warning("Could not send banner photo; falling back to text: %s", error)
+            logger.warning(
+                "Could not send banner photo (file_id ending %s): %s",
+                photo[-8:],
+                error,
+            )
 
+    if available:
+        logger.error("All %s banner photo IDs failed; sending text fallback", len(available))
     return await message.answer(
         text=text,
         reply_markup=reply_markup,
