@@ -48,7 +48,20 @@ BANNER_PHOTO_ID = "AgACAgIAAyEFAAMBA3oyOgADDGrJSeac9_uyb74Ox1F6RSoCnIOkAAKcIGsbm
 
 # Горизонтальные баннеры Telegram. Позже сюда можно добавить несколько file_id на рубрику.
 BANNER_START = [BANNER_PHOTO_ID]  # стартовое приветствие
-BANNER_FOOD = [""]  # накормить семью
+FOOD_BANNERS = [
+    "AgACAgIAAxkBAAIHdGrOdXYmWYA7axciENDwEAgzwHatAALrJGsbG09wSqMQS_xQEO2lAQADAgADdwADPQQ",
+    "AgACAgIAAxkBAAIHcmrOdXYOASVucKJ4EwUXQvKF9SvMAALpJGsbG09wSrXITkQkQV3YAQADAgADdwADPQQ",
+    "AgACAgIAAxkBAAIHeGrOdXapiT2h8yNNXiOmloCeXgq-AALvJGsbG09wStLAph9PNSQxAQADAgADdwADPQQ",
+    "AgACAgIAAxkBAAIHd2rOdXYdbSWunpYWDnfKCrJR0yAbAALuJGsbG09wShVu-yF1EgjRAQADAgADdwADPQQ",
+    "AgACAgIAAxkBAAIHdmrOdXbtBXs8suWjDKFRzN0NI5MlAALtJGsbG09wSt7IR0mnVK5pAQADAgADdwADPQQ",
+    "AgACAgIAAxkBAAIHc2rOdXbt1yVP9fSB6iVNoHKs0FVhAALqJGsbG09wSscrzLJA-4q2AQADAgADdwADPQQ",
+    "AgACAgIAAxkBAAIHdWrOdXaeJJ9eWDO98vhZ2GLjbX_8AALsJGsbG09wShnBgyJS80GIAQADAgADdwADPQQ",
+    "AgACAgIAAxkBAAIHcGrOdXYtGCfdm0k348ciWJEe-u6tAALnJGsbG09wSuFIwgjfjMglAQADAgADdwADPQQ",
+    "AgACAgIAAxkBAAIHcWrOdXYmtZSmH39Ry6fRRgE2l0LNAALoJGsbG09wSrWpcVRebzTYAQADAgADdwADPQQ",
+    "AgACAgIAAxkBAAIHeWrOdXa5ClMWHVD_LwRaLGoMljUOAALwJGsbG09wSnYh7UBPJXpqAQADAgADdwADPQQ",
+]
+food_banner_index = 0
+BANNER_FOOD = FOOD_BANNERS  # накормить семью
 BANNER_CLEAN = [""]  # разгрести хаос
 BANNER_PLAN = [""]  # день по полочкам
 BANNER_SUPPORT = [""]  # тёплая поддержка
@@ -531,11 +544,18 @@ async def process_start_action(callback: CallbackQuery) -> None:
 
     selected_prompt = prompts_map.get(callback.data, "")
     if selected_prompt and callback.message:
+        banner_ids = banners_map.get(callback.data)
+        if callback.data == "menu_food" and FOOD_BANNERS:
+            global food_banner_index
+            photo = FOOD_BANNERS[food_banner_index]
+            food_banner_index = (food_banner_index + 1) % len(FOOD_BANNERS)
+            banner_ids = [photo]
+
         await replace_callback_message(callback)
         await answer_with_gemini(
             callback.message,
             selected_prompt,
-            banner_ids=banners_map.get(callback.data),
+            banner_ids=banner_ids,
         )
 
 @dispatcher.callback_query(F.data == "menu_antistress")
