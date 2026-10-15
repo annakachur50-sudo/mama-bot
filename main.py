@@ -864,8 +864,8 @@ async def generate_chaos_step(message: Message, user_id: int, session_id: int, a
     else:
         intro = "Делай по порядку или выбирай любой пункт — без гонки 🌿"
     if remaining < 60:
-        intro += "\\n\\n⏳ Времени осталось совсем немного — сделай один небольшой шаг или просто выдохни."
-    text = title + "\\n\\n" + intro + "\\n\\n" + "\\n".join(task_lines)
+        intro += "\n\n⏳ Времени осталось совсем немного — сделай один небольшой шаг или просто выдохни."
+    text = title + "\n\n" + intro + "\n\n" + "\n".join(task_lines)
     try:
         await replace_last_chaos_message(session)
         sent = await message.answer(
@@ -969,8 +969,6 @@ async def process_chaos_callback(callback: CallbackQuery) -> None:
     if action in {"next_room", "more", "stop", "home"}:
         if session.get("stage") not in {"steps", "zone_complete"} or len(parts) != 4:
             return
-        if action in {"done", "alternate"} and session.get("stage") != "steps":
-            return
         try:
             clicked_step = int(parts[3])
         except ValueError:
@@ -996,11 +994,6 @@ async def process_chaos_callback(callback: CallbackQuery) -> None:
                 parse_mode=ParseMode.HTML,
             )
             return
-        if action == "done":
-            await replace_callback_message(callback)
-            session["step_index"] += 1
-            await generate_chaos_step(message, user_id, session_id)
-            return
         if action == "next_room":
             await replace_callback_message(callback)
             session["stage"] = "next_zone"
@@ -1010,9 +1003,6 @@ async def process_chaos_callback(callback: CallbackQuery) -> None:
             )
             session["last_message"] = zone_message
             return
-        await replace_callback_message(callback)
-        if action == "alternate":
-            await generate_chaos_step(message, user_id, session_id, alternate=True)
 
 
 @dispatcher.callback_query(F.data == "back_to_menu")
