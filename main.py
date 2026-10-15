@@ -196,6 +196,24 @@ pending_details: dict[int, str] = {}
 pending_details_food: set[int] = set()
 conversation_history_by_user: dict[int, list[types.Content]] = {}
 user_request_locks: dict[int, asyncio.Lock] = {}
+chaos_sessions: dict[int, dict] = {}
+chaos_session_counter = 0
+
+CHAOS_ZONES = {
+    "kitchen": "кухня",
+    "kids": "игрушки и детская",
+    "clothes": "одежда и вещи",
+    "living": "гостиная",
+    "everywhere": "понемногу везде",
+}
+CHAOS_ENERGIES = {
+    "low": "низкий",
+    "normal": "обычный",
+    "high": "высокий",
+}
+CHAOS_DURATIONS = (5, 10, 15)
+
+
 def append_history(user_id: int, user_content: types.Content, model_text: str) -> None:
     history = conversation_history_by_user.setdefault(user_id, [])
     history.append(user_content)
@@ -569,41 +587,31 @@ async def handle_start(message: Message) -> None:
 async def process_start_action(callback: CallbackQuery) -> None:
     # Сразу закрываем индикатор ожидания на нажатой кнопке.
     await callback.answer()
+    if callback.message is None:
+        return
+    if callback.data == "menu_clean":
+        await replace_callback_message(callback)
+        await start_chaos_flow(callback.message)
+        return
 
     prompts_map = {
         "menu_food": "Предложи разнообразное, простое и недорогое блюдо для всей семьи из обычных продуктов. Минимум активного времени у плиты, желательно 15-30 минут. Не повторяй блюда из нашей предыдущей переписки. В конце спроси, какие продукты уже есть дома, чтобы подобрать рецепт из них.",
-        "menu_clean": "Дай простой экспресс-план, как разобрать домашний хаос за 15 минут без надрыва. Заверши коротким поддерживающим итогом или предложи отдохнуть. Не задавай вопрос про продукты, холодильник или подбор блюда.",
         "menu_plan": "Составь спокойный, реалистичный план дня с учётом домашних дел и временем для отдыха.",
         "menu_support": "Мне сейчас тяжело, устала от быта и детей. Поддержи меня тепло, как подруга.",
     }
     banners_map = {
         "menu_food": BANNER_FOOD,
-        "menu_clean": BANNER_CLEAN,
         "menu_plan": BANNER_PLAN,
         "menu_support": BANNER_SUPPORT,
     }
 
     selected_prompt = prompts_map.get(callback.data, "")
-    if selected_prompt and callback.message:
+    if selected_prompt:
         banner_ids = banners_map.get(callback.data)
         if callback.data == "menu_food" and FOOD_BANNERS:
             global food_banner_index
-            # Передаём все баннеры, начиная с очередного, чтобы при ошибке
-            # одного Telegram file_id функция answer_with_banner попробовала остальные.
-            banner_ids = (
-                FOOD_BANNERS[food_banner_index:]
-                + FOOD_BANNERS[:food_banner_index]
-            )
+            banner_ids = FOOD_BANNERS[food_banner_index:] + FOOD_BANNERS[:food_banner_index]
             food_banner_index = (food_banner_index + 1) % len(FOOD_BANNERS)
-        elif callback.data == "menu_clean" and BANNER_CLEAN:
-            global clean_banner_index
-            # Картинки уборки идут по кругу, по одной на каждое обращение.
-            # Если один file_id не сработает, функция попробует следующие.
-            banner_ids = (
-                BANNER_CLEAN[clean_banner_index:]
-                + BANNER_CLEAN[:clean_banner_index]
-            )
-            clean_banner_index = (clean_banner_index + 1) % len(BANNER_CLEAN)
 
         await replace_callback_message(callback)
         await answer_with_gemini(
@@ -611,6 +619,277 @@ async def process_start_action(callback: CallbackQuery) -> None:
             selected_prompt,
             banner_ids=banner_ids,
         )
+
+def chaos_keyboard(session_id: int, stage: str) -> InlineKeyboardMarkup:
+    if stage == "zone":
+        rows = [
+            [InlineKeyboardButton(text="🍽 Кухня", callback_data=f"cln:{session_id}:zone:kitchen")],
+            [InlineKeyboardButton(text="🧸 Игрушки и детская", callback_data=f"cln:{session_id}:zone:kids")],
+            [InlineKeyboardButton(text="👚 Одежда и вещи", callback_data=f"cln:{session_id}:zone:clothes")],
+            [InlineKeyboardButton(text="🛋 Гостиная", callback_data=f"cln:{session_id}:zone:living")],
+            [InlineKeyboardButton(text="🌪 Понемногу везде", callback_data=f"cln:{session_id}:zone:everywhere")],
+        ]
+    elif stage == "duration":
+        rows = [[
+            InlineKeyboardButton(text=f"⏱ {minutes} минут", callback_data=f"cln:{session_id}:time:{minutes}")
+            for minutes in CHAOS_DURATIONS
+        ]]
+    else:
+        rows = [[
+            InlineKeyboardButton(text="🪫 Низкий", callback_data=f"cln:{session_id}:energy:low"),
+            InlineKeyboardButton(text="🌿 Обычный", callback_data=f"cln:{session_id}:energy:normal"),
+            InlineKeyboardButton(text="⚡️ Высокий", callback_data=f"cln:{session_id}:energy:high"),
+        ]]
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def chaos_step_keyboard(session_id: int, step_number: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="✅ Готово", callback_data=f"cln:{session_id}:done:{step_number}")],
+            [InlineKeyboardButton(text="🔄 Нужен другой шаг", callback_data=f"cln:{session_id}:alternate:{step_number}")],
+            [InlineKeyboardButton(text="🛑 На сегодня хватит", callback_data=f"cln:{session_id}:stop:{step_number}")],
+            [InlineKeyboardButton(text="🏠 В главное меню", callback_data=f"cln:{session_id}:home:{step_number}")],
+        ]
+    )
+
+
+async def start_chaos_flow(message: Message) -> None:
+    global chaos_session_counter, clean_banner_index
+    user_id = message.from_user.id if message.from_user else message.chat.id
+    previous = chaos_sessions.pop(user_id, None)
+    if previous and previous.get("timer_task"):
+        previous["timer_task"].cancel()
+
+    chaos_session_counter = (chaos_session_counter + 1) % 1000000
+    session_id = chaos_session_counter
+    chaos_sessions[user_id] = {
+        "id": session_id,
+        "stage": "zone",
+        "active": True,
+        "busy": False,
+        "step_number": 0,
+        "last_task": "",
+        "last_message": None,
+        "started_at": None,
+        "duration": None,
+        "timer_task": None,
+    }
+    banner_ids = BANNER_CLEAN[clean_banner_index:] + BANNER_CLEAN[:clean_banner_index]
+    clean_banner_index = (clean_banner_index + 1) % len(BANNER_CLEAN)
+    await answer_with_banner(
+        message,
+        "Давай разберём хаос маленькими шагами — без гонки и чувства вины 🌿\n\n<b>С чего начнём?</b>",
+        banner_ids,
+        reply_markup=chaos_keyboard(session_id, "zone"),
+        parse_mode=ParseMode.HTML,
+    )
+
+
+async def finish_chaos_flow(user_id: int, message: Message, session_id: int, timed_out: bool = False) -> None:
+    session = chaos_sessions.get(user_id)
+    if not session or session.get("id") != session_id or not session.get("active"):
+        return
+    session["active"] = False
+    timer_task = session.get("timer_task")
+    if timer_task and timer_task is not asyncio.current_task():
+        timer_task.cancel()
+    last_message = session.get("last_message")
+    if last_message is not None:
+        try:
+            await last_message.edit_reply_markup(reply_markup=None)
+        except Exception:
+            pass
+    chaos_sessions.pop(user_id, None)
+    if timed_out:
+        ending = "⏰ Время вышло — и этого достаточно! Ты уделила дому столько времени, сколько планировала. Остальное подождёт 💛"
+    else:
+        ending = "🌷 На сегодня достаточно. Даже один маленький шаг — уже вклад в уют. Не нужно доделывать всё сразу; теперь можно выдохнуть 💛"
+    await message.answer(ending, reply_markup=MENU_KEYBOARD)
+
+
+async def chaos_timer(user_id: int, session_id: int, duration: int, message: Message) -> None:
+    try:
+        await asyncio.sleep(duration * 60)
+        await finish_chaos_flow(user_id, message, session_id, timed_out=True)
+    except asyncio.CancelledError:
+        return
+
+
+def chaos_seconds_left(session: dict) -> int:
+    started_at = session.get("started_at")
+    duration = session.get("duration")
+    if started_at is None or duration is None:
+        return duration * 60 if duration else 0
+    return max(0, int(duration * 60 - (time.monotonic() - started_at)))
+
+
+async def generate_chaos_step(message: Message, user_id: int, session_id: int, alternate: bool = False) -> None:
+    session = chaos_sessions.get(user_id)
+    if not session or session.get("id") != session_id or not session.get("active"):
+        return
+    remaining = chaos_seconds_left(session)
+    if remaining <= 15:
+        await finish_chaos_flow(user_id, message, session_id, timed_out=True)
+        return
+
+    session["busy"] = True
+    session["step_number"] += 1
+    step_number = session["step_number"]
+    zone = CHAOS_ZONES[session["zone"]]
+    energy = CHAOS_ENERGIES[session["energy"]]
+    minutes_left = max(1, remaining // 60)
+    energy_rule = {
+        "low": "Задание особенно лёгкое, на 15–30 секунд, без наклонов, таскания тяжестей, сортировки больших куч и необходимости принимать много решений.",
+        "normal": "Одно небольшое действие примерно на 30–60 секунд.",
+        "high": "Одно конкретное действие примерно на 1–2 минуты, но без генеральной уборки.",
+    }[session["energy"]]
+    request_type = (
+        "Предложи ДРУГОЕ конкретное действие, не повторяя предыдущее и оставаясь в той же зоне."
+        if alternate else
+        "Предложи следующий один конкретный шаг. Не перечисляй следующие шаги и не объединяй несколько дел."
+    )
+    prompt = (
+        "Ты ведёшь интерактивную экспресс-уборку для уставшей мамы. "
+        f"Зона: {zone}. Выбранное время: {session['duration']} минут. "
+        f"Энергия: {energy}. По часам Python осталось примерно {minutes_left} минут "
+        f"({remaining} секунд). Это шаг №{step_number}. "
+        f"Предыдущий шаг: {session.get('last_task') or 'пока не было'}. "
+        f"{request_type} {energy_rule} "
+        "Учитывай оставшееся время: задача должна быть реально выполнима до конца таймера. "
+        "Если осталось меньше минуты, предложи совсем маленькое действие на несколько секунд. "
+        "Без стыда, перфекционизма и требований пройти обязательные этапы. "
+        "Не предлагай дедовские методы, соду, уксус, горчичный порошок или едкую химию. "
+        "Не упоминай Greenway и товары, если для конкретного действия нет естественной необходимости. "
+        "Если рекомендация средства действительно уместна, используй только подходящее зоне средство "
+        "из текущей эко-матрицы и кликабельную markdown-ссылку "
+        "[официальный эко-магазин](https://greenwayglobal.com/shop?gw=etJ4vRkF8D). "
+        "Не переходи к рецептам и не задавай вопросов о продуктах. "
+        "Ответь коротко: одно действие, максимум 2–3 предложения, без нумерованного списка."
+    )
+    try:
+        reply = await asyncio.to_thread(
+            generate_reply,
+            [text_user_content(prompt)],
+            user_names.get(user_id),
+        )
+        current = chaos_sessions.get(user_id)
+        if not current or current.get("id") != session_id or not current.get("active"):
+            return
+        if chaos_seconds_left(current) <= 0:
+            await finish_chaos_flow(user_id, message, session_id, timed_out=True)
+            return
+        if not reply:
+            reply = "Убери на место одну вещь в выбранной зоне — только одну, этого достаточно 🌿"
+        if "===SPLIT===" in reply:
+            sections = [part.strip() for part in reply.split("===SPLIT===") if part.strip()]
+            reply = sections[-1] if sections else reply
+        shop_url = "https://greenwayglobal.com/shop?gw=etJ4vRkF8D"
+        product_names = ("mystik", "инволвер", "green fiber", "biotrim", "биотрим")
+        if any(name in reply.lower() for name in product_names) and shop_url not in reply:
+            reply = reply.rstrip() + f"\n\n🌿 Посмотреть эти средства можно в [официальном эко-магазине]({shop_url})."
+        formatted = format_telegram_html(reply)
+        sent = await message.answer(
+            formatted,
+            reply_markup=chaos_step_keyboard(session_id, step_number),
+            parse_mode=ParseMode.HTML,
+        )
+        current["last_task"] = reply
+        current["last_message"] = sent
+    except Exception:
+        logger.exception("Could not generate cleanup step")
+        current = chaos_sessions.get(user_id)
+        if current and current.get("id") == session_id and current.get("active"):
+            await message.answer(
+                "Давай без лишних сложностей: убери на место одну вещь из выбранной зоны 🌿",
+                reply_markup=chaos_step_keyboard(session_id, session["step_number"]),
+            )
+    finally:
+        current = chaos_sessions.get(user_id)
+        if current and current.get("id") == session_id:
+            current["busy"] = False
+
+
+@dispatcher.callback_query(F.data.startswith("cln:"))
+async def process_chaos_callback(callback: CallbackQuery) -> None:
+    await callback.answer()
+    if callback.message is None or not callback.data:
+        return
+    parts = callback.data.split(":")
+    if len(parts) < 3:
+        return
+    try:
+        session_id = int(parts[1])
+    except ValueError:
+        return
+    action = parts[2]
+    message = callback.message
+    user_id = callback.from_user.id
+    session = chaos_sessions.get(user_id)
+    if not session or session.get("id") != session_id or not session.get("active"):
+        await message.answer("Эта кнопка уже устарела 🌿 Если захочешь начать заново, выбери «📦 Разгрести хаос» в меню.")
+        return
+    if session.get("busy"):
+        return
+
+    if action == "zone" and len(parts) == 4 and parts[3] in CHAOS_ZONES:
+        if session.get("stage") != "zone":
+            return
+        session["zone"] = parts[3]
+        session["stage"] = "duration"
+        await replace_callback_message(callback)
+        await message.answer("Сколько времени выделим на себя и дом?", reply_markup=chaos_keyboard(session_id, "duration"))
+        return
+
+    if action == "time" and len(parts) == 4 and parts[3].isdigit():
+        duration = int(parts[3])
+        if duration not in CHAOS_DURATIONS or session.get("stage") != "duration":
+            return
+        session["duration"] = duration
+        session["started_at"] = time.monotonic()
+        session["stage"] = "energy"
+        session["timer_task"] = asyncio.create_task(chaos_timer(user_id, session_id, duration, message))
+        await replace_callback_message(callback)
+        await message.answer("Сколько у тебя сейчас сил?", reply_markup=chaos_keyboard(session_id, "energy"))
+        return
+
+    if action == "energy" and len(parts) == 4 and parts[3] in CHAOS_ENERGIES:
+        if session.get("stage") != "energy":
+            return
+        session["energy"] = parts[3]
+        session["stage"] = "steps"
+        await replace_callback_message(callback)
+        await generate_chaos_step(message, user_id, session_id)
+        return
+
+    if action in {"done", "alternate", "stop", "home"}:
+        if session.get("stage") != "steps" or len(parts) != 4:
+            return
+        try:
+            clicked_step = int(parts[3])
+        except ValueError:
+            return
+        if clicked_step != session.get("step_number"):
+            await message.answer("Этот шаг уже сменился 🌿 Посмотри на последнее сообщение с актуальными кнопками.")
+            return
+        if action == "stop":
+            await replace_callback_message(callback)
+            await finish_chaos_flow(user_id, message, session_id)
+            return
+        if action == "home":
+            await replace_callback_message(callback)
+            await finish_chaos_flow(user_id, message, session_id)
+            await answer_with_banner(
+                message,
+                START_CAPTION,
+                BANNER_START,
+                reply_markup=inline_kb,
+                parse_mode=ParseMode.HTML,
+            )
+            return
+        await replace_callback_message(callback)
+        await generate_chaos_step(message, user_id, session_id, alternate=(action == "alternate"))
+
 
 @dispatcher.callback_query(F.data == "back_to_menu")
 async def process_back_to_menu(callback: CallbackQuery) -> None:
@@ -968,10 +1247,7 @@ async def handle_food_command(message: Message) -> None:
 
 @dispatcher.message(Command("chaos"))
 async def handle_chaos_command(message: Message) -> None:
-    global clean_banner_index
-    banner_ids = BANNER_CLEAN[clean_banner_index:] + BANNER_CLEAN[:clean_banner_index]
-    clean_banner_index = (clean_banner_index + 1) % len(BANNER_CLEAN)
-    await answer_with_gemini(message, MENU_BUTTONS[1], banner_ids=banner_ids)
+    await start_chaos_flow(message)
 
 
 @dispatcher.message(Command("plan"))
@@ -1042,11 +1318,6 @@ async def handle_text(message: Message) -> None:
             "В конце спроси, какие продукты уже есть дома, чтобы подобрать "
             "рецепт из них."
         ),
-        MENU_BUTTONS[1]: (
-            "Дай простой экспресс-план, как разобрать домашний хаос за 15 минут "
-            "без надрыва. Заверши коротким поддерживающим итогом или предложи "
-            "отдохнуть. Не задавай вопрос про продукты, холодильник или подбор блюда."
-        ),
         MENU_BUTTONS[2]: (
             "Составь спокойный, реалистичный план дня с учётом домашних дел "
             "и временем для отдыха."
@@ -1065,10 +1336,7 @@ async def handle_text(message: Message) -> None:
         return
 
     if prompt == MENU_BUTTONS[1]:
-        global clean_banner_index
-        banner_ids = BANNER_CLEAN[clean_banner_index:] + BANNER_CLEAN[:clean_banner_index]
-        clean_banner_index = (clean_banner_index + 1) % len(BANNER_CLEAN)
-        await answer_with_gemini(message, selected_prompt, banner_ids=banner_ids)
+        await start_chaos_flow(message)
         return
 
     await answer_with_gemini(message, selected_prompt)
