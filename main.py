@@ -44,7 +44,7 @@ VOICE_REPLY_INSTRUCTION = (
     "Прослушай голосовое сообщение пользователя и ответь на него по-русски, "
     "учитывая предыдущий контекст беседы."
 )
-BANNER_PHOTO_ID = "AgACAgIAAyEFAAMBA3oyOgADDGrJSeac9_uyb74Ox1F6RSoCnIOkAAKcIGsbm5xQSpIdI-xhc_hWAQADAgADdwADPQQ"
+BANNER_PHOTO_ID = "AgACAgIAAxkBAAIIL2rQhiE0ysuGPvBGRKM2DGmuKm8SAALSGGsbTc2JSv_n8D26j6uhAQADAgADeQADPQQ"
 
 # Горизонтальные баннеры Telegram. Позже сюда можно добавить несколько file_id на рубрику.
 BANNER_START = [BANNER_PHOTO_ID]  # стартовое приветствие
