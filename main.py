@@ -742,6 +742,15 @@ async def send_final_response(
     reply: str,
     banner_ids: list[str] | tuple[str, ...] | None = None,
 ) -> None:
+    # Если названы товары Greenway, добавляем ссылку, если Gemini её пропустил.
+    shop_url = "https://greenwayglobal.com/shop?gw=etJ4vRkF8D"
+    product_names = ("mystik", "инволвер", "green fiber", "biotrim", "биотрим")
+    reply_lower = reply.lower()
+    if any(name in reply_lower for name in product_names) and shop_url not in reply:
+        reply = reply.rstrip() + (
+            "\\n\\n🌿 Посмотреть эти средства можно в "
+            f"[официальном эко-магазине]({shop_url})."
+        )
     parts = [p.strip() for p in reply.split("===SPLIT===") if p.strip()]
     has_banner = choose_banner(banner_ids) is not None
     is_food_response = bool(banner_ids) and any(item in FOOD_BANNERS for item in banner_ids)
