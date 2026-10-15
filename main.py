@@ -213,6 +213,35 @@ CHAOS_ENERGIES = {
 }
 CHAOS_DURATIONS = (5, 10, 15)
 
+# Короткие конечные маршруты: прогрессом управляет код, а не свободная генерация Gemini.
+CHAOS_STEP_SEQUENCES = {
+    "kitchen": [
+        ("Убери со стола лишние вещи, которые легко разложить по местам.", "Собери крошки со стола влажной салфеткой."),
+        ("Протри столешницу влажной салфеткой.", "Протри ручки шкафчиков, до которых легко дотянуться."),
+        ("Убери одну оставшуюся вещь на место — и на сегодня с кухней достаточно.", "Протри обеденный стол и оставь его свободным."),
+    ],
+    "kids": [
+        ("Собери в одну корзину несколько крупных игрушек с пола.", "Убери на место книги или раскраски."),
+        ("Положи на место несколько книг или принадлежностей для творчества.", "Освободи небольшой участок пола от игрушек."),
+        ("Убери с прохода оставшиеся вещи — и на сегодня в детской достаточно.", "Поставь корзину с игрушками на место."),
+    ],
+    "clothes": [
+        ("Собери одежду для стирки в одну корзину.", "Повесь на место несколько чистых вещей."),
+        ("Сложи две-три вещи, которые легко убрать в шкаф.", "Разложи по местам несколько пар обуви или аксессуаров."),
+        ("Убери одну оставшуюся вещь на место — с одеждой на сегодня достаточно.", "Освободи стул или небольшую поверхность от вещей."),
+    ],
+    "living": [
+        ("Собери чашки и мелкие предметы, которые можно отнести на место.", "Убери с дивана вещи, которые там не должны лежать."),
+        ("Сложи плед и расправь подушки.", "Освободи небольшой участок журнального столика."),
+        ("Убери одну вещь с видимой поверхности — и на сегодня достаточно.", "Освободи проход в гостиной от лишних предметов."),
+    ],
+    "everywhere": [
+        ("Убери на место три вещи, которые сразу бросаются в глаза.", "Собери мелкие предметы в одну корзину."),
+        ("Освободи небольшой участок ближайшей поверхности.", "Отнеси на место одну вещь, которая оказалась не там."),
+        ("Убери ещё одну вещь с прохода — и на сегодня достаточно.", "Верни на место одну заметную вещь."),
+    ],
+}
+
 
 def append_history(user_id: int, user_content: types.Content, model_text: str) -> None:
     history = conversation_history_by_user.setdefault(user_id, [])
@@ -694,6 +723,7 @@ async def start_chaos_flow(message: Message) -> None:
         "active": True,
         "busy": False,
         "step_number": 0,
+        "step_index": 0,
         "last_task": "",
         "last_message": None,
         "started_at": None,
@@ -753,88 +783,67 @@ async def generate_chaos_step(message: Message, user_id: int, session_id: int, a
     session = chaos_sessions.get(user_id)
     if not session or session.get("id") != session_id or not session.get("active"):
         return
-    remaining = chaos_seconds_left(session)
-    if remaining <= 0:
+    if chaos_seconds_left(session) <= 0:
         await finish_chaos_flow(user_id, message, session_id, timed_out=True)
+        return
+
+    sequence = CHAOS_STEP_SEQUENCES.get(session.get("zone"), CHAOS_STEP_SEQUENCES["everywhere"])
+    session.setdefault("step_index", 0)
+    if session["step_index"] >= len(sequence):
+        session["stage"] = "zone_complete"
+        session["step_number"] += 1
+        await replace_last_chaos_message(session)
+        sent = await message.answer(
+            "🌿 В этой зоне на сегодня достаточно! Ты уже сделала несколько маленьких дел. Можем перейти в другую комнату или закончить уборку 💛",
+            reply_markup=chaos_zone_complete_keyboard(session_id, session["step_number"]),
+        )
+        session["last_message"] = sent
         return
 
     session["busy"] = True
     session["step_number"] += 1
     step_number = session["step_number"]
-    zone = CHAOS_ZONES[session["zone"]]
-    energy = CHAOS_ENERGIES[session["energy"]]
-    minutes_left = max(1, remaining // 60)
-    energy_rule = {
-        "low": "Задание особенно лёгкое, на 15–30 секунд, без наклонов, таскания тяжестей, сортировки больших куч и необходимости принимать много решений.",
-        "normal": "Одно небольшое действие примерно на 30–60 секунд.",
-        "high": "Одно конкретное действие примерно на 1–2 минуты, но без генеральной уборки.",
-    }[session["energy"]]
-    request_type = (
-        "Предложи ДРУГОЕ конкретное действие, не повторяя предыдущее и оставаясь в той же зоне."
-        if alternate else
-        "Предложи следующий один конкретный шаг. Не перечисляй следующие шаги и не объединяй несколько дел."
-    )
-    prompt = (
-        "Ты ведёшь интерактивную экспресс-уборку для уставшей мамы. "
-        f"Зона: {zone}. Выбранное время: {session['duration']} минут. "
-        f"Энергия: {energy}. По часам Python осталось примерно {minutes_left} минут "
-        f"({remaining} секунд). Это шаг №{step_number}. "
-        f"Предыдущий шаг: {session.get('last_task') or 'пока не было'}. "
-        f"{request_type} {energy_rule} "
-        "Учитывай оставшееся время: задача должна быть реально выполнима до конца таймера. "
-        "Если осталось меньше минуты, предложи совсем маленькое действие на несколько секунд. "
-        "Не называй шаг финальным, заключительным или последним и не утверждай, что порядок станет идеальным: пока таймер не закончился, уборка продолжается. " 
-        "После нажатия «Готово» предлагай следующее отдельное действие в выбранной зоне, не повторяя уже выполненное и не подводя итог уборке. " 
-        "Без стыда, перфекционизма и требований пройти обязательные этапы. "
-        "Не предлагай дедовские методы, соду, уксус, горчичный порошок или едкую химию. "
-        "Не упоминай Greenway и товары, если для конкретного действия нет естественной необходимости. "
-        "Если рекомендация средства действительно уместна, используй только подходящее зоне средство "
-        "из текущей эко-матрицы и кликабельную markdown-ссылку "
-        "[официальный эко-магазин](https://greenwayglobal.com/shop?gw=etJ4vRkF8D). "
-        "Не переходи к рецептам и не задавай вопросов о продуктах. "
-        "Ответь коротко: одно действие, максимум 2–3 предложения, без нумерованного списка."
-    )
+    primary, alternative_text = sequence[session["step_index"]]
+    task = alternative_text if alternate else primary
+    if alternate and task == session.get("last_task"):
+        task = primary if primary != session.get("last_task") else alternative_text
+    session["last_task"] = task
+    if session.get("energy") == "low":
+        task = "Если хочется совсем полегче: " + task
+    if chaos_seconds_left(session) < 60:
+        task += " Сделай только то, на что хватит оставшихся секунд — можно остановиться в любой момент."
+    footer = "Шаг на сегодня 🌿" if session["step_index"] == len(sequence) - 1 else "Когда закончишь, нажми «Готово» 🌿"
     try:
-        reply = await asyncio.to_thread(
-            generate_reply,
-            [text_user_content(prompt)],
-            user_names.get(user_id),
-        )
-        current = chaos_sessions.get(user_id)
-        if not current or current.get("id") != session_id or not current.get("active"):
-            return
-        if chaos_seconds_left(current) <= 0:
-            await finish_chaos_flow(user_id, message, session_id, timed_out=True)
-            return
-        if not reply:
-            reply = "Убери на место одну вещь в выбранной зоне — только одну, этого достаточно 🌿"
-        if "===SPLIT===" in reply:
-            sections = [part.strip() for part in reply.split("===SPLIT===") if part.strip()]
-            reply = sections[-1] if sections else reply
-        shop_url = "https://greenwayglobal.com/shop?gw=etJ4vRkF8D"
-        product_names = ("mystik", "инволвер", "green fiber", "biotrim", "биотрим")
-        if any(name in reply.lower() for name in product_names) and shop_url not in reply:
-            reply = reply.rstrip() + f"\n\n🌿 Посмотреть эти средства можно в [официальном эко-магазине]({shop_url})."
-        formatted = format_telegram_html(reply)
         sent = await message.answer(
-            formatted,
+            task + "\n\n" + footer,
             reply_markup=chaos_step_keyboard(session_id, step_number),
-            parse_mode=ParseMode.HTML,
         )
-        current["last_task"] = reply
-        current["last_message"] = sent
+        session["last_message"] = sent
     except Exception:
-        logger.exception("Could not generate cleanup step")
-        current = chaos_sessions.get(user_id)
-        if current and current.get("id") == session_id and current.get("active"):
-            await message.answer(
-                "Давай без лишних сложностей: убери на место одну вещь из выбранной зоны 🌿",
-                reply_markup=chaos_step_keyboard(session_id, session["step_number"]),
-            )
+        logger.exception("Could not send cleanup step")
     finally:
         current = chaos_sessions.get(user_id)
         if current and current.get("id") == session_id:
             current["busy"] = False
+
+
+async def replace_last_chaos_message(session: dict) -> None:
+    last_message = session.get("last_message")
+    if last_message is not None:
+        try:
+            await last_message.edit_reply_markup(reply_markup=None)
+        except Exception:
+            pass
+
+
+def chaos_zone_complete_keyboard(session_id: int, step_number: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="➡️ Следующая комната", callback_data=f"cln:{session_id}:next_room:{step_number}")],
+            [InlineKeyboardButton(text="🛑 На сегодня хватит", callback_data=f"cln:{session_id}:stop:{step_number}")],
+            [InlineKeyboardButton(text="🏠 В главное меню", callback_data=f"cln:{session_id}:home:{step_number}")],
+        ]
+    )
 
 
 @dispatcher.callback_query(F.data.startswith("cln:"))
@@ -896,13 +905,16 @@ async def process_chaos_callback(callback: CallbackQuery) -> None:
             await finish_chaos_flow(user_id, message, session_id, timed_out=True)
             return
         session["zone"] = parts[3]
+        session["step_index"] = 0
         session["stage"] = "steps"
         await replace_callback_message(callback)
         await generate_chaos_step(message, user_id, session_id)
         return
 
     if action in {"done", "next_room", "alternate", "stop", "home"}:
-        if session.get("stage") != "steps" or len(parts) != 4:
+        if session.get("stage") not in {"steps", "zone_complete"} or len(parts) != 4:
+            return
+        if action in {"done", "alternate"} and session.get("stage") != "steps":
             return
         try:
             clicked_step = int(parts[3])
@@ -929,6 +941,11 @@ async def process_chaos_callback(callback: CallbackQuery) -> None:
                 parse_mode=ParseMode.HTML,
             )
             return
+        if action == "done":
+            await replace_callback_message(callback)
+            session["step_index"] += 1
+            await generate_chaos_step(message, user_id, session_id)
+            return
         if action == "next_room":
             await replace_callback_message(callback)
             session["stage"] = "next_zone"
@@ -939,7 +956,8 @@ async def process_chaos_callback(callback: CallbackQuery) -> None:
             session["last_message"] = zone_message
             return
         await replace_callback_message(callback)
-        await generate_chaos_step(message, user_id, session_id, alternate=(action == "alternate"))
+        if action == "alternate":
+            await generate_chaos_step(message, user_id, session_id, alternate=True)
 
 
 @dispatcher.callback_query(F.data == "back_to_menu")
