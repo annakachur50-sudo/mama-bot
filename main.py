@@ -951,7 +951,10 @@ async def handle_voice_message(message: Message) -> None:
 
 @dispatcher.message(Command("food"))
 async def handle_food_command(message: Message) -> None:
-    await answer_with_gemini(message, MENU_BUTTONS[0])
+    global food_banner_index
+    banner_ids = FOOD_BANNERS[food_banner_index:] + FOOD_BANNERS[:food_banner_index]
+    food_banner_index = (food_banner_index + 1) % len(FOOD_BANNERS)
+    await answer_with_gemini(message, MENU_BUTTONS[0], banner_ids=banner_ids)
 
 
 @dispatcher.message(Command("chaos"))
