@@ -754,7 +754,7 @@ async def generate_chaos_step(message: Message, user_id: int, session_id: int, a
     if not session or session.get("id") != session_id or not session.get("active"):
         return
     remaining = chaos_seconds_left(session)
-    if remaining <= 15:
+    if remaining <= 0:
         await finish_chaos_flow(user_id, message, session_id, timed_out=True)
         return
 
