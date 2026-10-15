@@ -986,13 +986,6 @@ async def process_chaos_callback(callback: CallbackQuery) -> None:
         if action == "home":
             await replace_callback_message(callback)
             await finish_chaos_flow(user_id, message, session_id)
-            await answer_with_banner(
-                message,
-                START_CAPTION,
-                BANNER_START,
-                reply_markup=inline_kb,
-                parse_mode=ParseMode.HTML,
-            )
             return
         if action == "next_room":
             await replace_callback_message(callback)
