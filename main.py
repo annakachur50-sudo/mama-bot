@@ -61,6 +61,7 @@ FOOD_BANNERS = [
     "AgACAgIAAxkBAAIHeWrOdXa5ClMWHVD_LwRaLGoMljUOAALwJGsbG09wSnYh7UBPJXpqAQADAgADdwADPQQ",
 ]
 food_banner_index = 0
+clean_banner_index = 0
 BANNER_FOOD = FOOD_BANNERS  # накормить семью
 BANNER_CLEAN = [
     "AgACAgIAAxkBAAIIIWrQgWw6fOaSSXAOByRN0S2mBFTwAAK6GGsbTc2JSrXbPtBeRa9eAQADAgADdwADPQQ",
@@ -594,6 +595,15 @@ async def process_start_action(callback: CallbackQuery) -> None:
                 + FOOD_BANNERS[:food_banner_index]
             )
             food_banner_index = (food_banner_index + 1) % len(FOOD_BANNERS)
+        elif callback.data == "menu_clean" and BANNER_CLEAN:
+            global clean_banner_index
+            # Картинки уборки идут по кругу, по одной на каждое обращение.
+            # Если один file_id не сработает, функция попробует следующие.
+            banner_ids = (
+                BANNER_CLEAN[clean_banner_index:]
+                + BANNER_CLEAN[:clean_banner_index]
+            )
+            clean_banner_index = (clean_banner_index + 1) % len(BANNER_CLEAN)
 
         await replace_callback_message(callback)
         await answer_with_gemini(
