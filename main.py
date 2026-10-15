@@ -214,46 +214,67 @@ CHAOS_ENERGIES = {
 CHAOS_DURATIONS = (5, 10, 15)
 
 # Короткие конечные маршруты: прогрессом управляет код, а не свободная генерация Gemini.
+# Concrete task pools; session state and timer are managed by Python.
 CHAOS_STEP_SEQUENCES = {
     "kitchen": [
-        ("Унеси с кухонного стола кружки и тарелки в раковину.", "Выброси мусор, который уже лежит на столе."),
-        ("Убери со стола продукты и упаковки на их обычные места.", "Собери крошки со стола влажной салфеткой."),
-        ("Протри кухонный стол влажной салфеткой.", "Протри ручки двух-трёх кухонных шкафчиков."),
-        ("Убери чистую посуду, если она уже высохла.", "Освободи одну небольшую часть столешницы."),
-        ("Собери мусор из видимой части кухни и выброси его.", "Поставь специи или продукты, которые стоят не на месте, обратно."),
-        ("Быстро протри раковину и смеситель.", "Оставь обеденный стол чистым и свободным."),
+        "Унеси кружки и тарелки в раковину.",
+        "Убери продукты и упаковки со стола на места.",
+        "Выброси видимый мусор и пустые упаковки.",
+        "Собери крошки со стола влажной салфеткой.",
+        "Протри кухонный стол.",
+        "Убери чистую посуду, если она высохла.",
+        "Освободи один небольшой участок столешницы.",
+        "Протри раковину и смеситель.",
+        "Верни специи и продукты, которые стоят не на месте, в шкаф.",
+        "Протри ручки двух-трёх кухонных шкафчиков.",
     ],
     "kids": [
-        ("Собери крупные игрушки с пола в одну корзину.", "Сложи кубики или конструктор в его коробку."),
-        ("Положи детские книги на одну полку.", "Собери карандаши и фломастеры в стакан или пенал."),
-        ("Убери с пола одежду и положи её в корзину для стирки.", "Сложи плед или покрывало на детской кровати."),
-        ("Собери мелкие игрушки в коробку, не сортируя их.", "Освободи один небольшой участок пола от вещей."),
-        ("Убери со стола для занятий то, что уже не нужно.", "Поставь обувь у двери парами."),
-        ("Верни на место три оставшиеся игрушки.", "Быстро поправь подушки или покрывало на кровати."),
+        "Собери крупные игрушки в одну корзину.",
+        "Сложи кубики или конструктор в коробку.",
+        "Положи детские книги на одну полку.",
+        "Собери карандаши и фломастеры в пенал или стакан.",
+        "Убери одежду с пола в корзину для стирки.",
+        "Сложи плед или покрывало на кровати.",
+        "Собери мелкие игрушки в коробку, не сортируя.",
+        "Освободи небольшой участок пола.",
+        "Убери со стола для занятий то, что уже не нужно.",
+        "Поставь обувь у двери парами.",
     ],
     "clothes": [
-        ("Собери грязную одежду в корзину для стирки.", "Повесь на место две чистые вещи."),
-        ("Сложи две-три вещи, которые уже можно убрать.", "Поставь обувь парами у стены или в обувницу."),
-        ("Собери носки в одну пару, а одиночные отложи отдельно.", "Убери сумки и рюкзаки на их обычные места."),
-        ("Освободи один стул от одежды: чистое повесь, грязное — в корзину.", "Сложи домашнюю одежду в одну стопку."),
-        ("Убери аксессуары в одну коробку или ящик.", "Развесь вещи, которые мнутся и уже готовы к шкафу."),
-        ("Убери на место ещё три вещи, которые лежат снаружи.", "Освободи небольшой участок пола от одежды и обуви."),
+        "Собери грязную одежду в корзину для стирки.",
+        "Повесь на место две чистые вещи.",
+        "Сложи две-три вещи, которые уже можно убрать.",
+        "Поставь обувь парами у стены или в обувницу.",
+        "Собери носки в пары, одиночные отложи отдельно.",
+        "Убери сумки и рюкзаки на обычные места.",
+        "Освободи один стул от одежды: чистое повесь, грязное — в корзину.",
+        "Сложи домашнюю одежду в одну стопку.",
+        "Убери аксессуары в коробку или ящик.",
+        "Освободи небольшой участок пола от одежды и обуви.",
     ],
     "living": [
-        ("Отнеси чашки и тарелки из гостиной на кухню.", "Убери с дивана вещи, которые там не должны лежать."),
-        ("Сложи плед и расправь подушки на диване.", "Собери пульты и мелочи в одно постоянное место."),
-        ("Убери журналы и книги на полку или в стопку.", "Протри журнальный столик влажной салфеткой."),
-        ("Собери мусор, который виден в гостиной, и выброси его.", "Убери с кресла или стула вещи, которые там лежат."),
-        ("Поставь обувь и сумки у входа на свои места.", "Освободи одну небольшую поверхность от лишних предметов."),
-        ("Быстро поправь диван и подушки.", "Отнеси на место три вещи, которые ещё остались в гостиной."),
+        "Отнеси чашки и тарелки из гостиной на кухню.",
+        "Убери с дивана вещи, которые там не должны лежать.",
+        "Сложи плед и расправь подушки на диване.",
+        "Собери пульты и мелочи в одно постоянное место.",
+        "Убери журналы и книги на полку или в стопку.",
+        "Протри журнальный столик влажной салфеткой.",
+        "Собери видимый мусор и выброси его.",
+        "Убери вещи с кресла или стула.",
+        "Освободи одну небольшую поверхность от лишнего.",
+        "Отнеси на место три вещи, оставшиеся в гостиной.",
     ],
     "everywhere": [
-        ("Возьми кружки и тарелки, которые стоят не на кухне, и отнеси их на кухню.", "Собери весь видимый мусор в одну корзину и выброси."),
-        ("Подними с пола три вещи и положи каждую на её обычное место.", "Собери разбросанные мелочи в одну корзинку, не сортируя."),
-        ("Освободи одну конкретную поверхность — например, обеденный или журнальный стол — от лишних вещей.", "Сложи плед и расправь подушки на диване или кровати."),
-        ("Собери грязную одежду, которую видишь, и отнеси в корзину для стирки.", "Поставь обувь у входа парами."),
-        ("Отнеси книги и игрушки туда, где они обычно хранятся.", "Убери со стула одежду: чистую повесь, грязную положи в корзину."),
-        ("Протри влажной салфеткой одну свободную поверхность, которую только что расчистила.", "Выбери три заметные вещи и верни их на привычные места."),
+        "Отнеси кружки и тарелки, которые стоят не на кухне, на кухню.",
+        "Собери видимый мусор и выброси его.",
+        "Подними с пола три вещи и положи на привычные места.",
+        "Собери разбросанные мелочи в корзинку, не сортируя.",
+        "Освободи один стол от лишних вещей.",
+        "Сложи плед и расправь подушки на диване или кровати.",
+        "Собери грязную одежду в корзину для стирки.",
+        "Поставь обувь у входа парами.",
+        "Отнеси книги и игрушки туда, где они обычно хранятся.",
+        "Протри влажной салфеткой одну освобождённую поверхность.",
     ],
 }
 
@@ -695,10 +716,9 @@ def chaos_keyboard(session_id: int, stage: str) -> InlineKeyboardMarkup:
 def chaos_step_keyboard(session_id: int, step_number: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="✅ Готово", callback_data=f"cln:{session_id}:done:{step_number}")],
             [InlineKeyboardButton(text="➡️ Следующая комната", callback_data=f"cln:{session_id}:next_room:{step_number}")],
-            [InlineKeyboardButton(text="🔄 Нужен другой шаг", callback_data=f"cln:{session_id}:alternate:{step_number}")],
-            [InlineKeyboardButton(text="🛑 На сегодня хватит", callback_data=f"cln:{session_id}:stop:{step_number}")],
+            [InlineKeyboardButton(text="🔄 Ещё немного здесь", callback_data=f"cln:{session_id}:more:{step_number}")],
+            [InlineKeyboardButton(text="☕ На сегодня хватит", callback_data=f"cln:{session_id}:stop:{step_number}")],
             [InlineKeyboardButton(text="🏠 В главное меню", callback_data=f"cln:{session_id}:home:{step_number}")],
         ]
     )
@@ -795,9 +815,13 @@ def chaos_seconds_left(session: dict) -> int:
 
 
 def chaos_target_steps(session: dict, sequence: list) -> int:
-    """Количество шагов зависит от выбранного времени: 5/10/15 минут."""
+    """Количество действий зависит от времени и энергии."""
     duration = session.get("duration", 5)
-    target = {5: 2, 10: 4, 15: 6}.get(duration, 2)
+    target = {5: 4, 10: 6, 15: 8}.get(duration, 4)
+    if session.get("energy") == "low":
+        target = max(2, target - 2)
+    elif session.get("energy") == "high":
+        target = min(len(sequence), target + 1)
     return min(len(sequence), target)
 
 
@@ -809,41 +833,49 @@ async def generate_chaos_step(message: Message, user_id: int, session_id: int, a
         await finish_chaos_flow(user_id, message, session_id, timed_out=True)
         return
 
-    sequence = CHAOS_STEP_SEQUENCES.get(session.get("zone"), CHAOS_STEP_SEQUENCES["everywhere"])
-    session.setdefault("step_index", 0)
-    target_steps = chaos_target_steps(session, sequence)
-    if session["step_index"] >= target_steps:
-        session["stage"] = "zone_complete"
-        session["step_number"] += 1
-        await replace_last_chaos_message(session)
-        sent = await message.answer(
-            "🌿 В этой зоне на сегодня достаточно! Ты уже сделала несколько маленьких дел. Можем перейти в другую комнату или закончить уборку 💛",
-            reply_markup=chaos_zone_complete_keyboard(session_id, session["step_number"]),
-        )
-        session["last_message"] = sent
+    zone = session.get("zone", "everywhere")
+    sequence = CHAOS_STEP_SEQUENCES.get(zone, CHAOS_STEP_SEQUENCES["everywhere"])
+    used_by_zone = session.setdefault("used_tasks", {}).setdefault(zone, [])
+    available = [task for task in sequence if task not in used_by_zone]
+    if not available:
+        # Start a fresh cycle only after every task in this zone was shown once.
+        used_by_zone.clear()
+        available = list(sequence)
+    target_steps = min(chaos_target_steps(session, sequence), len(available))
+    remaining = chaos_seconds_left(session)
+    if remaining <= 0:
+        await finish_chaos_flow(user_id, message, session_id, timed_out=True)
         return
 
     session["busy"] = True
     session["step_number"] += 1
     step_number = session["step_number"]
-    primary, alternative_text = sequence[session["step_index"]]
-    task = alternative_text if alternate else primary
-    if alternate and task == session.get("last_task"):
-        task = primary if primary != session.get("last_task") else alternative_text
-    session["last_task"] = task
+    count = target_steps
+    if remaining < 120:
+        count = min(count, 2 if session.get("energy") == "low" else 3)
+    tasks = available[:count]
+    used_by_zone.extend(tasks)
+    session["last_tasks"] = tasks
+    session["stage"] = "steps"
+    title = f"🧹 <b>{CHAOS_ZONES.get(zone, 'дом')}</b> — твой мини-план"
+    task_lines = [f"{index}. {task}" for index, task in enumerate(tasks, start=1)]
     if session.get("energy") == "low":
-        task = "Если хочется совсем полегче: " + task
-    if chaos_seconds_left(session) < 60:
-        task += " Сделай только то, на что хватит оставшихся секунд — можно остановиться в любой момент."
-    footer = "Последний шаг на выбранное время 🌿" if session["step_index"] == target_steps - 1 else "Когда закончишь, нажми «Готово» 🌿"
+        intro = "Выбирай только то, на что сейчас хватает сил. Можно остановиться после любого пункта 💛"
+    else:
+        intro = "Делай по порядку или выбирай любой пункт — без гонки 🌿"
+    if remaining < 60:
+        intro += "\\n\\n⏳ Времени осталось совсем немного — сделай один небольшой шаг или просто выдохни."
+    text = title + "\\n\\n" + intro + "\\n\\n" + "\\n".join(task_lines)
     try:
+        await replace_last_chaos_message(session)
         sent = await message.answer(
-            task + "\n\n" + footer,
+            text,
             reply_markup=chaos_step_keyboard(session_id, step_number),
+            parse_mode=ParseMode.HTML,
         )
         session["last_message"] = sent
     except Exception:
-        logger.exception("Could not send cleanup step")
+        logger.exception("Could not send cleanup task list")
     finally:
         current = chaos_sessions.get(user_id)
         if current and current.get("id") == session_id:
@@ -934,7 +966,7 @@ async def process_chaos_callback(callback: CallbackQuery) -> None:
         await generate_chaos_step(message, user_id, session_id)
         return
 
-    if action in {"done", "next_room", "alternate", "stop", "home"}:
+    if action in {"next_room", "more", "stop", "home"}:
         if session.get("stage") not in {"steps", "zone_complete"} or len(parts) != 4:
             return
         if action in {"done", "alternate"} and session.get("stage") != "steps":
