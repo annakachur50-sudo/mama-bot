@@ -652,11 +652,31 @@ def chaos_step_keyboard(session_id: int, step_number: int) -> InlineKeyboardMark
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="✅ Готово", callback_data=f"cln:{session_id}:done:{step_number}")],
+            [InlineKeyboardButton(text="➡️ Следующая комната", callback_data=f"cln:{session_id}:next_room:{step_number}")],
             [InlineKeyboardButton(text="🔄 Нужен другой шаг", callback_data=f"cln:{session_id}:alternate:{step_number}")],
             [InlineKeyboardButton(text="🛑 На сегодня хватит", callback_data=f"cln:{session_id}:stop:{step_number}")],
             [InlineKeyboardButton(text="🏠 В главное меню", callback_data=f"cln:{session_id}:home:{step_number}")],
         ]
     )
+
+
+def chaos_next_zone_keyboard(session_id: int, current_zone: str) -> InlineKeyboardMarkup:
+    zone_labels = {
+        "kitchen": "🍽 Кухня",
+        "kids": "🧸 Игрушки и детская",
+        "clothes": "👚 Одежда и вещи",
+        "living": "🛋 Гостиная",
+        "everywhere": "🌪 Понемногу везде",
+    }
+    rows = [
+        [InlineKeyboardButton(
+            text=zone_labels[zone],
+            callback_data=f"cln:{session_id}:nextzone:{zone}",
+        )]
+        for zone in CHAOS_ZONES
+        if zone != current_zone
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 async def start_chaos_flow(message: Message) -> None:
@@ -867,7 +887,19 @@ async def process_chaos_callback(callback: CallbackQuery) -> None:
         await generate_chaos_step(message, user_id, session_id)
         return
 
-    if action in {"done", "alternate", "stop", "home"}:
+    if action == "nextzone" and len(parts) == 4 and parts[3] in CHAOS_ZONES:
+        if session.get("stage") != "next_zone" or parts[3] == session.get("zone"):
+            return
+        if chaos_seconds_left(session) <= 0:
+            await finish_chaos_flow(user_id, message, session_id, timed_out=True)
+            return
+        session["zone"] = parts[3]
+        session["stage"] = "steps"
+        await replace_callback_message(callback)
+        await generate_chaos_step(message, user_id, session_id)
+        return
+
+    if action in {"done", "next_room", "alternate", "stop", "home"}:
         if session.get("stage") != "steps" or len(parts) != 4:
             return
         try:
@@ -876,6 +908,9 @@ async def process_chaos_callback(callback: CallbackQuery) -> None:
             return
         if clicked_step != session.get("step_number"):
             await message.answer("Этот шаг уже сменился 🌿 Посмотри на последнее сообщение с актуальными кнопками.")
+            return
+        if chaos_seconds_left(session) <= 0:
+            await finish_chaos_flow(user_id, message, session_id, timed_out=True)
             return
         if action == "stop":
             await replace_callback_message(callback)
@@ -891,6 +926,15 @@ async def process_chaos_callback(callback: CallbackQuery) -> None:
                 reply_markup=inline_kb,
                 parse_mode=ParseMode.HTML,
             )
+            return
+        if action == "next_room":
+            await replace_callback_message(callback)
+            session["stage"] = "next_zone"
+            zone_message = await message.answer(
+                "Куда отправимся дальше? Выбери другую зону — время и силы сохраняются 🌿",
+                reply_markup=chaos_next_zone_keyboard(session_id, session["zone"]),
+            )
+            session["last_message"] = zone_message
             return
         await replace_callback_message(callback)
         await generate_chaos_step(message, user_id, session_id, alternate=(action == "alternate"))
