@@ -610,7 +610,12 @@ async def process_start_action(callback: CallbackQuery) -> None:
         banner_ids = banners_map.get(callback.data)
         if callback.data == "menu_food" and FOOD_BANNERS:
             global food_banner_index
-            banner_ids = FOOD_BANNERS[food_banner_index:] + FOOD_BANNERS[:food_banner_index]
+            # Передаём все баннеры, начиная с очередного, чтобы при ошибке
+            # одного Telegram file_id функция answer_with_banner попробовала остальные.
+            banner_ids = (
+                FOOD_BANNERS[food_banner_index:]
+                + FOOD_BANNERS[:food_banner_index]
+            )
             food_banner_index = (food_banner_index + 1) % len(FOOD_BANNERS)
 
         await replace_callback_message(callback)
