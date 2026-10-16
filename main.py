@@ -1149,7 +1149,7 @@ async def send_final_response(
         if p.strip()
     ]
     if ignore_split:
-        parts = ["\n\n".join(parts)] if parts else [re.sub(r"===SPLIT===?", "", reply).strip()]
+        parts = ["\n\n".join(parts)] if parts else [re.sub(r"===SPLIT(?:===)?", "", reply).strip()]
     is_food_response = food_followup or (
         bool(banner_ids) and any(item in FOOD_BANNERS for item in banner_ids)
     )
@@ -1163,7 +1163,7 @@ async def send_final_response(
     )
 
     if len(parts) <= 1:
-        display_reply = re.sub(r"===SPLIT===?", "", parts[0] if parts else reply).strip()
+        display_reply = re.sub(r"===SPLIT(?:===)?", "", parts[0] if parts else reply).strip()
         chunks = split_response(display_reply, limit=chunk_limit)
         for idx, chunk in enumerate(chunks):
             is_last = idx == len(chunks) - 1
@@ -1185,8 +1185,8 @@ async def send_final_response(
                 )
         return
 
-    intro_text = re.sub(r"===SPLIT===?", "", parts[0]).strip()
-    details_text = re.sub(r"===SPLIT===?", "", "\n\n".join(parts[1:])).strip()
+    intro_text = re.sub(r"===SPLIT(?:===)?", "", parts[0]).strip()
+    details_text = re.sub(r"===SPLIT(?:===)?", "", "\n\n".join(parts[1:])).strip()
     expand_keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="📖 Развернуть подробнее", callback_data="expand_details")]
@@ -1243,6 +1243,7 @@ async def process_another_food(callback: CallbackQuery) -> None:
         prompt,
         request_user_id=callback.from_user.id,
         food_followup=True,
+        ignore_split=True,
     )
 
 
@@ -1389,7 +1390,7 @@ async def handle_chaos_command(message: Message) -> None:
 
 async def start_plan_flow(message: Message) -> None:
     intro = (
-        "📋 <b>День по полочкам</b> 🌿\\n\\n"
+        "📋 <b>День по полочкам</b> 🌿\n\n"
         "Соберём мягкий, гибкий план для тебя: забота о детях, важные дела и "
         "немного времени на себя. Это ориентир, а не расписание, которому нужно "
         "обязательно соответствовать 💛"
