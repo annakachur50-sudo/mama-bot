@@ -1132,6 +1132,7 @@ async def send_final_response(
     banner_ids: list[str] | tuple[str, ...] | None = None,
     food_followup: bool = False,
     ignore_split: bool = False,
+    plan_flow: bool = False,
 ) -> None:
     # Если названы товары Greenway, добавляем ссылку, если Gemini её пропустил.
     shop_url = "https://greenwayglobal.com/shop?gw=etJ4vRkF8D"
@@ -1154,6 +1155,33 @@ async def send_final_response(
         bool(banner_ids) and any(item in FOOD_BANNERS for item in banner_ids)
     )
     has_banner = choose_banner(banner_ids) is not None
+
+    if plan_flow:
+        details_text = "\\n\\n".join(parts).strip() if parts else re.sub(r"===SPLIT(?:===)?", "", reply).strip()
+        pending_details[message.chat.id] = details_text
+        pending_details_food.discard(message.chat.id)
+        intro = (
+            "📋 <b>День по полочкам</b> 🌿\\n\\n"
+            "Соберём мягкий, гибкий план для тебя: забота о детях, важные дела и "
+            "немного времени на себя. Это ориентир, а не расписание, которому нужно "
+            "обязательно соответствовать 💛"
+        )
+        expand_keyboard = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="📖 Развернуть подробнее", callback_data="expand_details")]
+            ]
+        )
+        plan_banners = [item for item in BANNER_PLAN if item and item.strip()]
+        if plan_banners:
+            await answer_with_banner(
+                message, intro, plan_banners,
+                reply_markup=expand_keyboard, parse_mode=ParseMode.HTML,
+            )
+        else:
+            await message.answer(
+                intro, reply_markup=expand_keyboard, parse_mode=ParseMode.HTML,
+            )
+        return
     # При баннере держим первую подпись в пределах лимита Telegram для caption.
     chunk_limit = 900 if has_banner else TELEGRAM_CHUNK_SIZE
     another_food_keyboard = InlineKeyboardMarkup(
@@ -1294,6 +1322,7 @@ async def answer_with_gemini(
     request_user_id: int | None = None,
     food_followup: bool = False,
     ignore_split: bool = False,
+    plan_flow: bool = False,
 ) -> None:
     user_id = request_user_id or (message.from_user.id if message.from_user else message.chat.id)
     if prompt is None and voice_file_id is None:
@@ -1352,6 +1381,7 @@ async def answer_with_gemini(
                 banner_ids=banner_ids,
                 food_followup=food_followup,
                 ignore_split=ignore_split,
+                plan_flow=plan_flow,
             )
         except Exception as general_error:
             logger.exception(
@@ -1389,30 +1419,11 @@ async def handle_chaos_command(message: Message) -> None:
 
 
 async def start_plan_flow(message: Message) -> None:
-    intro = (
-        "📋 <b>День по полочкам</b> 🌿\n\n"
-        "Соберём мягкий, гибкий план для тебя: забота о детях, важные дела и "
-        "немного времени на себя. Это ориентир, а не расписание, которому нужно "
-        "обязательно соответствовать 💛"
-    )
-    # Пока тематическая картинка не подключена, отправляем только текст.
-    # Когда BANNER_PLAN получит реальные file_id, вводный блок автоматически
-    # будет отправляться подписью к изображению.
-    plan_banners = [item for item in BANNER_PLAN if item and item.strip()]
-    if plan_banners:
-        await answer_with_banner(
-            message,
-            intro,
-            plan_banners,
-            parse_mode=ParseMode.HTML,
-        )
-    else:
-        await message.answer(intro, parse_mode=ParseMode.HTML)
-
     await answer_with_gemini(
         message,
-        "Составь тёплый и гибкий план именно для мамы: блоки заботы о детях, домашних дел и отдыха. Учитывай только известный контекст о возрасте детей, режиме, школе, садике и занятиях. Если известен младенец или малыш, оставь гибкие окна для кормлений, прогулки и возможного сна; не рассчитывай, что ребёнок долго займёт себя сам. Если возраст и режим неизвестны, не выдумывай их — предложи общий гибкий план для мамы. Время — ориентир: разрешай переносить дела, менять порядок и сокращать список. Отдых важнее списка задач; не обещай успеть всё и не вызывай чувство вины. Если действительно нужно уточнение, задай один короткий вопрос. Не используй фразу «пока все домашние ещё раскачиваются» и не предполагай наличие других членов семьи. Не добавляй автоматическую рекламу Greenway. Выведи подробный план дня целиком, не дели его на краткое вступление и скрытые подробности.",
+        "Составь тёплый и гибкий план именно для мамы: блоки заботы о детях, домашних дел и отдыха. Учитывай только известный контекст о возрасте детей, режиме, школе, садике и занятиях. Если известен младенец или малыш, оставь гибкие окна для кормлений, прогулки и возможного сна; не рассчитывай, что ребёнок долго займёт себя сам. Если возраст и режим неизвестны, не выдумывай их — предложи общий гибкий план для мамы. Время — ориентир: разрешай переносить дела, менять порядок и сокращать список. Отдых важнее списка задач; не обещай успеть всё и не вызывай чувство вины. Если действительно нужно уточнение, задай один короткий вопрос. Не используй фразу «пока все домашние ещё раскачиваются» и не предполагай наличие других членов семьи. Не добавляй автоматическую рекламу Greenway. Выведи подробный план дня целиком, без вводного приветствия, чтобы он открылся отдельным сообщением после нажатия кнопки.",
         ignore_split=True,
+        plan_flow=True,
     )
 
 
