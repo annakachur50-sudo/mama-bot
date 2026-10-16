@@ -661,7 +661,7 @@ async def process_start_action(callback: CallbackQuery) -> None:
 
     prompts_map = {
         "menu_food": "Предложи разнообразное, простое и недорогое блюдо для всей семьи из обычных продуктов. Минимум активного времени у плиты, желательно 15-30 минут. Не повторяй блюда из нашей предыдущей переписки. В конце спроси, какие продукты уже есть дома, чтобы подобрать рецепт из них.",
-        "menu_plan": "Составь тёплый и гибкий план именно для мамы: блоки заботы о детях, домашних дел и отдыха. Учитывай только известный контекст о возрасте детей, режиме, школе, садике и занятиях. Если известен младенец или малыш, оставь гибкие окна для кормлений, прогулки и возможного сна; не рассчитывай, что ребёнок долго займёт себя сам. Если возраст и режим неизвестны, не выдумывай их — предложи общий гибкий план для мамы. Время — ориентир: разреши переносить дела, менять порядок и сокращать список. Отдых важнее списка задач; не обещай успеть всё, не вызывай чувство вины. Если действительно нужно уточнение, задай один короткий вопрос. Без автоматической рекламы Greenway.",
+        "menu_plan": "Составь тёплый и гибкий план именно для мамы: блоки заботы о детях, домашних дел и отдыха. Учитывай только известный контекст о возрасте детей, режиме, школе, садике и занятиях. Если известен младенец или малыш, оставь гибкие окна для кормлений, прогулки и возможного сна; не рассчитывай, что ребёнок долго займёт себя сам. Если возраст и режим неизвестны, не выдумывай их — предложи общий гибкий план для мамы. Время — ориентир: разрешай переносить дела, менять порядок и сокращать список. Отдых важнее списка задач; не обещай успеть всё и не вызывай чувство вины. Если действительно нужно уточнение, задай один короткий вопрос. Не используй фразу «пока все домашние ещё раскачиваются» и не предполагай наличие других членов семьи. Не добавляй автоматическую рекламу Greenway. Выведи подробный план дня целиком, не дели его на краткое вступление и скрытые подробности.",
         "menu_support": "Мне сейчас тяжело, устала от быта и детей. Поддержи меня тепло, как подруга.",
     }
     banners_map = {
@@ -684,11 +684,14 @@ async def process_start_action(callback: CallbackQuery) -> None:
             food_banner_index = (food_banner_index + 1) % len(FOOD_BANNERS)
 
         await replace_callback_message(callback)
-        await answer_with_gemini(
-            callback.message,
-            selected_prompt,
-            banner_ids=banner_ids,
-        )
+        if callback.data == "menu_plan":
+            await start_plan_flow(callback.message)
+        else:
+            await answer_with_gemini(
+                callback.message,
+                selected_prompt,
+                banner_ids=banner_ids,
+            )
 
 def chaos_keyboard(session_id: int, stage: str) -> InlineKeyboardMarkup:
     if stage == "zone":
@@ -1127,6 +1130,8 @@ async def send_final_response(
     message: Message,
     reply: str,
     banner_ids: list[str] | tuple[str, ...] | None = None,
+    food_followup: bool = False,
+    ignore_split: bool = False,
 ) -> None:
     # Если названы товары Greenway, добавляем ссылку, если Gemini её пропустил.
     shop_url = "https://greenwayglobal.com/shop?gw=etJ4vRkF8D"
@@ -1137,19 +1142,29 @@ async def send_final_response(
             "\\n\\n🌿 Посмотреть эти средства можно в "
             f"[официальном эко-магазине]({shop_url})."
         )
-    parts = [p.strip() for p in reply.split("===SPLIT===") if p.strip()]
+    # Разделитель принимается и в укороченном виде, но не показывается в Telegram.
+    parts = [
+        p.strip()
+        for p in re.split(r"(?im)^\s*===SPLIT(?:===)?\s*$", reply)
+        if p.strip()
+    ]
+    if ignore_split:
+        parts = ["\n\n".join(parts)] if parts else [re.sub(r"===SPLIT===?", "", reply).strip()]
+    is_food_response = food_followup or (
+        bool(banner_ids) and any(item in FOOD_BANNERS for item in banner_ids)
+    )
     has_banner = choose_banner(banner_ids) is not None
-    is_food_response = bool(banner_ids) and any(item in FOOD_BANNERS for item in banner_ids)
     # При баннере держим первую подпись в пределах лимита Telegram для caption.
     chunk_limit = 900 if has_banner else TELEGRAM_CHUNK_SIZE
     another_food_keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="🍲 Ещё вариант", callback_data="another_food")]
+            [InlineKeyboardButton(text="🥣 Ещё вариант", callback_data="another_food")]
         ]
     )
 
     if len(parts) <= 1:
-        chunks = split_response(reply, limit=chunk_limit)
+        display_reply = re.sub(r"===SPLIT===?", "", parts[0] if parts else reply).strip()
+        chunks = split_response(display_reply, limit=chunk_limit)
         for idx, chunk in enumerate(chunks):
             is_last = idx == len(chunks) - 1
             formatted = format_telegram_html(chunk)
@@ -1170,8 +1185,8 @@ async def send_final_response(
                 )
         return
 
-    intro_text = parts[0]
-    details_text = parts[1]
+    intro_text = re.sub(r"===SPLIT===?", "", parts[0]).strip()
+    details_text = re.sub(r"===SPLIT===?", "", "\n\n".join(parts[1:])).strip()
     expand_keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="📖 Развернуть подробнее", callback_data="expand_details")]
@@ -1217,14 +1232,17 @@ async def process_another_food(callback: CallbackQuery) -> None:
         "Предложи ТОЛЬКО новый рецепт для всей семьи, отличный от последнего. "
         "Не начинай с приветствия, знакомства или описания бота и не повторяй "
         "стартовое сообщение. Сразу укажи название блюда, ингредиенты и короткие "
-        "шаги приготовления. Используй обычные недорогие продукты и минимум "
-        "активного времени у плиты (желательно 15–30 минут). Не повторяй недавние "
-        "блюда. В конце спроси, какие продукты уже есть дома."
+        "шаги приготовления. Каждый шаг приготовления обязательно выведи с новой "
+        "строки и с нумерацией строго в формате «1. ...», «2. ...», «3. ...». "
+        "Не используй ненумерованный список вместо шагов. Используй обычные "
+        "недорогие продукты и минимум активного времени у плиты (желательно 15–30 "
+        "минут). Не повторяй недавние блюда. В конце спроси, какие продукты уже есть дома."
     )
     await answer_with_gemini(
         callback.message,
         prompt,
         request_user_id=callback.from_user.id,
+        food_followup=True,
     )
 
 
@@ -1258,7 +1276,7 @@ async def process_expand_details(callback: CallbackQuery) -> None:
             reply_markup=(
                 InlineKeyboardMarkup(
                     inline_keyboard=[
-                        [InlineKeyboardButton(text="🍲 Ещё вариант", callback_data="another_food")]
+                        [InlineKeyboardButton(text="🥣 Ещё вариант", callback_data="another_food")]
                     ]
                 )
                 if is_last and is_food_details
@@ -1273,6 +1291,8 @@ async def answer_with_gemini(
     voice_file_id: str | None = None,
     banner_ids: list[str] | tuple[str, ...] | None = None,
     request_user_id: int | None = None,
+    food_followup: bool = False,
+    ignore_split: bool = False,
 ) -> None:
     user_id = request_user_id or (message.from_user.id if message.from_user else message.chat.id)
     if prompt is None and voice_file_id is None:
@@ -1325,7 +1345,13 @@ async def answer_with_gemini(
                 return
 
             append_history(user_id, user_content, reply)
-            await send_final_response(message, reply, banner_ids=banner_ids)
+            await send_final_response(
+                message,
+                reply,
+                banner_ids=banner_ids,
+                food_followup=food_followup,
+                ignore_split=ignore_split,
+            )
         except Exception as general_error:
             logger.exception(
                 "General error in answer_with_gemini: %s",
@@ -1361,9 +1387,37 @@ async def handle_chaos_command(message: Message) -> None:
     await start_chaos_flow(message)
 
 
+async def start_plan_flow(message: Message) -> None:
+    intro = (
+        "📋 <b>День по полочкам</b> 🌿\\n\\n"
+        "Соберём мягкий, гибкий план для тебя: забота о детях, важные дела и "
+        "немного времени на себя. Это ориентир, а не расписание, которому нужно "
+        "обязательно соответствовать 💛"
+    )
+    # Пока тематическая картинка не подключена, отправляем только текст.
+    # Когда BANNER_PLAN получит реальные file_id, вводный блок автоматически
+    # будет отправляться подписью к изображению.
+    plan_banners = [item for item in BANNER_PLAN if item and item.strip()]
+    if plan_banners:
+        await answer_with_banner(
+            message,
+            intro,
+            plan_banners,
+            parse_mode=ParseMode.HTML,
+        )
+    else:
+        await message.answer(intro, parse_mode=ParseMode.HTML)
+
+    await answer_with_gemini(
+        message,
+        "Составь тёплый и гибкий план именно для мамы: блоки заботы о детях, домашних дел и отдыха. Учитывай только известный контекст о возрасте детей, режиме, школе, садике и занятиях. Если известен младенец или малыш, оставь гибкие окна для кормлений, прогулки и возможного сна; не рассчитывай, что ребёнок долго займёт себя сам. Если возраст и режим неизвестны, не выдумывай их — предложи общий гибкий план для мамы. Время — ориентир: разрешай переносить дела, менять порядок и сокращать список. Отдых важнее списка задач; не обещай успеть всё и не вызывай чувство вины. Если действительно нужно уточнение, задай один короткий вопрос. Не используй фразу «пока все домашние ещё раскачиваются» и не предполагай наличие других членов семьи. Не добавляй автоматическую рекламу Greenway. Выведи подробный план дня целиком, не дели его на краткое вступление и скрытые подробности.",
+        ignore_split=True,
+    )
+
+
 @dispatcher.message(Command("plan"))
 async def handle_plan_command(message: Message) -> None:
-    await answer_with_gemini(message, MENU_BUTTONS[2])
+    await start_plan_flow(message)
 
 
 @dispatcher.message(Command("support"))
@@ -1429,18 +1483,7 @@ async def handle_text(message: Message) -> None:
             "В конце спроси, какие продукты уже есть дома, чтобы подобрать "
             "рецепт из них."
         ),
-        MENU_BUTTONS[2]: (
-            "Составь тёплый и гибкий план именно для мамы: блоки заботы о детях, "
-            "домашних дел и отдыха. Учитывай только известный контекст о возрасте "
-            "детей, режиме, школе, садике и занятиях. Если известен младенец или "
-            "малыш, оставь гибкие окна для кормлений, прогулки и возможного сна; "
-            "не рассчитывай, что ребёнок долго займёт себя сам. Если возраст и "
-            "режим неизвестны, не выдумывай их — предложи общий гибкий план для "
-            "мамы. Время — ориентир: разреши переносить дела, менять порядок и "
-            "сокращать список. Отдых важнее списка задач; не обещай успеть всё и "
-            "не вызывай чувство вины. Если действительно нужно уточнение, задай "
-            "один короткий вопрос. Без автоматической рекламы Greenway."
-        ),
+        MENU_BUTTONS[2]: "Составь тёплый и гибкий план именно для мамы: блоки заботы о детях, домашних дел и отдыха. Учитывай только известный контекст о возрасте детей, режиме, школе, садике и занятиях. Если известен младенец или малыш, оставь гибкие окна для кормлений, прогулки и возможного сна; не рассчитывай, что ребёнок долго займёт себя сам. Если возраст и режим неизвестны, не выдумывай их — предложи общий гибкий план для мамы. Время — ориентир: разрешай переносить дела, менять порядок и сокращать список. Отдых важнее списка задач; не обещай успеть всё и не вызывай чувство вины. Если действительно нужно уточнение, задай один короткий вопрос. Не используй фразу «пока все домашние ещё раскачиваются» и не предполагай наличие других членов семьи. Не добавляй автоматическую рекламу Greenway. Выведи подробный план дня целиком, не дели его на краткое вступление и скрытые подробности.",
         MENU_BUTTONS[3]: (
             "Мне сейчас тяжело, устала от быта и детей. Поддержи меня тепло, "
             "как подруга."
@@ -1456,6 +1499,10 @@ async def handle_text(message: Message) -> None:
 
     if prompt == MENU_BUTTONS[1]:
         await start_chaos_flow(message)
+        return
+
+    if prompt == MENU_BUTTONS[2]:
+        await start_plan_flow(message)
         return
 
     await answer_with_gemini(message, selected_prompt)
