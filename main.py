@@ -1221,13 +1221,9 @@ async def process_another_food(callback: CallbackQuery) -> None:
         "активного времени у плиты (желательно 15–30 минут). Не повторяй недавние "
         "блюда. В конце спроси, какие продукты уже есть дома."
     )
-    global food_banner_index
-    banner_ids = FOOD_BANNERS[food_banner_index:] + FOOD_BANNERS[:food_banner_index]
-    food_banner_index = (food_banner_index + 1) % len(FOOD_BANNERS)
     await answer_with_gemini(
         callback.message,
         prompt,
-        banner_ids=banner_ids,
         request_user_id=callback.from_user.id,
     )
 
