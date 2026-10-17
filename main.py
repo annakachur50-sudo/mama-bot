@@ -9,6 +9,8 @@ import random
 import re
 import sqlite3
 
+import psycopg
+
 from aiogram import Bot, Dispatcher, F
 from aiogram.enums import ParseMode
 from aiogram.filters import Command, CommandStart
@@ -210,6 +212,7 @@ conversation_history_by_user: dict[int, list[types.Content]] = {}
 user_request_locks: dict[int, asyncio.Lock] = {}
 chaos_sessions: dict[int, dict] = {}
 chaos_session_counter = 0
+pending_family_profile: dict[int, dict] = {}
 
 CHAOS_ZONES = {
     "kitchen": "кухня",
@@ -302,6 +305,166 @@ def append_history(user_id: int, user_content: types.Content, model_text: str) -
     )
     if len(history) > 20:
         conversation_history_by_user[user_id] = history[-20:]
+
+
+class FamilyProfileUnavailable(Exception):
+    """Raised when persistent family-profile storage is not configured or reachable."""
+
+
+AGE_PATTERN = re.compile(
+    r"(?P<value>\d{1,3})\s*(?P<unit>месяц(?:а|ев)?|мес\.?|год(?:а|ов)?|лет)\b",
+    re.IGNORECASE,
+)
+
+
+def parse_child_ages(text: str) -> list[dict] | None:
+    """Parse one age per comma/newline-separated child, ordered oldest to youngest."""
+    if not text or len(text) > 500:
+        return None
+    segments = [part.strip() for part in re.split(r"[,;\n]+", text) if part.strip()]
+    if not segments:
+        return None
+
+    ages = []
+    for segment in segments:
+        matches = list(AGE_PATTERN.finditer(segment))
+        if len(matches) != 1:
+            return None
+        match = matches[0]
+        value = int(match.group("value"))
+        unit_text = match.group("unit").lower()
+        unit = "months" if unit_text.startswith(("месяц", "мес")) else "years"
+        if (unit == "months" and value > 1440) or (unit == "years" and value > 120):
+            return None
+        ages.append({
+            "child_number": len(ages) + 1,
+            "age_value": value,
+            "age_unit": unit,
+        })
+    return ages
+
+
+def format_child_age(age: dict) -> str:
+    value = int(age["age_value"])
+    if age["age_unit"] == "months":
+        remainder = value % 100
+        last_digit = value % 10
+        word = "месяц" if last_digit == 1 and remainder != 11 else (
+            "месяца" if 2 <= last_digit <= 4 and not 12 <= remainder <= 14 else "месяцев"
+        )
+        return f"{value} {word}"
+    remainder = value % 100
+    last_digit = value % 10
+    word = "год" if last_digit == 1 and remainder != 11 else (
+        "года" if 2 <= last_digit <= 4 and not 12 <= remainder <= 14 else "лет"
+    )
+    return f"{value} {word}"
+
+
+def family_age_summary(ages: list[dict]) -> str:
+    labels = {1: "старший ребёнок", 2: "второй ребёнок", 3: "третий ребёнок"}
+    return "\n".join(
+        f"• {labels.get(age['child_number'], f'ребёнок №{age[\'child_number\']}')}: "
+        f"{format_child_age(age)}"
+        for age in ages
+    )
+
+
+def load_family_ages(user_id: int) -> list[dict]:
+    dsn = os.getenv("SUPABASE_DB_URL")
+    if not dsn:
+        raise FamilyProfileUnavailable("SUPABASE_DB_URL is not configured")
+    try:
+        with psycopg.connect(dsn, connect_timeout=4, sslmode="require") as connection:
+            rows = connection.execute(
+                """
+                SELECT child_number, age_value, age_unit
+                FROM public.children
+                WHERE telegram_user_id = %s
+                ORDER BY child_number
+                """,
+                (user_id,),
+            ).fetchall()
+        return [
+            {"child_number": int(number), "age_value": int(value), "age_unit": unit}
+            for number, value, unit in rows
+        ]
+    except Exception as error:
+        raise FamilyProfileUnavailable(type(error).__name__) from None
+
+
+def save_family_ages(user_id: int, ages: list[dict]) -> None:
+    dsn = os.getenv("SUPABASE_DB_URL")
+    if not dsn:
+        raise FamilyProfileUnavailable("SUPABASE_DB_URL is not configured")
+    try:
+        with psycopg.connect(dsn, connect_timeout=4, sslmode="require") as connection:
+            connection.execute(
+                """
+                INSERT INTO public.mom_profiles (telegram_user_id, updated_at)
+                VALUES (%s, now())
+                ON CONFLICT (telegram_user_id)
+                DO UPDATE SET updated_at = now()
+                """,
+                (user_id,),
+            )
+            # This confirmation flow asks for the complete age list in birth order.
+            # Replacing that list avoids duplicate rows when ages are corrected.
+            connection.execute(
+                "DELETE FROM public.children WHERE telegram_user_id = %s",
+                (user_id,),
+            )
+            connection.executemany(
+                """
+                INSERT INTO public.children
+                    (telegram_user_id, child_number, age_value, age_unit, updated_at)
+                VALUES (%s, %s, %s, %s, now())
+                """,
+                [
+                    (user_id, age["child_number"], age["age_value"], age["age_unit"])
+                    for age in ages
+                ],
+            )
+    except Exception as error:
+        raise FamilyProfileUnavailable(type(error).__name__) from None
+
+
+def delete_family_profile(user_id: int) -> None:
+    dsn = os.getenv("SUPABASE_DB_URL")
+    # Before the connection is configured, this code has not saved remote profiles.
+    if not dsn:
+        return
+    try:
+        with psycopg.connect(dsn, connect_timeout=4, sslmode="require") as connection:
+            connection.execute(
+                "DELETE FROM public.mom_profiles WHERE telegram_user_id = %s",
+                (user_id,),
+            )
+    except Exception as error:
+        raise FamilyProfileUnavailable(type(error).__name__) from None
+
+
+async def start_family_age_collection(
+    message: Message,
+    user_id: int,
+    had_existing_profile: bool,
+) -> None:
+    pending_family_profile[user_id] = {
+        "stage": "collecting",
+        "had_existing_profile": had_existing_profile,
+    }
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="Без возраста", callback_data="family_age:skip")]
+        ]
+    )
+    await message.answer(
+        "Чтобы сделать план полезнее, напиши возраст каждого ребёнка по порядку "
+        "от старшего к младшему — по одному возрасту через запятую. Например: "
+        "14 лет, 7 лет, 8 месяцев. Можно указывать месяцы для малышей и годы для старших.\n\n"
+        "Я сначала покажу, что собираюсь запомнить, и сохраню только после твоего подтверждения.",
+        reply_markup=keyboard,
+    )
 
 
 def initialize_user_state() -> None:
@@ -697,7 +860,7 @@ async def process_start_action(callback: CallbackQuery) -> None:
 
         await replace_callback_message(callback)
         if callback.data == "menu_plan":
-            await start_plan_flow(callback.message)
+            await start_plan_flow(callback.message, request_user_id=callback.from_user.id)
         else:
             await answer_with_gemini(
                 callback.message,
@@ -1182,7 +1345,8 @@ async def send_final_response(
         )
         expand_keyboard = InlineKeyboardMarkup(
             inline_keyboard=[
-                [InlineKeyboardButton(text="📖 Развернуть подробнее", callback_data="expand_details")]
+                [InlineKeyboardButton(text="📖 Развернуть подробнее", callback_data="expand_details")],
+                [InlineKeyboardButton(text="✏️ Изменить возраст детей", callback_data="family_age:edit")],
             ]
         )
         plan_banner = await get_next_plan_banner()
@@ -1442,12 +1606,134 @@ async def get_next_plan_banner() -> str | None:
     return photo
 
 
-async def start_plan_flow(message: Message) -> None:
+async def start_plan_flow(
+    message: Message,
+    request_user_id: int | None = None,
+    force_generic: bool = False,
+) -> None:
+    user_id = request_user_id or (
+        message.from_user.id if message.from_user else message.chat.id
+    )
+    ages: list[dict] = []
+    if not force_generic:
+        try:
+            ages = await asyncio.to_thread(load_family_ages, user_id)
+        except FamilyProfileUnavailable:
+            logger.warning("Family profile unavailable (%s)", user_id)
+            await message.answer(
+                "Пока не удаётся получить постоянный профиль семьи, поэтому составлю общий план. "
+                "Возраст не будет сохранён.",
+                reply_markup=MENU_KEYBOARD,
+            )
+            force_generic = True
+
+    if not force_generic and not ages:
+        await start_family_age_collection(message, user_id, had_existing_profile=False)
+        return
+
+    age_context = ""
+    if ages:
+        age_context = (
+            "\n\nИзвестные сведения профиля семьи (возраст детей по порядку от старшего к младшему):\n"
+            + family_age_summary(ages)
+            + "\nУчитывай только эти возраста. Не делай выводов о школе, садике, режиме, сне "
+            "или занятиях, если мама отдельно этого не сообщала."
+        )
+
     await answer_with_gemini(
         message,
-        "Составь тёплый и гибкий план именно для мамы: блоки заботы о детях, домашних дел и отдыха. Учитывай только известный контекст о возрасте детей, режиме, школе, садике и занятиях. Если известен младенец или малыш, оставь гибкие окна для кормлений, прогулки и возможного сна; не рассчитывай, что ребёнок долго займёт себя сам. Если возраст и режим неизвестны, не выдумывай их — предложи общий гибкий план для мамы. Время — ориентир: разрешай переносить дела, менять порядок и сокращать список. Отдых важнее списка задач; не обещай успеть всё и не вызывай чувство вины. Если действительно нужно уточнение, задай один короткий вопрос. Не используй фразу «пока все домашние ещё раскачиваются» и не предполагай наличие других членов семьи. Не добавляй автоматическую рекламу Greenway. Выведи подробный план дня целиком, без вводного приветствия, чтобы он открылся отдельным сообщением после нажатия кнопки.",
+        "Составь тёплый и гибкий план именно для мамы: блоки заботы о детях, домашних дел и отдыха. "
+        "Учитывай только известный контекст о возрасте детей, режиме, школе, садике и занятиях. "
+        "Если известен младенец или малыш, оставь гибкие окна для заботы о нём; не рассчитывай, "
+        "что ребёнок долго займёт себя сам. Если возраст и режим неизвестны, не выдумывай их — "
+        "предложи общий гибкий план для мамы. Время — ориентир: разрешай переносить дела, менять "
+        "порядок и сокращать список. Отдых важнее списка задач; не обещай успеть всё и не вызывай "
+        "чувство вины. Если действительно нужно уточнение, задай один короткий вопрос. Не используй "
+        "фразу «пока все домашние ещё раскачиваются» и не предполагай наличие других членов семьи. "
+        "Не добавляй автоматическую рекламу Greenway. Выведи подробный план дня целиком, без вводного "
+        "приветствия, чтобы он открылся отдельным сообщением после нажатия кнопки."
+        + age_context,
         ignore_split=True,
         plan_flow=True,
+        request_user_id=user_id,
+    )
+
+
+@dispatcher.callback_query(F.data == "family_age:skip")
+async def skip_family_age(callback: CallbackQuery) -> None:
+    await callback.answer()
+    if callback.message is None:
+        return
+    user_id = callback.from_user.id
+    pending_family_profile.pop(user_id, None)
+    await start_plan_flow(callback.message, request_user_id=user_id, force_generic=True)
+
+
+@dispatcher.callback_query(F.data == "family_age:edit")
+async def edit_family_age(callback: CallbackQuery) -> None:
+    await callback.answer()
+    if callback.message is None:
+        return
+    user_id = callback.from_user.id
+    try:
+        existing_ages = await asyncio.to_thread(load_family_ages, user_id)
+    except FamilyProfileUnavailable:
+        logger.warning("Family profile unavailable during edit (%s)", user_id)
+        await callback.message.answer(
+            "Сейчас не получается открыть профиль. Попробуй немного позже.",
+            reply_markup=MENU_KEYBOARD,
+        )
+        return
+    await start_family_age_collection(
+        callback.message,
+        user_id,
+        had_existing_profile=bool(existing_ages),
+    )
+
+
+@dispatcher.callback_query(F.data == "family_age:save")
+async def save_family_age(callback: CallbackQuery) -> None:
+    await callback.answer()
+    if callback.message is None:
+        return
+    user_id = callback.from_user.id
+    state = pending_family_profile.get(user_id)
+    if not state or state.get("stage") != "confirming":
+        await callback.message.answer("Этот запрос уже завершён. Открой раздел «День по полочкам» ещё раз.")
+        return
+    ages = state.get("ages", [])
+    try:
+        await asyncio.to_thread(save_family_ages, user_id, ages)
+    except FamilyProfileUnavailable:
+        logger.warning("Family profile save failed (%s)", user_id)
+        pending_family_profile.pop(user_id, None)
+        await callback.message.answer(
+            "Не удалось сохранить возраст в постоянный профиль. Ничего не сохранено; "
+            "сейчас составлю общий план без этих сведений.",
+            reply_markup=MENU_KEYBOARD,
+        )
+        await start_plan_flow(
+            callback.message,
+            request_user_id=user_id,
+            force_generic=True,
+        )
+        return
+    pending_family_profile.pop(user_id, None)
+    await callback.message.answer("Готово, запомнила возраст детей. 🌿")
+    await start_plan_flow(callback.message, request_user_id=user_id)
+
+
+@dispatcher.callback_query(F.data == "family_age:cancel")
+async def cancel_family_age(callback: CallbackQuery) -> None:
+    await callback.answer()
+    if callback.message is None:
+        return
+    user_id = callback.from_user.id
+    state = pending_family_profile.pop(user_id, None) or {}
+    await start_plan_flow(
+        callback.message,
+        request_user_id=user_id,
+        force_generic=not state.get("had_existing_profile", False),
     )
 
 
@@ -1470,16 +1756,23 @@ async def handle_reset_me(message: Message) -> None:
     user_id = message.from_user.id
     try:
         async with get_user_request_lock(user_id):
+            # Delete the remote family profile first; if the configured database is
+            # temporarily unavailable, do not claim that personal data was erased.
+            await asyncio.to_thread(delete_family_profile, user_id)
             await asyncio.to_thread(delete_user_data_from_database, user_id)
             user_names.pop(user_id, None)
             conversation_history_by_user.pop(user_id, None)
+            pending_family_profile.pop(user_id, None)
     except Exception as error:
-        logger.exception("Failed to reset user data: %s", error)
-        await message.answer("Не удалось очистить данные. Попробуй позже.")
+        logger.warning("Failed to reset user data (%s)", type(error).__name__)
+        await message.answer(
+            "Не удалось полностью очистить персональные данные. Ничего не подтверждаю как удалённое. "
+            "Попробуй позже."
+        )
         return
 
     await message.answer(
-        "Готово — сохранённое имя и история диалога удалены. "
+        "Готово — сохранённое имя, история диалога и профиль семьи удалены. "
         "Отправь /start, чтобы проверить запуск как для нового пользователя.",
         reply_markup=MENU_KEYBOARD,
     )
@@ -1495,6 +1788,36 @@ async def handle_text(message: Message) -> None:
         return
 
     user_id = message.from_user.id
+
+    profile_state = pending_family_profile.get(user_id)
+    if profile_state:
+        if profile_state.get("stage") == "collecting":
+            parsed_ages = parse_child_ages(prompt)
+            if not parsed_ages:
+                await message.answer(
+                    "Не совсем поняла возраст. Напиши по одному возрасту через запятую, "
+                    "от старшего к младшему, например: 14 лет, 7 лет, 8 месяцев. "
+                    "Или нажми «Без возраста»."
+                )
+                return
+            profile_state["stage"] = "confirming"
+            profile_state["ages"] = parsed_ages
+            keyboard = InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [InlineKeyboardButton(text="✅ Да, запомнить", callback_data="family_age:save")],
+                    [InlineKeyboardButton(text="↩️ Не сохранять", callback_data="family_age:cancel")],
+                ]
+            )
+            await message.answer(
+                "Вот что я собираюсь запомнить — от старшего ребёнка к младшему:\n\n"
+                + family_age_summary(parsed_ages)
+                + "\n\nСохранить эти сведения в профиле семьи?",
+                reply_markup=keyboard,
+            )
+            return
+        if profile_state.get("stage") == "confirming":
+            await message.answer("Пожалуйста, выбери одну из кнопок: сохранить сведения или не сохранять.")
+            return
 
     # Если имя ещё не сохранено в памяти, берем его из профиля Telegram:
     if user_id not in user_names:
