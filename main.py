@@ -416,17 +416,18 @@ def save_family_ages(user_id: int, ages: list[dict]) -> None:
                 "DELETE FROM public.children WHERE telegram_user_id = %s",
                 (user_id,),
             )
-            connection.executemany(
-                """
-                INSERT INTO public.children
-                    (telegram_user_id, child_number, age_value, age_unit, updated_at)
-                VALUES (%s, %s, %s, %s, now())
-                """,
-                [
-                    (user_id, age["child_number"], age["age_value"], age["age_unit"])
-                    for age in ages
-                ],
-            )
+            with connection.cursor() as cursor:
+                cursor.executemany(
+                    """
+                    INSERT INTO public.children
+                        (telegram_user_id, child_number, age_value, age_unit, updated_at)
+                    VALUES (%s, %s, %s, %s, now())
+                    """,
+                    [
+                        (user_id, age["child_number"], age["age_value"], age["age_unit"])
+                        for age in ages
+                    ],
+                )
     except Exception as error:
         # Log only the exception class, never connection strings or credentials.
         logger.warning("Family profile save DB error: %s", type(error).__name__)
