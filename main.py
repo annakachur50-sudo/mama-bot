@@ -75,7 +75,18 @@ BANNER_CLEAN = [
     "AgACAgIAAxkBAAIIHWrQgWwTlyWgvONDLaj5OfM5NmwwAAK2GGsbTc2JSl2Zb_ziQjBMAQADAgADdwADPQQ",
     "AgACAgIAAxkBAAIIHGrQgWxTFyWZAAH_DJ64hucQOu8VeAACtRhrG03NiUrP6kQDB93TggEAAwIAA3cAAz0E",
 ]  # разгрести хаос
-BANNER_PLAN = [""]  # день по полочкам
+BANNER_PLAN = [
+    "AgACAgIAAxkBAAIJEGrSZZCUWgnghVOOJsbU8BmdzRiAAALlImsbRneRSoTPGC6XyjEgAQADAgADdwADPQQ",
+    "AgACAgIAAxkBAAIJE2rSZZA_LXaJOtvvoNWsIjUs41j6AALoImsbRneRSq54nMsNA999AQADAgADdwADPQQ",
+    "AgACAgIAAxkBAAIJD2rSZZDoAAFZ4NavtYECdfrMixjsqQAC5CJrG0Z3kUpKUElkTYl6VQEAAwIAA3cAAz0E",
+    "AgACAgIAAxkBAAIJEWrSZZDbapvAQch-UkBQlUWNO-VXAALmImsbRneRSgU7k7AoFAjRAQADAgADdwADPQQ",
+    "AgACAgIAAxkBAAIJEmrSZZDKtahHzBd7-r_PH2I2ujsFAALnImsbRneRStkPGjz9djutAQADAgADdwADPQQ",
+    "AgACAgIAAxkBAAIJFGrSZZAB6CS5wU6n-FKjB4Du9ggJAALpImsbRneRSuwWPIT0M-huAQADAgADdwADPQQ",
+    "AgACAgIAAxkBAAIJFmrSZZBrIeE8wGgQQLfRXCZT1fQRAALrImsbRneRSmYDw3X1KkBBAQADAgADdwADPQQ",
+    "AgACAgIAAxkBAAIJF2rSZZBDzIt1wgNkuoYFEl6c3nmnAALsImsbRneRStZZS3HJUUa0AQADAgADdwADPQQ",
+    "AgACAgIAAxkBAAIJFWrSZZBZxNZ-gsebhHshUTAkI5x1AALqImsbRneRSjschJyiPhCRAQADAgADdwADPQQ",
+    "AgACAgIAAxkBAAIJGGrSZZApaF4gXDwliwABNOLCnUzcdAAC7SJrG0Z3kUruiQl3bdqUcwEAAwIAA3cAAz0E",
+]  # день по полочкам, ротация сохраняется в SQLite
 BANNER_SUPPORT = [""]  # тёплая поддержка
 
 START_CAPTION = (
@@ -310,6 +321,14 @@ def initialize_user_state() -> None:
             CREATE TABLE IF NOT EXISTS welcomed_users (
                 user_id INTEGER PRIMARY KEY,
                 first_seen_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS bot_counters (
+                counter_name TEXT PRIMARY KEY,
+                counter_value INTEGER NOT NULL DEFAULT 0
             )
             """
         )
@@ -1157,6 +1176,8 @@ async def send_final_response(
     has_banner = choose_banner(banner_ids) is not None
 
     if plan_flow:
+        # В плане поддерживаем прежнюю схему: до раскрытия текст остаётся
+        # во временном хранилище и выдаётся только по кнопке.
         details_text = "\\n\\n".join(parts).strip() if parts else re.sub(r"===SPLIT(?:===)?", "", reply).strip()
         pending_details[message.chat.id] = details_text
         pending_details_food.discard(message.chat.id)
@@ -1171,10 +1192,10 @@ async def send_final_response(
                 [InlineKeyboardButton(text="📖 Развернуть подробнее", callback_data="expand_details")]
             ]
         )
-        plan_banners = [item for item in BANNER_PLAN if item and item.strip()]
-        if plan_banners:
+        plan_banner = await get_next_plan_banner()
+        if plan_banner:
             await answer_with_banner(
-                message, intro, plan_banners,
+                message, intro, [plan_banner],
                 reply_markup=expand_keyboard, parse_mode=ParseMode.HTML,
             )
         else:
@@ -1416,6 +1437,36 @@ async def handle_food_command(message: Message) -> None:
 @dispatcher.message(Command("chaos"))
 async def handle_chaos_command(message: Message) -> None:
     await start_chaos_flow(message)
+
+
+async def get_next_plan_banner() -> str | None:
+    """Возвращает следующее фото по порядку и сохраняет позицию в SQLite."""
+    if not BANNER_PLAN:
+        return None
+    try:
+        with sqlite3.connect(STATE_DB_PATH, timeout=10) as connection:
+            connection.execute(
+                "CREATE TABLE IF NOT EXISTS bot_counters ("
+                "counter_name TEXT PRIMARY KEY, counter_value INTEGER NOT NULL DEFAULT 0)"
+            )
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                "SELECT counter_value FROM bot_counters WHERE counter_name = ?",
+                ("plan_banner_index",),
+            ).fetchone()
+            index = int(row[0]) if row else 0
+            next_index = (index + 1) % len(BANNER_PLAN)
+            connection.execute(
+                "INSERT INTO bot_counters (counter_name, counter_value) VALUES (?, ?) "
+                "ON CONFLICT(counter_name) DO UPDATE SET counter_value = excluded.counter_value",
+                ("plan_banner_index", next_index),
+            )
+            connection.commit()
+        return BANNER_PLAN[index % len(BANNER_PLAN)]
+    except Exception:
+        logger.exception("Could not read or update persistent plan banner rotation")
+        # При сбое базы не имитируем постоянство: выбираем первый известный ID.
+        return BANNER_PLAN[0]
 
 
 async def start_plan_flow(message: Message) -> None:
