@@ -1161,7 +1161,7 @@ async def send_final_response(
         pending_details[message.chat.id] = details_text
         pending_details_food.discard(message.chat.id)
         intro = (
-            "📋 <b>День по полочкам</b> 🌿\\n\\n"
+            "📋 <b>День по полочкам</b> 🌿\n\n"
             "Соберём мягкий, гибкий план для тебя: забота о детях, важные дела и "
             "немного времени на себя. Это ориентир, а не расписание, которому нужно "
             "обязательно соответствовать 💛"
