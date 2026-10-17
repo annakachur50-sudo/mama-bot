@@ -391,6 +391,7 @@ def load_family_ages(user_id: int) -> list[dict]:
             for number, value, unit in rows
         ]
     except Exception as error:
+        logger.warning("Family profile read DB error: %s", type(error).__name__)
         raise FamilyProfileUnavailable(type(error).__name__) from None
 
 
@@ -427,6 +428,8 @@ def save_family_ages(user_id: int, ages: list[dict]) -> None:
                 ],
             )
     except Exception as error:
+        # Log only the exception class, never connection strings or credentials.
+        logger.warning("Family profile save DB error: %s", type(error).__name__)
         raise FamilyProfileUnavailable(type(error).__name__) from None
 
 
