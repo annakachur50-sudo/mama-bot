@@ -62,6 +62,7 @@ FOOD_BANNERS = [
 ]
 food_banner_index = 0
 clean_banner_index = 0
+plan_banner_index = 0
 BANNER_FOOD = FOOD_BANNERS  # накормить семью
 BANNER_CLEAN = [
     "AgACAgIAAxkBAAIIIWrQgWw6fOaSSXAOByRN0S2mBFTwAAK6GGsbTc2JSrXbPtBeRa9eAQADAgADdwADPQQ",
@@ -321,14 +322,6 @@ def initialize_user_state() -> None:
             CREATE TABLE IF NOT EXISTS welcomed_users (
                 user_id INTEGER PRIMARY KEY,
                 first_seen_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-            )
-            """
-        )
-        connection.execute(
-            """
-            CREATE TABLE IF NOT EXISTS bot_counters (
-                counter_name TEXT PRIMARY KEY,
-                counter_value INTEGER NOT NULL DEFAULT 0
             )
             """
         )
@@ -1178,7 +1171,7 @@ async def send_final_response(
     if plan_flow:
         # В плане поддерживаем прежнюю схему: до раскрытия текст остаётся
         # во временном хранилище и выдаётся только по кнопке.
-        details_text = "\\n\\n".join(parts).strip() if parts else re.sub(r"===SPLIT(?:===)?", "", reply).strip()
+        details_text = "\n\n".join(parts).strip() if parts else re.sub(r"===SPLIT(?:===)?", "", reply).strip()
         pending_details[message.chat.id] = details_text
         pending_details_food.discard(message.chat.id)
         intro = (
@@ -1440,33 +1433,13 @@ async def handle_chaos_command(message: Message) -> None:
 
 
 async def get_next_plan_banner() -> str | None:
-    """Возвращает следующее фото по порядку и сохраняет позицию в SQLite."""
+    """Возвращает следующее фото по порядку в течение текущего запуска бота."""
+    global plan_banner_index
     if not BANNER_PLAN:
         return None
-    try:
-        with sqlite3.connect(STATE_DB_PATH, timeout=10) as connection:
-            connection.execute(
-                "CREATE TABLE IF NOT EXISTS bot_counters ("
-                "counter_name TEXT PRIMARY KEY, counter_value INTEGER NOT NULL DEFAULT 0)"
-            )
-            connection.execute("BEGIN IMMEDIATE")
-            row = connection.execute(
-                "SELECT counter_value FROM bot_counters WHERE counter_name = ?",
-                ("plan_banner_index",),
-            ).fetchone()
-            index = int(row[0]) if row else 0
-            next_index = (index + 1) % len(BANNER_PLAN)
-            connection.execute(
-                "INSERT INTO bot_counters (counter_name, counter_value) VALUES (?, ?) "
-                "ON CONFLICT(counter_name) DO UPDATE SET counter_value = excluded.counter_value",
-                ("plan_banner_index", next_index),
-            )
-            connection.commit()
-        return BANNER_PLAN[index % len(BANNER_PLAN)]
-    except Exception:
-        logger.exception("Could not read or update persistent plan banner rotation")
-        # При сбое базы не имитируем постоянство: выбираем первый известный ID.
-        return BANNER_PLAN[0]
+    photo = BANNER_PLAN[plan_banner_index % len(BANNER_PLAN)]
+    plan_banner_index = (plan_banner_index + 1) % len(BANNER_PLAN)
+    return photo
 
 
 async def start_plan_flow(message: Message) -> None:
