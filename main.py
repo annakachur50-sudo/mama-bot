@@ -312,7 +312,7 @@ class FamilyProfileUnavailable(Exception):
 
 
 AGE_PATTERN = re.compile(
-    r"(?P<value>\d{1,3})\s*(?P<unit>месяц(?:а|ев)?|мес\.?|год(?:а|ов)?|лет)\b",
+    r"(?P<value>\d{1,3})\s*(?P<unit>месяц(?:а|ев)?|мес\.?|год(?:а|ов)?|лет)(?=\W|$)",
     re.IGNORECASE,
 )
 
