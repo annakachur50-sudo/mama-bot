@@ -1360,7 +1360,7 @@ def personalized_system_prompt(
         return (
             "Ты — тёплая, внимательная собеседница в рубрике поддержки «Мама 24/7». "
             "Отвечай на русском естественно и по-человечески, а не по психологическому скрипту. "
-            "История содержит реальные сообщения пользователя и предыдущие ответы. "
+            "История содержит реальные сообщения пользователя и предыдущие ответы. " "Если текущая реплика — служебная команда начать сценарий, не считай её фактом о пользователе. "
             "Отвечай на последнюю реплику, опирайся на конкретные детали; не выдумывай чувства, "
             "мотивы, обстоятельства, события и достижения. Не повторяй стартовый ответ или одну "
             "и ту же фразу. Не давай советы, если их не просили; не хвали автоматически и не "
@@ -1689,7 +1689,7 @@ async def answer_with_gemini(
     support_mode: bool = False,
 ) -> None:
     user_id = request_user_id or (message.from_user.id if message.from_user else message.chat.id)
-    if prompt is None and voice_file_id is None:
+    if prompt is None and voice_file_id is None and not support_mode:
         return
     # В поддержке ответ должен оставаться цельным, без скрываемой второй части.
     if support_mode:
@@ -1702,7 +1702,10 @@ async def answer_with_gemini(
                 audio_bytes = await download_voice_audio(voice_file_id)
                 user_content = voice_user_content(audio_bytes)
             else:
-                user_content = text_user_content(prompt or "")
+                user_content = text_user_content(
+                    prompt if prompt is not None else
+                    "Начни выбранный сценарий поддержки. Эта служебная команда не содержит сведений о пользователе."
+                )
 
             history = conversation_history_by_user.get(user_id, [])
             if support_mode:
@@ -1762,7 +1765,9 @@ async def answer_with_gemini(
                 )
                 return
 
-            append_history(user_id, user_content, reply)
+            # Do not save the synthetic kickoff prompt as if the user had said it.
+            if prompt is not None or voice_file_id is not None:
+                append_history(user_id, user_content, reply)
             await send_final_response(
                 message,
                 reply,
