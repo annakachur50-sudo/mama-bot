@@ -128,7 +128,7 @@ SUPPORT_SCENARIOS = {
 }
 support_sessions: dict[int, str] = {}
 SUPPORT_STYLE = (
-    "Общайся естественно, спокойно и уважительно, как понимающая подруга. Не используй постоянные обращения «милая», «дорогая». Не обесценивай чувства, не включай токсичный позитив, чувство вины или непрошеные советы. Не предполагай причину проблемы, пока мама сама её не назвала. Не задавай больше одного уместного вопроса за раз. Не рекламируй Greenway, товары, услуги или ссылки. Не ставь диагнозы и не обещай гарантированный результат. При непосредственной опасности для себя или другого человека бережно направь к местной экстренной помощи и надёжному человеку рядом."
+    "Общайся естественно, спокойно и уважительно, как понимающая подруга. Не используй постоянные обращения «милая», «дорогая». Не обесценивай чувства, не включай токсичный позитив, чувство вины или непрошеные советы. Не предполагай причину проблемы, пока мама сама её не назвала. Не задавай больше одного уместного вопроса за раз. Не рекламируй Greenway, товары, услуги или ссылки. Не ставь диагнозы и не обещай гарантированный результат. При непосредственной опасности для себя или другого человека бережно посоветуй немедленно обратиться в местную экстренную службу и к надёжному человеку рядом, не оставаться в одиночестве и по возможности отойти от средств причинения вреда."
 )
 
 
@@ -812,6 +812,7 @@ async def handle_start(message: Message) -> None:
         return
 
     user_id = message.from_user.id
+    support_sessions.pop(user_id, None)
 
     # Берём имя из Telegram и убираем лишнее, если там смайлы или цифры
     raw_name = (message.from_user.first_name or "").strip()
@@ -1504,6 +1505,7 @@ async def send_final_response(
             formatted = format_telegram_html(chunk)
             markup = (
                 another_food_keyboard if is_last and is_food_response
+                else support_return_keyboard() if is_last and support_mode
                 else MENU_KEYBOARD if is_last else None
             )
             if idx == 0 and banner_ids is not None:
@@ -1915,6 +1917,7 @@ async def handle_reset_me(message: Message) -> None:
             user_names.pop(user_id, None)
             conversation_history_by_user.pop(user_id, None)
             pending_family_profile.pop(user_id, None)
+            support_sessions.pop(user_id, None)
     except Exception as error:
         logger.warning("Failed to reset user data (%s)", type(error).__name__)
         await message.answer(
