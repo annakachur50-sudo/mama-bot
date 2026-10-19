@@ -150,13 +150,21 @@ async def start_support_flow(message: Message, request_user_id: int | None = Non
     ) if BANNER_SUPPORT else None
     if BANNER_SUPPORT:
         support_banner_index = (support_banner_index + 1) % len(BANNER_SUPPORT)
-    await answer_with_banner(
-        message,
-        "🫂 <b>Тёплая поддержка</b>\n\nКак тебе сейчас хотелось бы, чтобы я была рядом? Выбери подходящий вариант. Можно передумать или просто написать мне своими словами 💛",
-        banner_ids,
+    # Отправляем выбор сценария отдельно: фото не должно блокировать кнопки.
+    await message.answer(
+        "🫂 <b>Тёплая поддержка</b>\\n\\n"
+        "Как тебе сейчас хотелось бы, чтобы я была рядом? Выбери подходящий вариант. "
+        "Можно передумать или просто написать мне своими словами 💛",
         reply_markup=support_choice_keyboard(),
         parse_mode=ParseMode.HTML,
     )
+    if banner_ids:
+        for photo_id in banner_ids:
+            try:
+                await message.answer_photo(photo=photo_id)
+                break
+            except Exception as error:
+                logger.warning("Could not send support banner photo: %s", error)
 
 
 START_CAPTION = (
