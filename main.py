@@ -1992,7 +1992,7 @@ async def handle_text(message: Message) -> None:
 
     # Reply-кнопка поддержки может приходить с различающимися emoji-вариантами.
     # Сравниваем устойчивую текстовую часть, чтобы не отправлять её в Gemini как обычный запрос.
-    normalized_prompt = re.sub(r"[^\\w\\s]", "", prompt).casefold()
+    normalized_prompt = re.sub(r"[^\w\s]", "", prompt).casefold()
     if (
         prompt == MENU_BUTTONS[3]
         or "тёплая поддержка" in normalized_prompt
