@@ -90,7 +90,18 @@ BANNER_PLAN = [
     "AgACAgIAAxkBAAIJFWrSZZBZxNZ-gsebhHshUTAkI5x1AALqImsbRneRSjschJyiPhCRAQADAgADdwADPQQ",
     "AgACAgIAAxkBAAIJGGrSZZApaF4gXDwliwABNOLCnUzcdAAC7SJrG0Z3kUruiQl3bdqUcwEAAwIAA3cAAz0E",
 ]  # день по полочкам, ротация сохраняется в SQLite
-BANNER_SUPPORT = [""]  # тёплая поддержка
+BANNER_SUPPORT = [
+    "AgACAgIAAxkBAAIJw2rVzEEgoFDE54b5SGRG4eL9vBkYAAISIGsbVU2wSjFyEdoeYfr2AQADAgADdwADPQQ",
+    "AgACAgIAAxkBAAIJvmrVzEGbr2qPIwnAZS0o2gdw7-A3AAINIGsbVU2wSubjF4MnfpxjAQADAgADdwADPQQ",
+    "AgACAgIAAxkBAAIJvGrVzEGSPXlWZ_4g2arl4DEkFgEtAAILIGsbVU2wSsl2KaiEOEADAQADAgADdwADPQQ",
+    "AgACAgIAAxkBAAIJxGrVzEFTEqpgf3X8cUDB3S3IlFpUAAITIGsbVU2wSmy7V3mT-V4tAQADAgADdwADPQQ",
+    "AgACAgIAAxkBAAIJu2rVzEEeFCEucqouzgWUSeMCKRCmAAIKIGsbVU2wSv3-_8MFHoHbAQADAgADdwADPQQ",
+    "AgACAgIAAxkBAAIJvWrVzEGqGC9Aw8BwGDjqGxMTleE9AAIMIGsbVU2wSincn0xXOI71AQADAgADdwADPQQ",
+    "AgACAgIAAxkBAAIJwWrVzEFb016y3Ztwi1i8uii3yecZAAIQIGsbVU2wSuzIPAABysB7BwEAAwIAA3cAAz0E",
+    "AgACAgIAAxkBAAIJwGrVzEGyAdndvUh9zsYiWf7iPHgGAAIPIGsbVU2wSsqE_kQLASgLAQADAgADdwADPQQ",
+    "AgACAgIAAxkBAAIJwmrVzEF5rlsVZrT_ek2UpXxC7LbZAAIRIGsbVU2wSh_gtvroJ_IOAQADAgADdwADPQQ",
+]  # тёплая поддержка
+support_banner_index = 0
 
 START_CAPTION = (
     "🌸 <b>Привет, дорогая! Я твой бот «Мама 24/7».</b>\n\n"
@@ -862,6 +873,15 @@ async def process_start_action(callback: CallbackQuery) -> None:
                 + FOOD_BANNERS[:food_banner_index]
             )
             food_banner_index = (food_banner_index + 1) % len(FOOD_BANNERS)
+        elif callback.data == "menu_support" and BANNER_SUPPORT:
+            global support_banner_index
+            # Последовательная ротация; при ошибке одного file_id механизм
+            # answer_with_banner сможет попробовать следующие изображения.
+            banner_ids = (
+                BANNER_SUPPORT[support_banner_index:]
+                + BANNER_SUPPORT[:support_banner_index]
+            )
+            support_banner_index = (support_banner_index + 1) % len(BANNER_SUPPORT)
 
         await replace_callback_message(callback)
         if callback.data == "menu_plan":
@@ -1749,7 +1769,14 @@ async def handle_plan_command(message: Message) -> None:
 
 @dispatcher.message(Command("support"))
 async def handle_support_command(message: Message) -> None:
-    await answer_with_gemini(message, MENU_BUTTONS[3])
+    global support_banner_index
+    banner_ids = (
+        BANNER_SUPPORT[support_banner_index:]
+        + BANNER_SUPPORT[:support_banner_index]
+    ) if BANNER_SUPPORT else None
+    if BANNER_SUPPORT:
+        support_banner_index = (support_banner_index + 1) % len(BANNER_SUPPORT)
+    await answer_with_gemini(message, MENU_BUTTONS[3], banner_ids=banner_ids)
 
 
 @dispatcher.message(Command("reset_me"))
