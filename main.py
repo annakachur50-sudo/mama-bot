@@ -1897,6 +1897,17 @@ async def handle_text(message: Message) -> None:
         await start_plan_flow(message)
         return
 
+    if prompt == MENU_BUTTONS[3]:
+        global support_banner_index
+        banner_ids = (
+            BANNER_SUPPORT[support_banner_index:]
+            + BANNER_SUPPORT[:support_banner_index]
+        ) if BANNER_SUPPORT else None
+        if BANNER_SUPPORT:
+            support_banner_index = (support_banner_index + 1) % len(BANNER_SUPPORT)
+        await answer_with_gemini(message, selected_prompt, banner_ids=banner_ids)
+        return
+
     await answer_with_gemini(message, selected_prompt)
 
 async def main() -> None:
