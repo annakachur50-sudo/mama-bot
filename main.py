@@ -104,6 +104,61 @@ BANNER_SUPPORT = [
 ]  # тёплая поддержка
 support_banner_index = 0
 
+SUPPORT_SCENARIOS = {
+    "vent": {
+        "label": "💬 Мне нужно выговориться",
+        "instruction": "Дай пространство рассказать всё своими словами. Внимательно отрази только названные чувства и факты. Не торопись с советами, пока мама сама их не попросит. Максимум один мягкий вопрос, если он помогает продолжить рассказ.",
+    },
+    "warm": {
+        "label": "🤍 Мне нужны тёплые слова",
+        "instruction": "Ответь искренне и по-человечески, без шаблонных комплиментов, чрезмерной сладости и обещаний, что всё обязательно будет хорошо. Не выдумывай обстоятельства и достижения.",
+    },
+    "advice": {
+        "label": "🌿 Хочу бережный совет",
+        "instruction": "Сначала признай переживание, затем предложи не больше одного-двух реалистичных, необязательных шагов с учётом сообщённых обстоятельств и сил мамы. Не делай предположений и не навязывай решения.",
+    },
+    "pause": {
+        "label": "☕ Хочу немного передохнуть",
+        "instruction": "Предложи передышку на 1–3 минуты: спокойное дыхание без задержек, переключение внимания или маленькое приятное действие. Не обещай гарантированный эффект и не требуй выполнять упражнение.",
+    },
+    "wins": {
+        "label": "🌷 Хочу вспомнить свои маленькие победы",
+        "instruction": "Помоги заметить только то, что мама сама рассказала и что действительно получилось. Не придумывай достижения. Если пока нечего назвать, мягко предложи вспомнить один небольшой момент или усилие.",
+    },
+}
+support_sessions: dict[int, str] = {}
+SUPPORT_STYLE = (
+    "Общайся естественно, спокойно и уважительно, как понимающая подруга. Не используй постоянные обращения «милая», «дорогая». Не обесценивай чувства, не включай токсичный позитив, чувство вины или непрошеные советы. Не предполагай причину проблемы, пока мама сама её не назвала. Не задавай больше одного уместного вопроса за раз. Не рекламируй Greenway, товары, услуги или ссылки. Не ставь диагнозы и не обещай гарантированный результат. При непосредственной опасности для себя или другого человека бережно направь к местной экстренной помощи и надёжному человеку рядом."
+)
+
+
+def support_choice_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text=item["label"], callback_data=f"support:choose:{key}")]
+            for key, item in SUPPORT_SCENARIOS.items()
+        ] + [[InlineKeyboardButton(text="🏠 В главное меню", callback_data="support:home")]]
+    )
+
+
+async def start_support_flow(message: Message, request_user_id: int | None = None) -> None:
+    global support_banner_index
+    user_id = request_user_id or (message.from_user.id if message.from_user else message.chat.id)
+    support_sessions.pop(user_id, None)
+    banner_ids = (
+        BANNER_SUPPORT[support_banner_index:] + BANNER_SUPPORT[:support_banner_index]
+    ) if BANNER_SUPPORT else None
+    if BANNER_SUPPORT:
+        support_banner_index = (support_banner_index + 1) % len(BANNER_SUPPORT)
+    await answer_with_banner(
+        message,
+        "🫂 <b>Тёплая поддержка</b>\n\nКак тебе сейчас хотелось бы, чтобы я была рядом? Выбери подходящий вариант. Можно передумать или просто написать мне своими словами 💛",
+        banner_ids,
+        reply_markup=support_choice_keyboard(),
+        parse_mode=ParseMode.HTML,
+    )
+
+
 START_CAPTION = (
     "🌸 <b>Привет, дорогая! Я твой бот «Мама 24/7».</b>\n\n"
     "Твоя личная цифровая подруга, когда силы на исходе, в голове миллион задач, "
@@ -140,7 +195,7 @@ SYSTEM_PROMPT = """Ты — виртуальная подруга и забот�
 - Только в ответах рубрики «🍲 Накормить семью» в самом конце задай один короткий дружелюбный вопрос о продуктах, которые уже есть дома. Например: «Хочешь, подберём блюдо из того, что уже есть? Напиши, какие продукты у тебя сейчас в холодильнике 😊». В остальных рубриках НЕ задавай вопрос про продукты и НЕ добавляй предложение подобрать блюдо; заканчивай ответ по теме выбранной рубрики.
 - «📦 Разгрести хаос»: экспресс-уборка за 5–15 минут БЕЗ едкой химии и БЕЗ дедовских методов (никакой соды, уксуса и горчичного порошка!). Рекомендуй эстетичный эко-подход в стиле Greenway: салфетки и файберы из микроволокна (работают от одной воды, убирают жир и грязь без капли химии), натуральную очищающую пасту или кислородный эко-очиститель для сложных пятен.
 - «📅 День по полочкам»: план ориентирован на маму и сочетает заботу о детях, домашние дела и отдых, но не выдумывает обстоятельства семьи. Учитывай известный контекст: если известно, что у мамы младенец или малыш, предусматривай гибкие окна для кормлений, прогулки и возможного дневного сна, помня, что планы могут часто меняться и ребёнок не обязан долго занимать себя самостоятельно. Если дети старше и известны школа, детский сад или занятия, учитывай их. Если возраст и режим неизвестны, предложи гибкий план для мамы с блоками заботы о детях, бытовых дел и отдыха — без выдуманных расписаний, возрастов и обязательств. Если для полезного плана действительно не хватает важной информации, задай один короткий вопрос; не превращай ответ в анкету. Временные блоки — ориентир: предлагай переносить дела, сокращать список и менять порядок по потребностям детей и состоянию мамы. Пиши короткими абзацами, тепло, на «ты», с лёгким юмором и без чувства вины. Не обещай, что всё обязательно будет выполнено, и не превращай правила продуктивности в обязательные нормы. Не вставляй рекламу автоматически. Greenway упоминай только если пользователь сам спрашивает или рекомендация действительно уместна; объясняй конкретно и естественно, без расплывчатых фраз вроде «полезный напиток вот отсюда» и без необоснованных обещаний пользы для здоровья. Если даёшь ссылку, используй действующую реферальную ссылку из правил ниже.
-- «💖 Тёплая поддержка»: искренние слова заботы, напоминание, что мама умница и всё делает правильно.
+- «💖 Тёплая поддержка»: следуй выбранному сценарию из SUPPORT_SCENARIOS. Будь естественной, не используй постоянные обращения «милая», «дорогая», не выдумывай чувства или обстоятельства, не давай непрошеных советов и не рекламируй товары. При непосредственной опасности направь к местной экстренной помощи и надёжному человеку рядом.
 
 В ответах сразу переходи к делу без шаблонных формальных вступлений.
 
@@ -847,10 +902,16 @@ async def process_start_action(callback: CallbackQuery) -> None:
     if callback.message is None:
         return
     if callback.data == "menu_clean":
+        support_sessions.pop(callback.from_user.id, None)
         await replace_callback_message(callback)
         await start_chaos_flow(callback.message)
         return
+    if callback.data == "menu_support":
+        await replace_callback_message(callback)
+        await start_support_flow(callback.message, request_user_id=callback.from_user.id)
+        return
 
+    support_sessions.pop(callback.from_user.id, None)
     prompts_map = {
         "menu_food": "Предложи разнообразное, простое и недорогое блюдо для всей семьи из обычных продуктов. Минимум активного времени у плиты, желательно 15-30 минут. Не повторяй блюда из нашей предыдущей переписки. В конце спроси, какие продукты уже есть дома, чтобы подобрать рецепт из них.",
         "menu_plan": "Составь тёплый и гибкий план именно для мамы: блоки заботы о детях, домашних дел и отдыха. Учитывай только известный контекст о возрасте детей, режиме, школе, садике и занятиях. Если известен младенец или малыш, оставь гибкие окна для кормлений, прогулки и возможного сна; не рассчитывай, что ребёнок долго займёт себя сам. Если возраст и режим неизвестны, не выдумывай их — предложи общий гибкий план для мамы. Время — ориентир: разрешай переносить дела, менять порядок и сокращать список. Отдых важнее списка задач; не обещай успеть всё и не вызывай чувство вины. Если действительно нужно уточнение, задай один короткий вопрос. Не используй фразу «пока все домашние ещё раскачиваются» и не предполагай наличие других членов семьи. Не добавляй автоматическую рекламу Greenway. Выведи подробный план дня целиком, не дели его на краткое вступление и скрытые подробности.",
@@ -1202,6 +1263,46 @@ async def process_chaos_callback(callback: CallbackQuery) -> None:
             return
 
 
+@dispatcher.callback_query(F.data.startswith("support:"))
+async def process_support_action(callback: CallbackQuery) -> None:
+    await callback.answer()
+    if callback.message is None:
+        return
+    data = callback.data or ""
+    user_id = callback.from_user.id
+    if data == "support:home":
+        support_sessions.pop(user_id, None)
+        await replace_callback_message(callback)
+        await answer_with_banner(
+            callback.message, START_CAPTION, BANNER_START,
+            reply_markup=inline_kb, parse_mode=ParseMode.HTML,
+        )
+        return
+    if data == "support:choose_again":
+        support_sessions.pop(user_id, None)
+        await replace_callback_message(callback)
+        await callback.message.answer(
+            "Какой поддержки тебе хочется сейчас? 💛",
+            reply_markup=support_choice_keyboard(),
+        )
+        return
+    parts = data.split(":")
+    if len(parts) != 3 or parts[1] != "choose" or parts[2] not in SUPPORT_SCENARIOS:
+        return
+    key = parts[2]
+    support_sessions[user_id] = key
+    scenario = SUPPORT_SCENARIOS[key]
+    await replace_callback_message(callback)
+    await answer_with_gemini(
+        callback.message,
+        "Ты выбрала сценарий: " + scenario["label"] + ".\n" + SUPPORT_STYLE + "\n"
+        + scenario["instruction"] + "\n\n"
+        + "Ответь первым коротким сообщением в этом стиле. Не выдумывай, что случилось. "
+        + "Не рекламируй товары и не предлагай совет, если выбран сценарий выговориться.",
+        support_mode=True,
+    )
+
+
 @dispatcher.callback_query(F.data == "back_to_menu")
 async def process_back_to_menu(callback: CallbackQuery) -> None:
     await callback.answer()
@@ -1334,12 +1435,13 @@ async def send_final_response(
     food_followup: bool = False,
     ignore_split: bool = False,
     plan_flow: bool = False,
+    support_mode: bool = False,
 ) -> None:
-    # Если названы товары Greenway, добавляем ссылку, если Gemini её пропустил.
+    # Рекламная автоссылка не должна попадать в эмоциональную поддержку.
     shop_url = "https://greenwayglobal.com/shop?gw=etJ4vRkF8D"
     product_names = ("mystik", "инволвер", "green fiber", "biotrim", "биотрим")
     reply_lower = reply.lower()
-    if any(name in reply_lower for name in product_names) and shop_url not in reply:
+    if not support_mode and any(name in reply_lower for name in product_names) and shop_url not in reply:
         reply = reply.rstrip() + (
             "\\n\\n🌿 Посмотреть эти средства можно в "
             f"[официальном эко-магазине]({shop_url})."
@@ -1527,6 +1629,7 @@ async def answer_with_gemini(
     food_followup: bool = False,
     ignore_split: bool = False,
     plan_flow: bool = False,
+    support_mode: bool = False,
 ) -> None:
     user_id = request_user_id or (message.from_user.id if message.from_user else message.chat.id)
     if prompt is None and voice_file_id is None:
@@ -1542,6 +1645,23 @@ async def answer_with_gemini(
                 user_content = text_user_content(prompt or "")
 
             history = conversation_history_by_user.get(user_id, [])
+            if support_mode:
+                scenario = SUPPORT_SCENARIOS.get(support_sessions.get(user_id, ""), {})
+                mode_context = (
+                    SUPPORT_STYLE + "\n\nТЕКУЩИЙ СЦЕНАРИЙ: "
+                    + scenario.get("instruction", "")
+                    + "\n\nПродолжай естественный разговор с учётом истории. "
+                    "Не начинай сценарий заново, не повторяй меню и не рекламируй товары."
+                )
+                if voice_file_id is None:
+                    user_content = text_user_content(
+                        mode_context + "\n\nСообщение мамы: " + (prompt or "")
+                    )
+                else:
+                    user_content = types.Content(
+                        role="user",
+                        parts=[*user_content.parts, types.Part.from_text(text=mode_context)],
+                    )
             request_contents = [*history, user_content]
             reply = None
 
@@ -1586,6 +1706,7 @@ async def answer_with_gemini(
                 food_followup=food_followup,
                 ignore_split=ignore_split,
                 plan_flow=plan_flow,
+                support_mode=support_mode,
             )
         except Exception as general_error:
             logger.exception(
@@ -1606,7 +1727,12 @@ async def handle_voice_message(message: Message) -> None:
     if message.voice is None:
         return
 
-    await answer_with_gemini(message, voice_file_id=message.voice.file_id)
+    user_id = message.from_user.id if message.from_user else message.chat.id
+    await answer_with_gemini(
+        message,
+        voice_file_id=message.voice.file_id,
+        support_mode=bool(support_sessions.get(user_id)),
+    )
 
 
 @dispatcher.message(Command("food"))
@@ -1770,14 +1896,7 @@ async def handle_plan_command(message: Message) -> None:
 
 @dispatcher.message(Command("support"))
 async def handle_support_command(message: Message) -> None:
-    global support_banner_index
-    banner_ids = (
-        BANNER_SUPPORT[support_banner_index:]
-        + BANNER_SUPPORT[:support_banner_index]
-    ) if BANNER_SUPPORT else None
-    if BANNER_SUPPORT:
-        support_banner_index = (support_banner_index + 1) % len(BANNER_SUPPORT)
-    await answer_with_gemini(message, MENU_BUTTONS[3], banner_ids=banner_ids)
+    await start_support_flow(message)
 
 
 @dispatcher.message(Command("reset_me"))
@@ -1865,6 +1984,15 @@ async def handle_text(message: Message) -> None:
         except Exception as err:
             logger.warning("Could not save user name: %s", err)
 
+    # Кнопка поддержки открывает выбор сценария.
+    if prompt == MENU_BUTTONS[3]:
+        await start_support_flow(message, request_user_id=user_id)
+        return
+
+    # При переходе в другой раздел завершаем сценарий поддержки.
+    if prompt in MENU_BUTTONS[:3]:
+        support_sessions.pop(user_id, None)
+
     # Кнопки ReplyKeyboard приходят как обычный текст, не как callback.
     # Для рубрики еды важно явно передать список фотографий.
     menu_prompts = {
@@ -1876,10 +2004,6 @@ async def handle_text(message: Message) -> None:
             "рецепт из них."
         ),
         MENU_BUTTONS[2]: "Составь тёплый и гибкий план именно для мамы: блоки заботы о детях, домашних дел и отдыха. Учитывай только известный контекст о возрасте детей, режиме, школе, садике и занятиях. Если известен младенец или малыш, оставь гибкие окна для кормлений, прогулки и возможного сна; не рассчитывай, что ребёнок долго займёт себя сам. Если возраст и режим неизвестны, не выдумывай их — предложи общий гибкий план для мамы. Время — ориентир: разрешай переносить дела, менять порядок и сокращать список. Отдых важнее списка задач; не обещай успеть всё и не вызывай чувство вины. Если действительно нужно уточнение, задай один короткий вопрос. Не используй фразу «пока все домашние ещё раскачиваются» и не предполагай наличие других членов семьи. Не добавляй автоматическую рекламу Greenway. Выведи подробный план дня целиком, не дели его на краткое вступление и скрытые подробности.",
-        MENU_BUTTONS[3]: (
-            "Мне сейчас тяжело, устала от быта и детей. Поддержи меня тепло, "
-            "как подруга."
-        ),
     }
     selected_prompt = menu_prompts.get(prompt, prompt)
     if prompt == MENU_BUTTONS[0]:
@@ -1897,15 +2021,8 @@ async def handle_text(message: Message) -> None:
         await start_plan_flow(message)
         return
 
-    if prompt == MENU_BUTTONS[3]:
-        global support_banner_index
-        banner_ids = (
-            BANNER_SUPPORT[support_banner_index:]
-            + BANNER_SUPPORT[:support_banner_index]
-        ) if BANNER_SUPPORT else None
-        if BANNER_SUPPORT:
-            support_banner_index = (support_banner_index + 1) % len(BANNER_SUPPORT)
-        await answer_with_gemini(message, selected_prompt, banner_ids=banner_ids)
+    if support_sessions.get(user_id):
+        await answer_with_gemini(message, prompt, support_mode=True)
         return
 
     await answer_with_gemini(message, selected_prompt)
