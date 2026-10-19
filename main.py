@@ -1990,8 +1990,14 @@ async def handle_text(message: Message) -> None:
         except Exception as err:
             logger.warning("Could not save user name: %s", err)
 
-    # Кнопка поддержки открывает выбор сценария.
-    if prompt == MENU_BUTTONS[3]:
+    # Reply-кнопка поддержки может приходить с различающимися emoji-вариантами.
+    # Сравниваем устойчивую текстовую часть, чтобы не отправлять её в Gemini как обычный запрос.
+    normalized_prompt = re.sub(r"[^\\w\\s]", "", prompt).casefold()
+    if (
+        prompt == MENU_BUTTONS[3]
+        or "тёплая поддержка" in normalized_prompt
+        or "теплая поддержка" in normalized_prompt
+    ):
         await start_support_flow(message, request_user_id=user_id)
         return
 
