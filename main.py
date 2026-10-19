@@ -147,24 +147,34 @@ async def start_support_flow(message: Message, request_user_id: int | None = Non
     support_sessions.pop(user_id, None)
     banner_ids = (
         BANNER_SUPPORT[support_banner_index:] + BANNER_SUPPORT[:support_banner_index]
-    ) if BANNER_SUPPORT else None
+    ) if BANNER_SUPPORT else []
     if BANNER_SUPPORT:
         support_banner_index = (support_banner_index + 1) % len(BANNER_SUPPORT)
-    # Отправляем выбор сценария отдельно: фото не должно блокировать кнопки.
-    await message.answer(
+
+    caption = (
         "🫂 <b>Тёплая поддержка</b>\n\n"
         "Как тебе сейчас хотелось бы, чтобы я была рядом? Выбери подходящий вариант. "
-        "Можно передумать или просто написать мне своими словами 💛",
+        "Можно передумать или просто написать мне своими словами 💛"
+    )
+    # Сначала отправляем одно вводное сообщение: фото, текст и кнопки вместе.
+    for photo_id in banner_ids:
+        try:
+            await message.answer_photo(
+                photo=photo_id,
+                caption=caption,
+                reply_markup=support_choice_keyboard(),
+                parse_mode=ParseMode.HTML,
+            )
+            return
+        except Exception as error:
+            logger.warning("Could not send support banner photo: %s", error)
+
+    # Если Telegram не принимает ни одну картинку, кнопки всё равно доступны.
+    await message.answer(
+        caption,
         reply_markup=support_choice_keyboard(),
         parse_mode=ParseMode.HTML,
     )
-    if banner_ids:
-        for photo_id in banner_ids:
-            try:
-                await message.answer_photo(photo=photo_id)
-                break
-            except Exception as error:
-                logger.warning("Could not send support banner photo: %s", error)
 
 
 START_CAPTION = (
