@@ -151,7 +151,12 @@ def support_return_keyboard() -> InlineKeyboardMarkup:
 async def start_support_flow(message: Message, request_user_id: int | None = None) -> None:
     global support_banner_index
     user_id = request_user_id or (message.from_user.id if message.from_user else message.chat.id)
-    support_sessions.pop(user_id, None)
+    if support_sessions.get(user_id):
+        await message.answer(
+            "Ты уже в выбранном сценарии поддержки. Просто напиши сообщение — продолжим разговор 💛"
+        )
+        return
+
     banner_ids = (
         BANNER_SUPPORT[support_banner_index:] + BANNER_SUPPORT[:support_banner_index]
     ) if BANNER_SUPPORT else []
