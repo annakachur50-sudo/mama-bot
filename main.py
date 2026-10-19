@@ -141,6 +141,15 @@ def support_choice_keyboard() -> InlineKeyboardMarkup:
     )
 
 
+def support_return_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="💛 Выбрать другой вариант", callback_data="support:choose_again")],
+            [InlineKeyboardButton(text="🏠 В главное меню", callback_data="support:home")],
+        ]
+    )
+
+
 async def start_support_flow(message: Message, request_user_id: int | None = None) -> None:
     global support_banner_index
     user_id = request_user_id or (message.from_user.id if message.from_user else message.chat.id)
