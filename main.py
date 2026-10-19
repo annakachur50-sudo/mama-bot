@@ -1636,6 +1636,9 @@ async def answer_with_gemini(
     user_id = request_user_id or (message.from_user.id if message.from_user else message.chat.id)
     if prompt is None and voice_file_id is None:
         return
+    # В поддержке ответ должен оставаться цельным, без скрываемой второй части.
+    if support_mode:
+        ignore_split = True
 
     async with get_user_request_lock(user_id):
         temporary_message = await send_thinking_message(message)
