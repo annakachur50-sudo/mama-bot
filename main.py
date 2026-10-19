@@ -152,7 +152,7 @@ async def start_support_flow(message: Message, request_user_id: int | None = Non
         support_banner_index = (support_banner_index + 1) % len(BANNER_SUPPORT)
     # Отправляем выбор сценария отдельно: фото не должно блокировать кнопки.
     await message.answer(
-        "🫂 <b>Тёплая поддержка</b>\\n\\n"
+        "🫂 <b>Тёплая поддержка</b>\n\n"
         "Как тебе сейчас хотелось бы, чтобы я была рядом? Выбери подходящий вариант. "
         "Можно передумать или просто написать мне своими словами 💛",
         reply_markup=support_choice_keyboard(),
