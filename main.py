@@ -1309,6 +1309,7 @@ async def process_support_action(callback: CallbackQuery) -> None:
         + "Ответь первым коротким сообщением в этом стиле. Не выдумывай, что случилось. "
         + "Не рекламируй товары и не предлагай совет, если выбран сценарий выговориться.",
         support_mode=True,
+        request_user_id=user_id,
     )
 
 
