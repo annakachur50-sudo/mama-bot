@@ -1772,11 +1772,8 @@ async def answer_with_gemini(
                     )
                 return
 
-            append_history(
-                user_id,
-                user_content if record_user_content else None,
-                reply,
-            )
+            if not support_mode:
+                append_history(user_id, user_content, reply)
             await send_final_response(
                 message,
                 reply,
@@ -1786,6 +1783,13 @@ async def answer_with_gemini(
                 plan_flow=plan_flow,
                 support_mode=support_mode,
             )
+            if support_mode:
+                # Сохраняем ответ поддержки только после успешной отправки в Telegram.
+                append_history(
+                    user_id,
+                    user_content if record_user_content else None,
+                    reply,
+                )
         except Exception as general_error:
             logger.exception(
                 "General error in answer_with_gemini: %s",
