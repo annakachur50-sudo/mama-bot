@@ -1318,7 +1318,6 @@ async def process_support_action(callback: CallbackQuery) -> None:
     key = parts[2]
     conversation_history_by_user.pop(user_id, None)
     support_sessions[user_id] = key
-    scenario = SUPPORT_SCENARIOS[key]
     await replace_callback_message(callback)
     await answer_with_gemini(
         callback.message,
@@ -1352,9 +1351,9 @@ def personalized_system_prompt(
     # Не используем латинское имя в русскоязычном общении: лучше «дорогая».
     usable_name = user_name if user_name and re.fullmatch(r"[А-Яа-яЁё-]+", user_name) else None
     user_greeting = (
-        f"Собеседницу зовут {usable_name}. Если обращаешься по имени, используй ТОЛЬКО это имя без изменения формы; не придумывай уменьшительные или искажённые варианты. Не ставь обращение в каждое сообщение.\n"
+        f"6. Собеседницу зовут {usable_name}. Если обращаешься по имени, используй ТОЛЬКО это имя без изменения формы: не придумывай уменьшительные, ласкательные или искажённые варианты (например, из «Анна» нельзя делать «Аннешка»). Если имя звучит неестественно в обращении, просто скажи «дорогая» или ответь без имени. Не ставь обращение в каждое сообщение.\\n"
         if usable_name
-        else "Обращайся к собеседнице тепло и по-доброму. Если имя записано латиницей, не произноси его в русскоязычном ответе.\n"
+        else "6. Обращайся к собеседнице тепло и по-доброму (милая, дорогая). Если имя записано латиницей, не произноси его в русскоязычном ответе.\\n"
     )
 
     if support_mode:
