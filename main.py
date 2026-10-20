@@ -1698,6 +1698,9 @@ async def answer_with_gemini(
     support_mode: bool = False,
 ) -> None:
     user_id = request_user_id or (message.from_user.id if message.from_user else message.chat.id)
+    # Capture the scenario before waiting for the per-user lock: a concurrent
+    # scenario switch must not change this request's user prompt/system rules.
+    support_scenario_key = support_sessions.get(user_id, "") if support_mode else ""
     if prompt is None and voice_file_id is None and not support_mode:
         return
     # В поддержке ответ должен оставаться цельным, без скрываемой второй части.
@@ -1710,11 +1713,19 @@ async def answer_with_gemini(
             if voice_file_id is not None:
                 audio_bytes = await download_voice_audio(voice_file_id)
                 user_content = voice_user_content(audio_bytes)
-            else:
+            elif prompt is None and support_mode:
+                scenario = SUPPORT_SCENARIOS.get(support_scenario_key, {})
                 user_content = text_user_content(
-                    prompt if prompt is not None else
-                    "Начни выбранный сценарий поддержки. Эта служебная команда не содержит сведений о пользователе."
+                    "Ты выбрала сценарий: " + scenario.get("label", "поддержки") + ".\n"
+                    + SUPPORT_STYLE + "\n"
+                    + scenario.get("instruction", "") + "\n\n"
+                    + "Первый ответ должен быть естественным и соразмерным ситуации, без длинных вступлений. "
+                    + "Отвечай только на подтверждённые детали, не додумывай чувства, обстоятельства или достижения. "
+                    + "Не обязательно задавать вопрос в конце. Для сценария «Мне нужно выговориться» не советуй. "
+                    + "Не рекламируй товары."
                 )
+            else:
+                user_content = text_user_content(prompt or "")
 
             history = conversation_history_by_user.get(user_id, [])
             if support_mode:
@@ -1745,7 +1756,7 @@ async def answer_with_gemini(
                         user_names.get(user_id),
                         support_mode=support_mode,
                         scenario_instruction=(
-                            SUPPORT_SCENARIOS.get(support_sessions.get(user_id, ""), {}).get("instruction", "")
+                            SUPPORT_SCENARIOS.get(support_scenario_key, {}).get("instruction", "")
                             if support_mode else None
                         ),
                     )
