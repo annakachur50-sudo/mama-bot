@@ -387,9 +387,10 @@ CHAOS_STEP_SEQUENCES = {
 }
 
 
-def append_history(user_id: int, user_content: types.Content, model_text: str) -> None:
+def append_history(user_id: int, user_content: types.Content | None, model_text: str) -> None:
     history = conversation_history_by_user.setdefault(user_id, [])
-    history.append(user_content)
+    if user_content is not None:
+        history.append(user_content)
     history.append(
         types.Content(
             role="model",
@@ -1324,7 +1325,7 @@ async def process_support_action(callback: CallbackQuery) -> None:
         support_mode=True,
         request_user_id=user_id,
         support_scenario_key=key,
-        record_history=False,
+        record_user_content=False,
     )
 
 
@@ -1363,7 +1364,7 @@ def personalized_system_prompt(
             "Не используй обращения «милая», «дорогая» и имя как привычную заставку. "
             "Обращайся по имени только изредка и если это звучит естественно; чаще отвечай сразу по существу."
         )
-        return f"{SUPPORT_STYLE}\n\nТЕКУЩИЙ СЦЕНАРИЙ:\n{selected_scenario}\n\n{support_addressing}
+        return f"{SUPPORT_STYLE}\n\nТЕКУЩИЙ СЦЕНАРИЙ:\n{selected_scenario}\n\n{support_addressing}"
 
     rules = (
         "\n\nПРАВИЛА ОФОРМЛЕНИЯ И ТОНА:\n"
@@ -1675,7 +1676,7 @@ async def answer_with_gemini(
     plan_flow: bool = False,
     support_mode: bool = False,
     support_scenario_key: str | None = None,
-    record_history: bool = True,
+    record_user_content: bool = True,
 ) -> None:
     user_id = request_user_id or (message.from_user.id if message.from_user else message.chat.id)
     if prompt is None and voice_file_id is None:
@@ -1771,8 +1772,11 @@ async def answer_with_gemini(
                     )
                 return
 
-            if record_history:
-                append_history(user_id, user_content, reply)
+            append_history(
+                user_id,
+                user_content if record_user_content else None,
+                reply,
+            )
             await send_final_response(
                 message,
                 reply,
