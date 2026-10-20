@@ -531,12 +531,20 @@ def format_child_age(age: dict) -> str:
 
 
 def family_age_summary(ages: list[dict]) -> str:
-    labels = {1: "старший ребёнок", 2: "второй ребёнок", 3: "третий ребёнок"}
+    labels = {
+        1: "старший ребёнок",
+        2: "второй ребёнок",
+        3: "третий ребёнок",
+    }
     lines = []
     for age in ages:
         child_number = int(age["child_number"])
-        label = labels.get(child_number, f"ребёнок №{child_number}")
-        lines.append(f"• {label}: {format_child_age(age)}")
+        label = labels.get(child_number)
+        if label is None:
+            label = "ребёнок №" + str(child_number)
+        age_text = format_child_age(age)
+        line = "• " + label + ": " + age_text
+        lines.append(line)
     return "\n".join(lines)
 
 
