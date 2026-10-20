@@ -107,23 +107,23 @@ support_banner_index = 0
 SUPPORT_SCENARIOS = {
     "vent": {
         "label": "💬 Мне нужно выговориться",
-        "instruction": "Если пользователь ещё не рассказал ситуацию, можно задать один простой открытый вопрос. После рассказа отреагируй на конкретные факты и смысл её слов простым языком, не добавляя предполагаемых чувств или обстоятельств. Не пересказывай длинно и не превращай разговор в допрос. Не советуй, не предлагай упражнений и не переходи к решениям без запроса. Если пользователь говорит, что хочет просто выговориться, подтверди это естественно и оставь ей пространство продолжить; не задавай обязательный вопрос в конце.",
+        "instruction": "Сначала внимательно улови, что именно произошло и что в рассказе для неё важно. Отзовись на конкретную деталь или противоречие из её слов — по-человечески, без длинного пересказа и готового «сочувственного вступления». Не приписывай ей эмоции и мотивы, которых она не называла. Не спеши чинить ситуацию: без прямой просьбы не давай советов, заданий и упражнений и не уводи разговор в другую тему. Если она только начинает рассказывать, задай один естественный открытый вопрос; если уже поделилась чем-то важным, иногда лучше просто откликнуться и дать ей продолжить без вопроса в конце.",
     },
     "warm": {
         "label": "🤍 Мне нужны тёплые слова",
-        "instruction": "Поддерживай именно в связи с описанной ситуацией. Не уходи в общие рассуждения о материнстве и не объясняй пользователю, что она якобы чувствует. Назови одну точную мысль, которая следует из её слов, простым человеческим языком. Не пересказывай сообщение длинно, не добавляй автоматическую похвалу и не заканчивай каждый ответ вопросом. Если ситуация неясна, можно мягко уточнить, но это не обязательно.",
+        "instruction": "Дай тёплый отклик именно на то, что мама рассказала, а не универсальную речь о том, как всем бывает трудно. Найди одну честную, поддерживающую мысль, которая действительно следует из её слов; можно признать усилия, снять лишнее давление или напомнить, что один тяжёлый день не определяет её целиком — только если это подходит к ситуации. Не предлагай ей выговориться и не превращай поддержку в советы или план действий. Не выдумывай похвалу, чувства и обстоятельства. Пиши живо и просто, иногда с мягким юмором, если он уместен. Вопрос в конце не обязателен: порой достаточно добрых слов и пространства.",
     },
     "advice": {
         "label": "🌿 Хочу бережный совет",
-        "instruction": "Если пользователь просит совета, дай один-два конкретных, реалистичных следующих шага, привязанных к названной ситуации, а не только рассуждение о проблеме. Не приписывай ей страх потерять контроль, неумение делегировать или другие мотивы, которых она не называла. Если для полезного совета не хватает ключевой информации, задай один уместный уточняющий вопрос. Если она явно просит только выслушать и не хочет советов, не навязывай их.",
+        "instruction": "Предложи один-два выполнимых шага, прямо связанных с тем, что мама описала, и учитывающих названные ею ограничения. Лучше маленький следующий шаг, чем идеальный план на всю жизнь. Объясняй кратко и без назидания; не сваливай на неё дополнительные обязанности и не предполагай, что ей легко попросить помощи, делегировать или всё организовать. Если без одной важной детали совет получится гаданием, задай один конкретный уточняющий вопрос. Если в сообщении она просит не советовать, а просто услышать её, уважай это и не навязывай решения.",
     },
     "pause": {
         "label": "☕ Хочу немного передохнуть",
-        "instruction": "Предлагай простые варианты, соответствующие обстоятельствам, которые пользователь назвал. Не считай отдых единственно правильным решением и не отправляй автоматически закрывать глаза, дышать или сидеть в тишине. Если у неё есть пять минут и она не знает, как их использовать, предложи на выбор небольшую передышку или одно маленькое дело — без давления и длинных инструкций. Не предполагай, что вокруг тихо, дети заняты или есть свободное время.",
+        "instruction": "Помоги снизить темп, не превращая передышку в ещё одно задание. Отзовись на конкретную ситуацию и оставь возможность просто побыть здесь без необходимости что-то исправлять. Не назначай автоматически дыхательные практики, закрытые глаза, тишину или «обязательные пять минут для себя» — обстоятельства могут этого не позволять. Если мама сама просит идею или говорит, что не знает, как передохнуть, предложи один лёгкий вариант с учётом её слов, без длинной инструкции и давления. Не требуй отчёта и не заканчивай непременно вопросом.",
     },
     "wins": {
         "label": "🌷 Хочу вспомнить свои маленькие победы",
-        "instruction": "Помогай заметить реальные события через один бережный и конкретный вопрос, если он уместен. Не убеждай, что пользователь обязательно сделала что-то великое, и не придумывай достижения. Если ей трудно вспомнить что-то полезное, не усиливай чувство вины и не дави повторными вопросами; можно спокойно признать, что сейчас ей сложно что-либо выделить.",
+        "instruction": "Помогай замечать только то, что действительно есть в рассказе: завершённое дело, принятое решение, выдержанный сложный момент или маленький шаг — если мама сама об этом сказала. Не раздувай мелочь до «великой победы», не приписывай ей поступки и не пытайся любой ценой найти позитив. Если пока нечего отметить, задай один простой, необязательный вопрос о конкретном моменте дня; не требуй составлять список. Если она говорит, что ничего не получилось, не спорь с ней и не дави повторными вопросами: можно признать, что сейчас ей трудно что-либо выделить, и оставить тему открытой.",
     },
 }
 support_sessions: dict[int, str] = {}
@@ -151,7 +151,8 @@ def support_return_keyboard() -> InlineKeyboardMarkup:
 async def start_support_flow(message: Message, request_user_id: int | None = None) -> None:
     global support_banner_index
     user_id = request_user_id or (message.from_user.id if message.from_user else message.chat.id)
-    support_sessions.pop(user_id, None)
+    # Повторный вход показывает выбор, но не сбрасывает активный сценарий.
+    # Смена сценария и очистка его истории происходят атомарно при выборе кнопки.
     banner_ids = (
         BANNER_SUPPORT[support_banner_index:] + BANNER_SUPPORT[:support_banner_index]
     ) if BANNER_SUPPORT else []
@@ -386,9 +387,10 @@ CHAOS_STEP_SEQUENCES = {
 }
 
 
-def append_history(user_id: int, user_content: types.Content, model_text: str) -> None:
+def append_history(user_id: int, user_content: types.Content | None, model_text: str) -> None:
     history = conversation_history_by_user.setdefault(user_id, [])
-    history.append(user_content)
+    if user_content is not None:
+        history.append(user_content)
     history.append(
         types.Content(
             role="model",
@@ -1305,7 +1307,7 @@ async def process_support_action(callback: CallbackQuery) -> None:
         )
         return
     if data == "support:choose_again":
-        support_sessions.pop(user_id, None)
+        # Не завершаем текущий сценарий, пока мама явно не выберет другой.
         await replace_callback_message(callback)
         await callback.message.answer(
             "Какой поддержки тебе хочется сейчас? 💛",
@@ -1316,14 +1318,14 @@ async def process_support_action(callback: CallbackQuery) -> None:
     if len(parts) != 3 or parts[1] != "choose" or parts[2] not in SUPPORT_SCENARIOS:
         return
     key = parts[2]
-    conversation_history_by_user.pop(user_id, None)
-    support_sessions[user_id] = key
     await replace_callback_message(callback)
     await answer_with_gemini(
         callback.message,
         "Мама выбрала сценарий поддержки. Начни разговор естественно и коротко.",
         support_mode=True,
         request_user_id=user_id,
+        support_scenario_key=key,
+        record_user_content=False,
     )
 
 
@@ -1358,7 +1360,11 @@ def personalized_system_prompt(
 
     if support_mode:
         selected_scenario = scenario_instruction or "Следуй выбранному сценарию поддержки."
-        return f"{SUPPORT_STYLE}\n\nТЕКУЩИЙ СЦЕНАРИЙ:\n{selected_scenario}\n\n{user_greeting}"
+        support_addressing = (
+            "Не используй обращения «милая», «дорогая» и имя как привычную заставку. "
+            "Обращайся по имени только изредка и если это звучит естественно; чаще отвечай сразу по существу."
+        )
+        return f"{SUPPORT_STYLE}\n\nТЕКУЩИЙ СЦЕНАРИЙ:\n{selected_scenario}\n\n{support_addressing}"
 
     rules = (
         "\n\nПРАВИЛА ОФОРМЛЕНИЯ И ТОНА:\n"
@@ -1669,6 +1675,8 @@ async def answer_with_gemini(
     ignore_split: bool = False,
     plan_flow: bool = False,
     support_mode: bool = False,
+    support_scenario_key: str | None = None,
+    record_user_content: bool = True,
 ) -> None:
     user_id = request_user_id or (message.from_user.id if message.from_user else message.chat.id)
     if prompt is None and voice_file_id is None:
@@ -1678,6 +1686,22 @@ async def answer_with_gemini(
         ignore_split = True
 
     async with get_user_request_lock(user_id):
+        if support_scenario_key is not None:
+            if support_scenario_key not in SUPPORT_SCENARIOS:
+                return
+            # Дождались завершения предыдущего запроса пользователя: старый ответ
+            # не сможет дописать историю уже после переключения сценария.
+            conversation_history_by_user.pop(user_id, None)
+            support_sessions[user_id] = support_scenario_key
+            support_mode = True
+            ignore_split = True
+        elif support_mode and support_sessions.get(user_id) not in SUPPORT_SCENARIOS:
+            await message.answer(
+                "Выбери, какая поддержка тебе сейчас нужна.",
+                reply_markup=support_choice_keyboard(),
+            )
+            return
+
         temporary_message = await send_thinking_message(message)
         try:
             if voice_file_id is not None:
@@ -1692,9 +1716,9 @@ async def answer_with_gemini(
                 scenario = SUPPORT_SCENARIOS.get(support_sessions.get(user_id, ""), {})
                 scenario_instruction = (
                     scenario.get("label", "")
-                    + "\\n"
+                    + "\n"
                     + scenario.get("instruction", "")
-                    + "\\n\\nПродолжай естественный разговор с учётом истории текущего сценария. "
+                    + "\n\nПродолжай естественный разговор с учётом истории текущего сценария. "
                     "Отвечай на последнюю реплику, включая новые подробности; не повторяй стартовый ответ. "
                     "Не используй общий совет вместо реакции на конкретную ситуацию. "
                     "Если пользователь просит только выслушать — не советуй. Не рекламируй товары."
@@ -1718,26 +1742,38 @@ async def answer_with_gemini(
                     if attempt == 0:
                         await asyncio.sleep(2)
                     else:
-                        error_message = (
-                            "Немножко подвисла связь у серверов 🙈\n\n"
-                            "Сделай пока глоток вкусного чая или кофе ☕️🍪\n"
-                            "Загляни через 15–20 минут — всё как раз наладится, "
-                            "и я буду на связи! 🌸✨"
-                        )
-                        await message.answer(
-                            error_message,
-                            reply_markup=MENU_KEYBOARD,
-                        )
+                        if support_mode:
+                            error_message = (
+                                "Не получилось получить ответ сейчас. Предыдущие сообщения сохранились; "
+                                "отправь последнюю реплику ещё раз, и продолжим с неё."
+                            )
+                            error_markup = None
+                        else:
+                            error_message = (
+                                "Немножко подвисла связь у серверов 🙈\n\n"
+                                "Сделай пока глоток вкусного чая или кофе ☕️🍪\n"
+                                "Загляни через 15–20 минут — всё как раз наладится, "
+                                "и я буду на связи! 🌸✨"
+                            )
+                            error_markup = MENU_KEYBOARD
+                        await message.answer(error_message, reply_markup=error_markup)
                         return
 
             if not reply:
-                await message.answer(
-                    "Ой, милая, отвлеклась на секунду! Нажми ещё раз на кнопочку меню 🌸",
-                    reply_markup=MENU_KEYBOARD,
-                )
+                if support_mode:
+                    await message.answer(
+                        "Не получилось сформировать ответ на этот раз. Предыдущие сообщения сохранились; "
+                        "отправь последнюю реплику ещё раз, и продолжим с неё."
+                    )
+                else:
+                    await message.answer(
+                        "Ой, милая, отвлеклась на секунду! Нажми ещё раз на кнопочку меню 🌸",
+                        reply_markup=MENU_KEYBOARD,
+                    )
                 return
 
-            append_history(user_id, user_content, reply)
+            if not support_mode:
+                append_history(user_id, user_content, reply)
             await send_final_response(
                 message,
                 reply,
@@ -1747,16 +1783,29 @@ async def answer_with_gemini(
                 plan_flow=plan_flow,
                 support_mode=support_mode,
             )
+            if support_mode:
+                # Сохраняем ответ поддержки только после успешной отправки в Telegram.
+                append_history(
+                    user_id,
+                    user_content if record_user_content else None,
+                    reply,
+                )
         except Exception as general_error:
             logger.exception(
                 "General error in answer_with_gemini: %s",
                 general_error,
             )
-            await message.answer(
-                "Ой, милая, у меня на секунду закружилась голова от забот! 🙈 "
-                "Сделай глоток чая — нажми ещё разок, я уже на связи ☕️✨",
-                reply_markup=MENU_KEYBOARD,
-            )
+            if support_mode:
+                await message.answer(
+                    "Не получилось обработать сообщение сейчас. Предыдущие сообщения сохранились; "
+                    "отправь последнюю реплику ещё раз, и продолжим с неё."
+                )
+            else:
+                await message.answer(
+                    "Ой, милая, у меня на секунду закружилась голова от забот! 🙈 "
+                    "Сделай глоток чая — нажми ещё разок, я уже на связи ☕️✨",
+                    reply_markup=MENU_KEYBOARD,
+                )
         finally:
             await delete_thinking_message(message, temporary_message)
 
