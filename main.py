@@ -151,7 +151,8 @@ def support_return_keyboard() -> InlineKeyboardMarkup:
 async def start_support_flow(message: Message, request_user_id: int | None = None) -> None:
     global support_banner_index
     user_id = request_user_id or (message.from_user.id if message.from_user else message.chat.id)
-    support_sessions.pop(user_id, None)
+    # Повторный вход показывает выбор, но не сбрасывает активный сценарий.
+    # Смена сценария и очистка его истории происходят атомарно при выборе кнопки.
     banner_ids = (
         BANNER_SUPPORT[support_banner_index:] + BANNER_SUPPORT[:support_banner_index]
     ) if BANNER_SUPPORT else []
@@ -1305,7 +1306,7 @@ async def process_support_action(callback: CallbackQuery) -> None:
         )
         return
     if data == "support:choose_again":
-        support_sessions.pop(user_id, None)
+        # Не завершаем текущий сценарий, пока мама явно не выберет другой.
         await replace_callback_message(callback)
         await callback.message.answer(
             "Какой поддержки тебе хочется сейчас? 💛",
@@ -1316,14 +1317,14 @@ async def process_support_action(callback: CallbackQuery) -> None:
     if len(parts) != 3 or parts[1] != "choose" or parts[2] not in SUPPORT_SCENARIOS:
         return
     key = parts[2]
-    conversation_history_by_user.pop(user_id, None)
-    support_sessions[user_id] = key
     await replace_callback_message(callback)
     await answer_with_gemini(
         callback.message,
         "Мама выбрала сценарий поддержки. Начни разговор естественно и коротко.",
         support_mode=True,
         request_user_id=user_id,
+        support_scenario_key=key,
+        record_history=False,
     )
 
 
@@ -1358,7 +1359,11 @@ def personalized_system_prompt(
 
     if support_mode:
         selected_scenario = scenario_instruction or "Следуй выбранному сценарию поддержки."
-        return f"{SUPPORT_STYLE}\n\nТЕКУЩИЙ СЦЕНАРИЙ:\n{selected_scenario}\n\n{user_greeting}"
+        support_addressing = (
+            "Не используй обращения «милая», «дорогая» и имя как привычную заставку. "
+            "Обращайся по имени только изредка и если это звучит естественно; чаще отвечай сразу по существу."
+        )
+        return f"{SUPPORT_STYLE}\n\nТЕКУЩИЙ СЦЕНАРИЙ:\n{selected_scenario}\n\n{support_addressing}
 
     rules = (
         "\n\nПРАВИЛА ОФОРМЛЕНИЯ И ТОНА:\n"
@@ -1669,6 +1674,8 @@ async def answer_with_gemini(
     ignore_split: bool = False,
     plan_flow: bool = False,
     support_mode: bool = False,
+    support_scenario_key: str | None = None,
+    record_history: bool = True,
 ) -> None:
     user_id = request_user_id or (message.from_user.id if message.from_user else message.chat.id)
     if prompt is None and voice_file_id is None:
@@ -1678,6 +1685,22 @@ async def answer_with_gemini(
         ignore_split = True
 
     async with get_user_request_lock(user_id):
+        if support_scenario_key is not None:
+            if support_scenario_key not in SUPPORT_SCENARIOS:
+                return
+            # Дождались завершения предыдущего запроса пользователя: старый ответ
+            # не сможет дописать историю уже после переключения сценария.
+            conversation_history_by_user.pop(user_id, None)
+            support_sessions[user_id] = support_scenario_key
+            support_mode = True
+            ignore_split = True
+        elif support_mode and support_sessions.get(user_id) not in SUPPORT_SCENARIOS:
+            await message.answer(
+                "Выбери, какая поддержка тебе сейчас нужна.",
+                reply_markup=support_choice_keyboard(),
+            )
+            return
+
         temporary_message = await send_thinking_message(message)
         try:
             if voice_file_id is not None:
@@ -1692,9 +1715,9 @@ async def answer_with_gemini(
                 scenario = SUPPORT_SCENARIOS.get(support_sessions.get(user_id, ""), {})
                 scenario_instruction = (
                     scenario.get("label", "")
-                    + "\\n"
+                    + "\n"
                     + scenario.get("instruction", "")
-                    + "\\n\\nПродолжай естественный разговор с учётом истории текущего сценария. "
+                    + "\n\nПродолжай естественный разговор с учётом истории текущего сценария. "
                     "Отвечай на последнюю реплику, включая новые подробности; не повторяй стартовый ответ. "
                     "Не используй общий совет вместо реакции на конкретную ситуацию. "
                     "Если пользователь просит только выслушать — не советуй. Не рекламируй товары."
@@ -1718,26 +1741,38 @@ async def answer_with_gemini(
                     if attempt == 0:
                         await asyncio.sleep(2)
                     else:
-                        error_message = (
-                            "Немножко подвисла связь у серверов 🙈\n\n"
-                            "Сделай пока глоток вкусного чая или кофе ☕️🍪\n"
-                            "Загляни через 15–20 минут — всё как раз наладится, "
-                            "и я буду на связи! 🌸✨"
-                        )
-                        await message.answer(
-                            error_message,
-                            reply_markup=MENU_KEYBOARD,
-                        )
+                        if support_mode:
+                            error_message = (
+                                "Не получилось получить ответ сейчас. Предыдущие сообщения сохранились; "
+                                "отправь последнюю реплику ещё раз, и продолжим с неё."
+                            )
+                            error_markup = None
+                        else:
+                            error_message = (
+                                "Немножко подвисла связь у серверов 🙈\n\n"
+                                "Сделай пока глоток вкусного чая или кофе ☕️🍪\n"
+                                "Загляни через 15–20 минут — всё как раз наладится, "
+                                "и я буду на связи! 🌸✨"
+                            )
+                            error_markup = MENU_KEYBOARD
+                        await message.answer(error_message, reply_markup=error_markup)
                         return
 
             if not reply:
-                await message.answer(
-                    "Ой, милая, отвлеклась на секунду! Нажми ещё раз на кнопочку меню 🌸",
-                    reply_markup=MENU_KEYBOARD,
-                )
+                if support_mode:
+                    await message.answer(
+                        "Не получилось сформировать ответ на этот раз. Предыдущие сообщения сохранились; "
+                        "отправь последнюю реплику ещё раз, и продолжим с неё."
+                    )
+                else:
+                    await message.answer(
+                        "Ой, милая, отвлеклась на секунду! Нажми ещё раз на кнопочку меню 🌸",
+                        reply_markup=MENU_KEYBOARD,
+                    )
                 return
 
-            append_history(user_id, user_content, reply)
+            if record_history:
+                append_history(user_id, user_content, reply)
             await send_final_response(
                 message,
                 reply,
@@ -1752,11 +1787,17 @@ async def answer_with_gemini(
                 "General error in answer_with_gemini: %s",
                 general_error,
             )
-            await message.answer(
-                "Ой, милая, у меня на секунду закружилась голова от забот! 🙈 "
-                "Сделай глоток чая — нажми ещё разок, я уже на связи ☕️✨",
-                reply_markup=MENU_KEYBOARD,
-            )
+            if support_mode:
+                await message.answer(
+                    "Не получилось обработать сообщение сейчас. Предыдущие сообщения сохранились; "
+                    "отправь последнюю реплику ещё раз, и продолжим с неё."
+                )
+            else:
+                await message.answer(
+                    "Ой, милая, у меня на секунду закружилась голова от забот! 🙈 "
+                    "Сделай глоток чая — нажми ещё разок, я уже на связи ☕️✨",
+                    reply_markup=MENU_KEYBOARD,
+                )
         finally:
             await delete_thinking_message(message, temporary_message)
 
