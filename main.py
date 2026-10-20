@@ -1316,15 +1316,13 @@ async def process_support_action(callback: CallbackQuery) -> None:
     if len(parts) != 3 or parts[1] != "choose" or parts[2] not in SUPPORT_SCENARIOS:
         return
     key = parts[2]
+    conversation_history_by_user.pop(user_id, None)
     support_sessions[user_id] = key
     scenario = SUPPORT_SCENARIOS[key]
     await replace_callback_message(callback)
     await answer_with_gemini(
         callback.message,
-        "Ты выбрала сценарий: " + scenario["label"] + ".\n" + SUPPORT_STYLE + "\n"
-        + scenario["instruction"] + "\n\n"
-        + "Первый ответ должен быть естественным и соразмерным ситуации, без длинных вступлений. "
-        + "Отвечай только на подтверждённые детали, не додумывай чувства, обстоятельства или достижения. Не обязательно задавать вопрос в конце. Для сценария «Мне нужно выговориться» не советуй. Не рекламируй товары.",
+        "Мама выбрала сценарий поддержки. Начни разговор естественно и коротко.",
         support_mode=True,
         request_user_id=user_id,
     )
@@ -1346,14 +1344,22 @@ async def process_back_to_menu(callback: CallbackQuery) -> None:
     )
 
 
-def personalized_system_prompt(user_name: str | None) -> str:
+def personalized_system_prompt(
+    user_name: str | None,
+    support_mode: bool = False,
+    scenario_instruction: str | None = None,
+) -> str:
     # Не используем латинское имя в русскоязычном общении: лучше «дорогая».
     usable_name = user_name if user_name and re.fullmatch(r"[А-Яа-яЁё-]+", user_name) else None
     user_greeting = (
-        f"6. Собеседницу зовут {usable_name}. Если обращаешься по имени, используй ТОЛЬКО это имя без изменения формы: не придумывай уменьшительные, ласкательные или искажённые варианты (например, из «Анна» нельзя делать «Аннешка»). Если имя звучит неестественно в обращении, просто скажи «дорогая» или ответь без имени. Не ставь обращение в каждое сообщение.\n"
+        f"Собеседницу зовут {usable_name}. Если обращаешься по имени, используй ТОЛЬКО это имя без изменения формы; не придумывай уменьшительные или искажённые варианты. Не ставь обращение в каждое сообщение.\n"
         if usable_name
-        else "6. Обращайся к собеседнице тепло и по-доброму (милая, дорогая). Если имя записано латиницей, не произноси его в русскоязычном ответе.\n"
+        else "Обращайся к собеседнице тепло и по-доброму. Если имя записано латиницей, не произноси его в русскоязычном ответе.\n"
     )
+
+    if support_mode:
+        selected_scenario = scenario_instruction or "Следуй выбранному сценарию поддержки."
+        return f"{SUPPORT_STYLE}\n\nТЕКУЩИЙ СЦЕНАРИЙ:\n{selected_scenario}\n\n{user_greeting}"
 
     rules = (
         "\n\nПРАВИЛА ОФОРМЛЕНИЯ И ТОНА:\n"
@@ -1373,6 +1379,8 @@ def personalized_system_prompt(user_name: str | None) -> str:
 def generate_reply(
     contents: list[types.Content],
     user_name: str | None = None,
+    support_mode: bool = False,
+    scenario_instruction: str | None = None,
 ) -> str:
     # Повторные попытки выполняются в answer_with_gemini, поэтому здесь
     # не создаём ещё один вложенный цикл, который надолго задерживает ответ.
@@ -1380,7 +1388,11 @@ def generate_reply(
         model=GEMINI_MODEL,
         contents=contents,
         config=types.GenerateContentConfig(
-            system_instruction=personalized_system_prompt(user_name),
+            system_instruction=personalized_system_prompt(
+                user_name,
+                support_mode=support_mode,
+                scenario_instruction=scenario_instruction,
+            ),
         ),
     )
     return (response.text or "").strip()
@@ -1676,25 +1688,18 @@ async def answer_with_gemini(
                 user_content = text_user_content(prompt or "")
 
             history = conversation_history_by_user.get(user_id, [])
+            scenario_instruction = None
             if support_mode:
                 scenario = SUPPORT_SCENARIOS.get(support_sessions.get(user_id, ""), {})
-                mode_context = (
-                    SUPPORT_STYLE + "\n\nТЕКУЩИЙ СЦЕНАРИЙ: "
+                scenario_instruction = (
+                    scenario.get("label", "")
+                    + "\\n"
                     + scenario.get("instruction", "")
-                    + "\n\nПродолжай естественный разговор с учётом всей доступной истории. "
+                    + "\\n\\nПродолжай естественный разговор с учётом истории текущего сценария. "
                     "Отвечай на последнюю реплику, включая новые подробности; не повторяй стартовый ответ. "
                     "Не используй общий совет вместо реакции на конкретную ситуацию. "
                     "Если пользователь просит только выслушать — не советуй. Не рекламируй товары."
                 )
-                if voice_file_id is None:
-                    user_content = text_user_content(
-                        mode_context + "\n\nСообщение мамы: " + (prompt or "")
-                    )
-                else:
-                    user_content = types.Content(
-                        role="user",
-                        parts=[*user_content.parts, types.Part.from_text(text=mode_context)],
-                    )
             request_contents = [*history, user_content]
             reply = None
 
@@ -1704,6 +1709,8 @@ async def answer_with_gemini(
                         generate_reply,
                         request_contents,
                         user_names.get(user_id),
+                        support_mode,
+                        scenario_instruction,
                     )
                     if reply:
                         break
