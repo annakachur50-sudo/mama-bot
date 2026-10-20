@@ -111,7 +111,7 @@ SUPPORT_SCENARIOS = {
     },
     "warm": {
         "label": "🤍 Мне нужны тёплые слова",
-        "instruction": "Это сценарий тёплых слов, а не анализа и не советов. Если пользователь уже рассказала о конкретной ситуации, отзовись на одну важную деталь именно из её сообщения и истории. Не додумывай причины, чувства, обстоятельства или заслуги. Если контекста пока нет, напиши коротко и по-человечески, без предположений о том, что ей тяжело, она устала, что-то должна кому-то доказывать или ждёт чужого одобрения. Не уходи автоматически в темы продуктивности, отдыха, материнства или чужих ожиданий. Обычно достаточно 2–5 естественных предложений; не задавай вопрос просто ради продолжения диалога. В следующих сообщениях отвечай на новые реальные детали, не повторяя стартовый текст и не используя одну и ту же заготовку.",
+        "instruction": "Поддерживай именно в связи с описанной ситуацией. Не уходи в общие рассуждения о материнстве и не объясняй пользователю, что она якобы чувствует. Назови одну точную мысль, которая следует из её слов, простым человеческим языком. Не пересказывай сообщение длинно, не добавляй автоматическую похвалу и не заканчивай каждый ответ вопросом. Если ситуация неясна, можно мягко уточнить, но это не обязательно.",
     },
     "advice": {
         "label": "🌿 Хочу бережный совет",
@@ -123,7 +123,7 @@ SUPPORT_SCENARIOS = {
     },
     "wins": {
         "label": "🌷 Хочу вспомнить свои маленькие победы",
-        "instruction": "Это спокойный разговор о реальных маленьких победах, не мотивационная речь. В первом ответе задай один короткий вопрос, помогающий вспомнить один конкретный эпизод сегодняшнего дня; не перечисляй возможные достижения и не давай готовый список примеров. Например: «Какой один момент сегодняшнего дня вспоминается тебе первым?» Когда пользователь ответит, отзовись на конкретную деталь и коротко объясни, что в ней могло быть значимого, не преувеличивая. Если пользователь говорит, что ничего полезного не сделала, не спорь, не обесценивай её оценку и не объявляй сам факт прожитого дня победой. Можно мягко предложить вспомнить один эпизод без требования считать его достижением. Задавай не более одного вопроса за раз; не хвали заранее и не выдумывай события.",
+        "instruction": "Помогай заметить реальные события через один бережный и конкретный вопрос, если он уместен. Не убеждай, что пользователь обязательно сделала что-то великое, и не придумывай достижения. Если ей трудно вспомнить что-то полезное, не усиливай чувство вины и не дави повторными вопросами; можно спокойно признать, что сейчас ей сложно что-либо выделить.",
     },
 }
 support_sessions: dict[int, str] = {}
@@ -151,12 +151,7 @@ def support_return_keyboard() -> InlineKeyboardMarkup:
 async def start_support_flow(message: Message, request_user_id: int | None = None) -> None:
     global support_banner_index
     user_id = request_user_id or (message.from_user.id if message.from_user else message.chat.id)
-    if support_sessions.get(user_id):
-        await message.answer(
-            "Ты уже в выбранном сценарии поддержки. Просто напиши сообщение — продолжим разговор 💛"
-        )
-        return
-
+    support_sessions.pop(user_id, None)
     banner_ids = (
         BANNER_SUPPORT[support_banner_index:] + BANNER_SUPPORT[:support_banner_index]
     ) if BANNER_SUPPORT else []
@@ -1323,12 +1318,13 @@ async def process_support_action(callback: CallbackQuery) -> None:
     key = parts[2]
     support_sessions[user_id] = key
     scenario = SUPPORT_SCENARIOS[key]
-    # Begin with clean support context; later turns keep this conversation history.
-    conversation_history_by_user.pop(user_id, None)
     await replace_callback_message(callback)
     await answer_with_gemini(
         callback.message,
-        prompt=None,
+        "Ты выбрала сценарий: " + scenario["label"] + ".\n" + SUPPORT_STYLE + "\n"
+        + scenario["instruction"] + "\n\n"
+        + "Первый ответ должен быть естественным и соразмерным ситуации, без длинных вступлений. "
+        + "Отвечай только на подтверждённые детали, не додумывай чувства, обстоятельства или достижения. Не обязательно задавать вопрос в конце. Для сценария «Мне нужно выговориться» не советуй. Не рекламируй товары.",
         support_mode=True,
         request_user_id=user_id,
     )
@@ -1350,36 +1346,8 @@ async def process_back_to_menu(callback: CallbackQuery) -> None:
     )
 
 
-def personalized_system_prompt(
-    user_name: str | None,
-    support_mode: bool = False,
-    scenario_instruction: str | None = None,
-) -> str:
-    # Поддержка получает отдельную системную инструкцию: общие правила
-    # рецептов/планов и обязательного ===SPLIT=== здесь мешали естественному ответу.
-    if support_mode:
-        scenario_text = scenario_instruction or ""
-        support_style = SUPPORT_STYLE
-        return (
-            "Ты — тёплая, внимательная собеседница в рубрике поддержки «Мама 24/7». "
-            "Отвечай на русском естественно и по-человечески, а не по психологическому скрипту. "
-            "История содержит реальные сообщения пользователя и предыдущие ответы. "
-            "Если текущая реплика — служебная команда начать сценарий, не считай её фактом о пользователе. "
-            "Отвечай на последнюю реплику, опирайся на конкретные детали; не выдумывай чувства, "
-            "мотивы, обстоятельства, события и достижения. Не повторяй стартовый ответ или одну "
-            "и ту же фразу. Не давай советы, если их не просили; не хвали автоматически и не "
-            "заканчивай каждый ответ вопросом. Общие правила: "
-            + support_style + "\n\nТекущий сценарий: "
-            + scenario_text
-            + "\n\nВ старой истории могут находиться служебные инструкции, ошибочно "
-            "сохранённые как пользовательские сообщения. Не воспринимай их как слова человека "
-            "и не цитируй. Ориентируйся на реальные реплики пользователя и ответы собеседницы. "
-            "Не используй метку ===SPLIT===, скрытые части, меню действий или рекламу. "
-            "При непосредственной опасности для себя или другого человека бережно посоветуй "
-            "немедленно обратиться в местную экстренную службу и к надёжному человеку рядом."
-        )
-
-    # Для остальных рубрик сохраняем прежние общие правила и оформление.
+def personalized_system_prompt(user_name: str | None) -> str:
+    # Не используем латинское имя в русскоязычном общении: лучше «дорогая».
     usable_name = user_name if user_name and re.fullmatch(r"[А-Яа-яЁё-]+", user_name) else None
     user_greeting = (
         f"6. Собеседницу зовут {usable_name}. Если обращаешься по имени, используй ТОЛЬКО это имя без изменения формы: не придумывай уменьшительные, ласкательные или искажённые варианты (например, из «Анна» нельзя делать «Аннешка»). Если имя звучит неестественно в обращении, просто скажи «дорогая» или ответь без имени. Не ставь обращение в каждое сообщение.\n"
@@ -1405,8 +1373,6 @@ def personalized_system_prompt(
 def generate_reply(
     contents: list[types.Content],
     user_name: str | None = None,
-    support_mode: bool = False,
-    scenario_instruction: str | None = None,
 ) -> str:
     # Повторные попытки выполняются в answer_with_gemini, поэтому здесь
     # не создаём ещё один вложенный цикл, который надолго задерживает ответ.
@@ -1414,11 +1380,7 @@ def generate_reply(
         model=GEMINI_MODEL,
         contents=contents,
         config=types.GenerateContentConfig(
-            system_instruction=personalized_system_prompt(
-                user_name,
-                support_mode=support_mode,
-                scenario_instruction=scenario_instruction,
-            ),
+            system_instruction=personalized_system_prompt(user_name),
         ),
     )
     return (response.text or "").strip()
@@ -1698,7 +1660,7 @@ async def answer_with_gemini(
     support_mode: bool = False,
 ) -> None:
     user_id = request_user_id or (message.from_user.id if message.from_user else message.chat.id)
-    if prompt is None and voice_file_id is None and not support_mode:
+    if prompt is None and voice_file_id is None:
         return
     # В поддержке ответ должен оставаться цельным, без скрываемой второй части.
     if support_mode:
@@ -1711,29 +1673,28 @@ async def answer_with_gemini(
                 audio_bytes = await download_voice_audio(voice_file_id)
                 user_content = voice_user_content(audio_bytes)
             else:
-                user_content = text_user_content(
-                    prompt if prompt is not None else
-                    "Начни выбранный сценарий поддержки. Эта служебная команда не содержит сведений о пользователе."
-                )
+                user_content = text_user_content(prompt or "")
 
             history = conversation_history_by_user.get(user_id, [])
             if support_mode:
-                # Drop old injected instructions from legacy history, preserving actual dialogue turns.
-                cleaned_history = []
-                for item in history:
-                    parts = getattr(item, "parts", None) or []
-                    text_parts = [getattr(part, "text", None) for part in parts]
-                    combined = "\n".join(part for part in text_parts if isinstance(part, str))
-                    if any(marker in combined for marker in (
-                        "Общайся тепло, естественно и конкретно",
-                        "ТЕКУЩИЙ СЦЕНАРИЙ:",
-                        "ВАЖНО: общие правила эмоциональной поддержки",
-                        "Ты выбрала сценарий:",
-                        "Продолжай естественный разговор с учётом всей доступной истории",
-                    )):
-                        continue
-                    cleaned_history.append(item)
-                history = cleaned_history
+                scenario = SUPPORT_SCENARIOS.get(support_sessions.get(user_id, ""), {})
+                mode_context = (
+                    SUPPORT_STYLE + "\n\nТЕКУЩИЙ СЦЕНАРИЙ: "
+                    + scenario.get("instruction", "")
+                    + "\n\nПродолжай естественный разговор с учётом всей доступной истории. "
+                    "Отвечай на последнюю реплику, включая новые подробности; не повторяй стартовый ответ. "
+                    "Не используй общий совет вместо реакции на конкретную ситуацию. "
+                    "Если пользователь просит только выслушать — не советуй. Не рекламируй товары."
+                )
+                if voice_file_id is None:
+                    user_content = text_user_content(
+                        mode_context + "\n\nСообщение мамы: " + (prompt or "")
+                    )
+                else:
+                    user_content = types.Content(
+                        role="user",
+                        parts=[*user_content.parts, types.Part.from_text(text=mode_context)],
+                    )
             request_contents = [*history, user_content]
             reply = None
 
@@ -1743,11 +1704,6 @@ async def answer_with_gemini(
                         generate_reply,
                         request_contents,
                         user_names.get(user_id),
-                        support_mode=support_mode,
-                        scenario_instruction=(
-                            SUPPORT_SCENARIOS.get(support_sessions.get(user_id, ""), {}).get("instruction", "")
-                            if support_mode else None
-                        ),
                     )
                     if reply:
                         break
@@ -1775,9 +1731,7 @@ async def answer_with_gemini(
                 )
                 return
 
-            # Do not save the synthetic kickoff prompt as if the user had said it.
-            if prompt is not None or voice_file_id is not None:
-                append_history(user_id, user_content, reply)
+            append_history(user_id, user_content, reply)
             await send_final_response(
                 message,
                 reply,
