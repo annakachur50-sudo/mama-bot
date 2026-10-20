@@ -1358,7 +1358,7 @@ def personalized_system_prompt(
 
     if support_mode:
         selected_scenario = scenario_instruction or "Следуй выбранному сценарию поддержки."
-        return f"{SUPPORT_STYLE}\\n\\nТЕКУЩИЙ СЦЕНАРИЙ:\\n{selected_scenario}\\n\\n{user_greeting}"
+        return f"{SUPPORT_STYLE}\n\nТЕКУЩИЙ СЦЕНАРИЙ:\n{selected_scenario}\n\n{user_greeting}"
 
     rules = (
         "\n\nПРАВИЛА ОФОРМЛЕНИЯ И ТОНА:\n"
