@@ -1111,36 +1111,137 @@ def chaos_next_zone_keyboard(session_id: int, current_zone: str) -> InlineKeyboa
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-async def start_chaos_flow(message: Message) -> None:
-    global chaos_session_counter, clean_banner_index
-    user_id = message.from_user.id if message.from_user else message.chat.id
-    previous = chaos_sessions.pop(user_id, None)
-    if previous and previous.get("timer_task"):
-        previous["timer_task"].cancel()
+def chaos_zone_menu_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="🍳 Кухня", callback_data="chaos:kitchen"),
+                InlineKeyboardButton(text="🧸 Детская и игрушки", callback_data="chaos:kids"),
+            ],
+            [
+                InlineKeyboardButton(text="🪞 Гостиная и зеркала", callback_data="chaos:living"),
+                InlineKeyboardButton(text="🛁 Ванная комната", callback_data="chaos:bath"),
+            ],
+            [InlineKeyboardButton(text="🏠 В главное меню", callback_data="menu:main")],
+        ]
+    )
 
-    chaos_session_counter = (chaos_session_counter + 1) % 1000000
-    session_id = chaos_session_counter
-    chaos_sessions[user_id] = {
-        "id": session_id,
-        "stage": "zone",
-        "active": True,
-        "busy": False,
-        "step_number": 0,
-        "step_index": 0,
-        "last_task": "",
-        "last_message": None,
-        "started_at": None,
-        "duration": None,
-        "timer_task": None,
-    }
-    banner_ids = BANNER_CLEAN[clean_banner_index:] + BANNER_CLEAN[:clean_banner_index]
-    clean_banner_index = (clean_banner_index + 1) % len(BANNER_CLEAN)
-    await answer_with_banner(
-        message,
-        "Давай разберём хаос маленькими шагами — без гонки и чувства вины 🌿\n\n<b>С чего начнём?</b>",
-        banner_ids,
-        reply_markup=chaos_keyboard(session_id, "zone"),
-        parse_mode=ParseMode.HTML,
+
+def chaos_zone_keyboard(zone: str) -> InlineKeyboardMarkup:
+    rows = []
+    product_callback = {
+        "kitchen": "chaos:product:kitchen",
+        "living": "chaos:product:glass",
+        "bath": "chaos:product:bath",
+    }.get(zone)
+    product_label = {
+        "kitchen": "✨ Как отмыть за 2 минуты без химии",
+        "living": "🌿 Секрет идеальных зеркал",
+        "bath": "🫧 Как убрать налёт без хлора",
+    }.get(zone)
+    if product_callback and product_label:
+        rows.append([InlineKeyboardButton(text=product_label, callback_data=product_callback)])
+    rows.extend([
+        [InlineKeyboardButton(text="➡️ Другая комната", callback_data="chaos:menu")],
+        [InlineKeyboardButton(text="🏠 В главное меню", callback_data="menu:main")],
+    ])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def chaos_product_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="✈️ Эко-чат в Telegram", url="https://t.me/+_fdqM43aOoA1ZjBi")],
+            [InlineKeyboardButton(text="💬 Эко-чат в Max", url="https://max.ru/join/d5b4FKWGwFSNCYwEbX02Totc0c-8y8AIgzbz6xf-4Jo")],
+            [InlineKeyboardButton(text="🔙 Вернуться к комнатам", callback_data="chaos:menu")],
+            [InlineKeyboardButton(text="🏠 В главное меню", callback_data="menu:main")],
+        ]
+    )
+
+
+CHAOS_ZONE_CARDS = {
+    "kitchen": (
+        "Фокус на 3 минуты: Остров чистоты 🍳\n\n"
+        "Забудь про всю кухню. Освободи и протри ровно ОДНО место — раковину или варочную панель. "
+        "Когда блестит этот центр, вся кухня сразу кажется опрятной!\n\n"
+        "💡 Мамский чит-код:\n"
+        "Чтобы не тереть пригоревший жир и нагар по 20 минут в резиновых перчатках "
+        "(и не дышать химией рядом с детьми) — используй пасту Mystik и диск Инволвер. "
+        "Смачиваешь водой, проводишь пару раз — и всё скрипит от чистоты за 2 минуты ✨"
+    ),
+    "living": (
+        "Фокус на 3 минуты: Визуальный воздух 🪞\n\n"
+        "Секрет свежей гостиной — убрать отпечатки пальцев с зеркал и взбить/поправить подушки на диване. "
+        "Комната мгновенно преображается!\n\n"
+        "💡 Мамский чит-код:\n"
+        "Забудь про синие спреи с резким запахом и разводы от бумажных полотенец. "
+        "Салфетка для стекла + обычная вода: протёрла один раз — и зеркало сияет без единого развода "
+        "само за 30 секунд 🌿"
+    ),
+    "kids": (
+        "Фокус на 3 минуты: Метод одного ящика 🧸\n\n"
+        "Не пытайся сортировать лего от машинок и кукол, это сизифов труд. "
+        "Возьми одну большую корзину или таз и просто сгреби в неё ВСЁ с пола за 120 секунд.\n\n"
+        "Пол освободился — в комнате снова можно дышать и не бояться наступить на детальку! 🧘‍♀️"
+    ),
+    "bath": (
+        "Фокус на 3 минуты: Блеск за минуту 🛁\n\n"
+        "Смахни капли и белый налёт со смесителя и раковины. Чистый кран даёт эффект только что вымытой ванной!\n\n"
+        "💡 Мамский чит-код:\n"
+        "Салфетка в рубчик или замшевая для оптики/поверхностей забирает весь известковый налёт и "
+        "мыльные разводы за одно движение влажной тканью. Никакой хлорки и едких гелей 🫧"
+    ),
+}
+
+
+CHAOS_PRODUCT_CARD = (
+    "Магия простой воды и микроволокна 🌿\n\n"
+    "Вся эта фишка — японское микроволокно и паста Mystik от Greenway. Работают вообще без едких "
+    "спреев и перчаток: намочила водой, прошлась — и всё скрипит. Для дома, где ползают малыши и "
+    "вечно не хватает времени, это просто спасение.\n\n"
+    "Я сама мама и веду уютные клиентские чаты, где делюсь быстрыми видео до/после, полезными "
+    "эко-находками и собираю заказы для своих.\n\n"
+    "Выбирай, где тебе удобнее заглянуть в гости 🤍☕️"
+)
+
+
+async def start_chaos_flow(message: Message) -> None:
+    await message.answer(
+        "В доме с детьми идеальный порядок живёт ровно 5 минут — и это нормально! 🙈\n\n"
+        "Не надо генералить всю квартиру. Выбери одну зону, и мы наведём в ней визуальный уют "
+        "всего за 3–5 минут без надрыва ✨",
+        reply_markup=chaos_zone_menu_keyboard(),
+    )
+
+
+@dispatcher.callback_query(F.data.startswith("chaos:"))
+async def process_chaos_zone_action(callback: CallbackQuery) -> None:
+    await callback.answer()
+    if callback.message is None or not callback.data:
+        return
+
+    data = callback.data
+    await replace_callback_message(callback)
+
+    if data == "chaos:menu":
+        await start_chaos_flow(callback.message)
+        return
+
+    if data.startswith("chaos:product:"):
+        await callback.message.answer(
+            CHAOS_PRODUCT_CARD,
+            reply_markup=chaos_product_keyboard(),
+        )
+        return
+
+    zone = data.split(":", 1)[1]
+    card = CHAOS_ZONE_CARDS.get(zone)
+    if card is None:
+        return
+
+    await callback.message.answer(
+        card,
+        reply_markup=chaos_zone_keyboard(zone),
     )
 
 
