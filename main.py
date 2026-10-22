@@ -1140,6 +1140,7 @@ def kids_activity_for_age(age: dict) -> str:
 async def start_radiance_flow(message: Message, user_id: int) -> None:
     radiance_states.pop(user_id, None)
     pending_kids_age.discard(user_id)
+    support_sessions.pop(user_id, None)
     await message.answer(RADIANCE_MENU_TEXT, reply_markup=radiance_menu_keyboard(), parse_mode=ParseMode.HTML)
 
 
@@ -1185,6 +1186,7 @@ def analyze_radiance_photo_sync(image_bytes: bytes, mime_type: str = "image/jpeg
 async def start_kids_flow(message: Message, user_id: int) -> None:
     radiance_states.pop(user_id, None)
     pending_kids_age.discard(user_id)
+    support_sessions.pop(user_id, None)
     try:
         ages = await asyncio.to_thread(load_family_ages, user_id)
     except FamilyProfileUnavailable:
@@ -1318,9 +1320,8 @@ async def handle_admin_photo(message: Message) -> None:
                 timeout=35,
             )
             await message.answer(
-                result + "\n\n_Это предварительный ориентир: проверь оттенки при дневном свете и на ткани._",
+                result + "\n\nЭто предварительный ориентир: проверь оттенки при дневном свете и на ткани.",
                 reply_markup=MENU_KEYBOARD,
-                parse_mode=ParseMode.MARKDOWN,
             )
         except asyncio.CancelledError:
             raise
@@ -2796,6 +2797,14 @@ async def handle_text(message: Message) -> None:
         )
         return
 
+    if prompt == MENU_BUTTONS[4]:
+        await start_radiance_flow(message, user_id)
+        return
+
+    if prompt == MENU_BUTTONS[5]:
+        await start_kids_flow(message, user_id)
+        return
+
     profile_state = pending_family_profile.get(user_id)
     if profile_state:
         if profile_state.get("stage") == "collecting":
@@ -2825,14 +2834,6 @@ async def handle_text(message: Message) -> None:
         if profile_state.get("stage") == "confirming":
             await message.answer("Пожалуйста, выбери одну из кнопок: сохранить сведения или не сохранять.")
             return
-
-    if prompt == MENU_BUTTONS[4]:
-        await start_radiance_flow(message, user_id)
-        return
-
-    if prompt == MENU_BUTTONS[5]:
-        await start_kids_flow(message, user_id)
-        return
 
     # Если имя ещё не сохранено в памяти, берем его из профиля Telegram:
     if user_id not in user_names:
