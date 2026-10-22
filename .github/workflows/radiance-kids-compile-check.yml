@@ -6,6 +6,7 @@ on:
       - feature/radiance-kids
       - fix/kids-variety-fileid-20261022
       - feat/multi-kids-radiance-tone-20261022
+      - feat/age-adaptive-kids-gemini-20261022
 
 jobs:
   compile:
@@ -19,5 +20,7 @@ jobs:
           python-version: "3.12"
       - name: Compile main.py
         run: python -m py_compile main.py
+      - name: Run age-adaptation tests
+        run: python -m unittest discover -s tests -v
 
 # Keep this check scoped to the isolated MVP branch; it never deploys the bot.
