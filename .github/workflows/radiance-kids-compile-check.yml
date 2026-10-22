@@ -17,3 +17,5 @@ jobs:
           python-version: "3.12"
       - name: Compile main.py
         run: python -m py_compile main.py
+
+# Keep this check scoped to the isolated MVP branch; it never deploys the bot.
