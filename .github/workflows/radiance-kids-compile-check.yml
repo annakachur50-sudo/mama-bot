@@ -1,0 +1,21 @@
+name: Radiance and Kids Syntax Check
+
+on:
+  push:
+    branches:
+      - feature/radiance-kids
+
+jobs:
+  compile:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout feature branch
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Compile main.py
+        run: python -m py_compile main.py
+
+# Keep this check scoped to the isolated MVP branch; it never deploys the bot.
