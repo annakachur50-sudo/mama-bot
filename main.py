@@ -1197,7 +1197,7 @@ async def start_kids_flow(message: Message, user_id: int) -> None:
         return
     if ages:
         await message.answer(
-            kids_activity_for_age(ages[0]),
+            kids_activity_for_age(ages[-1]),
             reply_markup=kids_keyboard(),
             parse_mode=ParseMode.HTML,
         )
@@ -1239,7 +1239,10 @@ async def cancel_radiance_selfie(callback: CallbackQuery) -> None:
     user_id = callback.from_user.id
     radiance_states.pop(user_id, None)
     if callback.message is not None:
-        await callback.message.answer("Хорошо, разбор фото отменён 🌸", reply_markup=MENU_KEYBOARD)
+        await callback.message.answer(
+            "Хорошо, разбор фото отменён 🌸",
+            reply_markup=radiance_menu_keyboard(),
+        )
 
 
 @dispatcher.callback_query(F.data.startswith("radiance:locked:"))
