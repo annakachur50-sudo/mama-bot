@@ -1348,23 +1348,6 @@ async def handle_admin_photo(message: Message) -> None:
         )
 
 
-@dispatcher.message(F.photo)
-async def handle_admin_photo(message: Message) -> None:
-    if (
-        message.from_user is None
-        or message.from_user.id != ADMIN_ID
-        or message.chat.type != "private"
-        or not message.photo
-    ):
-        return
-
-    photo_file_id = message.photo[-1].file_id
-    await message.answer(
-        f"Вот file_id твоего фото:\n<code>{photo_file_id}</code>",
-        parse_mode=ParseMode.HTML,
-    )
-
-
 @dispatcher.message(Command("testfoodphoto"))
 async def handle_test_food_photos(message: Message) -> None:
     """Admin-only diagnostic: test every configured food photo ID in Telegram."""
