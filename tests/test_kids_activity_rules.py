@@ -61,6 +61,31 @@ class KidsAgeRulesTests(unittest.TestCase):
         self.assertIn("третий", SOURCE)
         self.assertNotIn("Ребёнок №", SOURCE)
 
+    def test_radiance_status_precedes_vision_call_and_handles_result(self):
+        handler_start = SOURCE.index("async def handle_admin_photo(")
+        handler_end = SOURCE.index('@dispatcher.message(Command("testfoodphoto"))', handler_start)
+        handler = SOURCE[handler_start:handler_end]
+        self.assertIn("Секундочку, любуюсь твоим фото и подбираю идеальную палитру... ✨", handler)
+        self.assertLess(handler.index("status_message = await message.answer("), handler.index("analyze_radiance_photo_sync"))
+        self.assertIn("status_message.edit_text(result", handler)
+        self.assertIn("status_message.edit_text(error_text", handler)
+        self.assertIn("await message.answer(error_text", handler)
+
+    def test_radiance_prompt_is_plain_and_grounded(self):
+        start = SOURCE.index("def analyze_radiance_photo_sync(")
+        end = SOURCE.index("\n\nasync def start_kids_flow(", start)
+        prompt = SOURCE[start:end]
+        self.assertIn("живого, доброжелательного комплимента", prompt)
+        self.assertIn("Не выдумывай черты внешности", prompt)
+        self.assertIn("4–5 подходящих оттенков", prompt)
+        self.assertIn("1–2 оттенка", prompt)
+        self.assertIn("Не повторяй предупреждение о дневном свете", prompt)
+
+    def test_16_plus_uses_senior_teen_label(self):
+        label = HELPERS["kids_picker_label"]
+        self.assertEqual(label(age(16)), "✨ Старший подросток")
+        self.assertEqual(label(age(18)), "✨ Старший подросток")
+
 
 if __name__ == "__main__":
     unittest.main()
