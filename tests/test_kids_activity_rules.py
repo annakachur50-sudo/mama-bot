@@ -45,7 +45,7 @@ class KidsAgeRulesTests(unittest.TestCase):
         self.assertIn('int(age["child_number"]) == child_number', SOURCE)
 
     def test_joint_prompt_includes_every_participant(self):
-        self.assertIn("generate_kids_activity_sync(ages, previous)", SOURCE)
+        self.assertIn("asyncio.to_thread(generate_kids_activity_sync, ages, previous)", SOURCE)
         self.assertIn("для всех перечисленных возрастов", SOURCE)
         self.assertIn("разные роли/уровни сложности", SOURCE)
 
