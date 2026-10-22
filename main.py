@@ -1145,6 +1145,8 @@ async def start_radiance_flow(message: Message, user_id: int) -> None:
 
 
 async def start_radiance_selfie(message: Message, user_id: int) -> None:
+    pending_kids_age.discard(user_id)
+    support_sessions.pop(user_id, None)
     radiance_states[user_id] = "waiting_for_selfie"
     await message.answer(
         "🌸 Пришли своё фото при дневном свете — лучше у окна, без цветных фильтров. "
@@ -1456,6 +1458,8 @@ async def handle_start(message: Message) -> None:
 
     user_id = message.from_user.id
     support_sessions.pop(user_id, None)
+    radiance_states.pop(user_id, None)
+    pending_kids_age.discard(user_id)
 
     # Берём имя из Telegram и убираем лишнее, если там смайлы или цифры
     raw_name = (message.from_user.first_name or "").strip()
@@ -2741,6 +2745,8 @@ async def handle_reset_me(message: Message) -> None:
             conversation_history_by_user.pop(user_id, None)
             pending_family_profile.pop(user_id, None)
             support_sessions.pop(user_id, None)
+            radiance_states.pop(user_id, None)
+            pending_kids_age.discard(user_id)
     except Exception as error:
         logger.warning("Failed to reset user data (%s)", type(error).__name__)
         await message.answer(
