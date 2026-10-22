@@ -1278,7 +1278,7 @@ def format_kids_activity_html(text: str, age_caption: str) -> str:
     escaped_lines[0] = f"<b>{escaped_lines[0]}</b>"
     for index in range(1, len(escaped_lines)):
         if answer_prefix not in escaped_lines[index]:
-            escaped_lines[index] = re.sub(r"«([^«»\n]{1,700})»", r"«<b>\\1</b>»", escaped_lines[index])
+            escaped_lines[index] = re.sub(r"«([^«»\n]{1,700})»", r"«<b>\1</b>»", escaped_lines[index])
     return "\n".join(escaped_lines)
 
 
