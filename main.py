@@ -1164,7 +1164,9 @@ def kids_picker_keyboard(ages: list[dict]) -> InlineKeyboardMarkup:
         distinction = ""
         if same_age_counts[months] > 1:
             same_age_seen[months] = same_age_seen.get(months, 0) + 1
-            distinction = " · первый в списке" if same_age_seen[months] == 1 else " · следующий в списке"
+            ordinals = ("первый", "второй", "третий", "четвёртый", "пятый", "шестой")
+            ordinal = ordinals[min(same_age_seen[months] - 1, len(ordinals) - 1)]
+            distinction = f" · {ordinal} в списке"
         buttons.append([
             InlineKeyboardButton(
                 text=f"{label} ({format_child_age(age)}){distinction}",
@@ -1194,7 +1196,7 @@ def kids_activity_fallback(age: dict) -> str:
             "🎯 Викторина наоборот: выбери тему, придумай пять вопросов разной сложности и проверь ответы у члена семьи или по надёжному источнику."
         ])
     pool_key = "baby" if months < 18 else "toddler" if months < 60 else "preschool" if months < 120 else "older"
-    return random.choice(KIDS_ACTIVITY_POOLS[pool_key])
+    return re.sub(r"</?b>", "", random.choice(KIDS_ACTIVITY_POOLS[pool_key]))
 
 
 def generate_kids_activity_sync(ages: list[dict], previous: str | None = None) -> str:

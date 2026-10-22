@@ -54,8 +54,9 @@ class KidsAgeRulesTests(unittest.TestCase):
         self.assertIn("кроме случая, когда сам подросток явно попросил", SOURCE)
 
     def test_duplicate_ages_have_distinguishing_labels(self):
-        self.assertIn("первый в списке", SOURCE)
-        self.assertIn("следующий в списке", SOURCE)
+        self.assertIn("первый", SOURCE)
+        self.assertIn("второй", SOURCE)
+        self.assertIn("третий", SOURCE)
         self.assertNotIn("Ребёнок №", SOURCE)
 
 

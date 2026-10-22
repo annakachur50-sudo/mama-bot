@@ -22,5 +22,14 @@ jobs:
         run: python -m py_compile main.py
       - name: Run age-adaptation tests
         run: python -m unittest discover -s tests -v
+      - name: Sample real Gemini age outputs
+        if: ${{ secrets.GOOGLE_API_KEY != '' }}
+        env:
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+          TELEGRAM_BOT_TOKEN: "123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghi"
+        run: python scripts/test_kids_gemini_samples.py
+      - name: Explain skipped live Gemini check
+        if: ${{ secrets.GOOGLE_API_KEY == '' }}
+        run: echo "Real Gemini samples skipped because the repository secret GOOGLE_API_KEY is not configured."
 
 # Keep this check scoped to the isolated MVP branch; it never deploys the bot.
