@@ -831,6 +831,12 @@ def analytics_button_info(callback_data: str) -> tuple[str, str]:
         if callback_data == "support:home":
             return "support", "home"
         return "support", "support_other_button"
+    if callback_data.startswith("kids:child:"):
+        return "kids", "switch_child"
+    if callback_data.startswith("kids:again:"):
+        return "kids", "another_game"
+    if callback_data == "kids:joint":
+        return "kids", "joint_game"
     if callback_data.startswith("family_age:"):
         action = callback_data.split(":", 1)[1]
         if action in {"skip", "edit", "save", "cancel"}:
@@ -846,6 +852,7 @@ def analytics_button_info(callback_data: str) -> tuple[str, str]:
         "menu_plan": ("plan", "menu_plan"), "menu_support": ("support", "menu_support"),
         "menu_radiance": ("radiance", "menu_radiance"), "menu_kids": ("kids", "menu_kids"),
         "radiance:undertones": ("radiance", "undertones"),
+        "radiance:retry": ("radiance", "retry_photo"),
         "radiance:cancel": ("radiance", "cancel"),
         "radiance:locked:wardrobe": ("radiance", "locked_wardrobe"),
         "radiance:locked:care": ("radiance", "locked_care"),
@@ -1098,8 +1105,53 @@ def radiance_locked_keyboard(feature: str) -> InlineKeyboardMarkup:
 def kids_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="📖 Персональная книжка-сказка в PDF 🔒", callback_data="kids:story_pdf")],
+        [InlineKeyboardButton(text="🏠 В главное меню", callback_data="menu:main")],
     ])
 
+
+def kids_result_keyboard(
+    ages: list[dict],
+    current_child_number: int | None = None,
+    joint: bool = False,
+) -> InlineKeyboardMarkup:
+    """Navigation under a generated game; callback_data stays compact and profile-backed."""
+    ordered = sorted(ages, key=lambda age: (kids_age_months(age), int(age["child_number"])))
+    same_age_counts: dict[int, int] = {}
+    for age in ordered:
+        months = kids_age_months(age)
+        same_age_counts[months] = same_age_counts.get(months, 0) + 1
+    same_age_seen: dict[int, int] = {}
+    rows = [[InlineKeyboardButton(
+        text="🎲 Другая игра",
+        callback_data="kids:again:all" if joint else f"kids:again:{current_child_number}",
+    )]]
+    for age in ordered:
+        child_number = int(age["child_number"])
+        months = kids_age_months(age)
+        label = kids_picker_label(age)
+        distinction = ""
+        if same_age_counts[months] > 1:
+            same_age_seen[months] = same_age_seen.get(months, 0) + 1
+            ordinals = ("первый", "второй", "третий", "четвёртый", "пятый", "шестой")
+            ordinal = ordinals[min(same_age_seen[months] - 1, len(ordinals) - 1)]
+            distinction = f" · {ordinal} в списке"
+        if not joint and child_number == current_child_number:
+            continue
+        rows.append([InlineKeyboardButton(
+            text=f"{label} ({format_child_age(age)}){distinction}",
+            callback_data=f"kids:child:{child_number}",
+        )])
+    if len(ordered) > 1 and not joint:
+        rows.append([InlineKeyboardButton(text="🤝 Игра для всех", callback_data="kids:joint")])
+    rows.append([InlineKeyboardButton(text="🏠 В главное меню", callback_data="menu:main")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def radiance_result_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔄 Попробовать другое фото", callback_data="radiance:retry")],
+        [InlineKeyboardButton(text="🏠 В главное меню", callback_data="menu:main")],
+    ])
 
 def kids_story_card_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
@@ -1110,6 +1162,7 @@ def kids_story_card_keyboard() -> InlineKeyboardMarkup:
 
 # Remember the last suggestion per user so consecutive taps never repeat the same game.
 kids_last_activities: dict[int, str] = {}
+kids_generation_in_progress: set[int] = set()
 
 
 def kids_age_months(age: dict) -> int:
@@ -1199,6 +1252,22 @@ def kids_activity_fallback(age: dict) -> str:
     return re.sub(r"</?b>", "", random.choice(KIDS_ACTIVITY_POOLS[pool_key]))
 
 
+def format_kids_activity_html(text: str, age_caption: str) -> str:
+    """Escape generated text first, then add only controlled Telegram HTML."""
+    cleaned = (text or "").strip()
+    if not cleaned:
+        cleaned = f"🎯 «Игра на минутку» ({age_caption})"
+    lines = cleaned.splitlines()
+    first = lines[0].strip()
+    if not re.match(r"^[^\w\s]{1,4}\s*«.+»\s*\(.+\)$", first):
+        lines.insert(0, f"🎯 «Игра на минутку» ({age_caption})")
+    escaped_lines = [html.escape(line, quote=False) for line in lines]
+    escaped_lines[0] = f"<b>{escaped_lines[0]}</b>"
+    for index in range(1, len(escaped_lines)):
+        escaped_lines[index] = re.sub(r"«([^«»\n]{1,700})»", r"«<b>\1</b>»", escaped_lines[index])
+    return "\n".join(escaped_lines)
+
+
 def generate_kids_activity_sync(ages: list[dict], previous: str | None = None) -> str:
     age_lines = []
     for index, age in enumerate(ages, start=1):
@@ -1213,20 +1282,22 @@ def generate_kids_activity_sync(ages: list[dict], previous: str | None = None) -
     prompt = (
         "Ты — помощник для мамы или другого взрослого, который выбирает занятие для ребёнка. "
         "Пиши ответ именно взрослому, а не ребёнку: мама должна сразу понять, что предложить и какие слова сказать. "
-        "Придумай ОДНО конкретное, живое, безопасное занятие на 5–15 минут. Ответ — 2–3 коротких абзаца, "
-        "примерно на 10 секунд чтения, без заголовков и формальных разделов. "
-        "Абзац 1: коротко предложи маме идею естественной фразой, например «Предложи дочке мини-челлендж…» "
-        "или «Загадай сыну детективную загадку…». Абзац 2: дай готовую фразу, вопрос или затравку, которую "
-        "мама может сразу произнести или переслать ребёнку. Абзац 3 — только если полезно: короткая подсказка, "
-        "как продолжить и поддержать интерес. Не пиши разделы «Что понадобится», «Формат участия», «Правила по шагам», "
-        "«Как понять, что игра закончена» и не заменяй живой текст шаблонными заголовками. "
+        "Придумай ОДНО конкретное, живое, безопасное занятие на 5–15 минут. Оно должно читаться по диагонали за 5 секунд. "
+        "Первая строка ОБЯЗАТЕЛЬНО: короткий интересный заголовок с одним уместным эмодзи, названием в «ёлочках» "
+        "и точным возрастом, например: 🕵️ «Секретный агент» (7 лет). Для совместной игры укажи возраста участников. "
+        "Дальше 2–3 очень коротких абзаца без формальных разделов и длинных вступлений. Используй умеренно смысловые "
+        "эмодзи ✨, 📝, 💡, 🎯. Сначала коротко предложи маме идею. Затем дай готовую реплику, вопрос или затравку, "
+        "которую мама может сразу произнести или переслать ребёнку; обязательно заключи эту реплику в «ёлочки». "
+        "Последний короткий абзац — только если полезно: как продолжить интерес. Не пиши разделы «Что понадобится», "
+        "«Формат участия», «Правила по шагам», «Как понять, что игра закончена». "
         "Используй точный возраст каждого участника и не теряй возраст при выборе кнопки.\n\n"
         + "\n".join(age_lines)
         + "\n\nНе выдумывай интересы и не делай предположений по полу. Если ребёнок может безопасно играть сам, "
         "это допустимо, но обращение и инструкция в ответе всё равно адресованы взрослому. "
         "Загадки и задания должны иметь логичное решение, быть выполнимыми и безопасными. Не придумывай "
         "заведомо неразрешимые загадки, опасные эксперименты, задания с огнём, острыми инструментами или риском падения. "
-        "Не требуй покупок и сложной подготовки. Верни только готовый текст, без анализа возраста и HTML-тегов."
+        "Не требуй покупок и сложной подготовки. Не используй Markdown или HTML-теги: оформление Telegram добавит код бота. "
+        "Верни только готовый текст игры."
         + ("\n\nДля подростка 13–15 лет выбирай уместные форматы: детективная загадка с логичной разгадкой, "
            "логическая дилемма, викторина о кино или музыке, словесная дуэль или творческий челлендж. "
            "Не предлагай малышовые игры по умолчанию и не говори снисходительно." if teen_present else "")
@@ -1258,10 +1329,13 @@ async def kids_activity_for_age(age: dict, user_id: int | None = None) -> str:
         raise
     except Exception as error:
         logger.warning("Kids Gemini generation failed (%s); using age-appropriate fallback", type(error).__name__)
-        activity = kids_activity_fallback(age)
+        activity = kids_activity_fallback(age) + (
+            "\n\n💡 Сейчас с генерацией заминка, поэтому это запасной безопасный вариант. "
+            "Кнопки ниже остаются доступны."
+        )
     if user_id is not None:
         kids_last_activities[user_id] = activity
-    return activity
+    return format_kids_activity_html(activity, format_child_age(age))
 
 
 async def kids_joint_activity(ages: list[dict], user_id: int | None = None) -> str:
@@ -1278,10 +1352,14 @@ async def kids_joint_activity(ages: list[dict], user_id: int | None = None) -> s
     except Exception as error:
         logger.warning("Joint kids Gemini generation failed (%s); using safe fallback", type(error).__name__)
         youngest = min(ages, key=kids_age_months)
-        activity = "🤝 Общая игра с учётом возраста всех детей\n\n" + kids_activity_fallback(youngest)
+        activity = kids_activity_fallback(youngest) + (
+            "\n\n💡 Сейчас с генерацией заминка, поэтому это запасной безопасный вариант для всех. "
+            "Кнопки ниже остаются доступны."
+        )
     if user_id is not None:
         kids_last_activities[user_id] = activity
-    return activity
+    ages_caption = " + ".join(format_child_age(age) for age in ages)
+    return format_kids_activity_html(activity, ages_caption)
 
 KIDS_ACTIVITY_POOLS = {
     "baby": [
@@ -1396,10 +1474,7 @@ async def start_kids_flow(message: Message, user_id: int) -> None:
         )
         return
     if len(ages) == 1:
-        await message.answer(
-            await kids_activity_for_age(ages[0], user_id),
-            reply_markup=kids_keyboard(),
-        )
+        await send_kids_activity(message, user_id, child_number=int(ages[0]["child_number"]))
         return
     if len(ages) > 1:
         await message.answer(
@@ -1435,6 +1510,14 @@ async def process_radiance_kids_menu(callback: CallbackQuery) -> None:
 async def process_radiance_undertones(callback: CallbackQuery) -> None:
     await callback.answer()
     if callback.message is not None:
+        await start_radiance_selfie(callback.message, callback.from_user.id)
+
+
+@dispatcher.callback_query(F.data == "radiance:retry")
+async def retry_radiance_selfie(callback: CallbackQuery) -> None:
+    await callback.answer()
+    if callback.message is not None:
+        radiance_states.pop(callback.from_user.id, None)
         await start_radiance_selfie(callback.message, callback.from_user.id)
 
 
@@ -1479,59 +1562,99 @@ async def radiance_interest(callback: CallbackQuery) -> None:
     )
 
 
+async def send_kids_activity(
+    message: Message,
+    user_id: int,
+    child_number: int | None = None,
+    joint: bool = False,
+) -> None:
+    if user_id in kids_generation_in_progress:
+        await message.answer("🎲 Уже придумываю игру — секундочку ✨")
+        return
+    kids_generation_in_progress.add(user_id)
+    status_message = await message.answer("🎲 Придумываю новый вариант… ✨")
+    try:
+        ages = await asyncio.to_thread(load_family_ages, user_id)
+        if joint:
+            if len(ages) < 2:
+                raise ValueError("joint game requires at least two current profile ages")
+            result = await kids_joint_activity(ages, user_id)
+            keyboard = kids_result_keyboard(ages, joint=True)
+        else:
+            selected_age = next((age for age in ages if int(age["child_number"]) == child_number), None)
+            if selected_age is None:
+                raise LookupError("selected child is no longer present in family profile")
+            result = await kids_activity_for_age(selected_age, user_id)
+            keyboard = kids_result_keyboard(ages, current_child_number=int(selected_age["child_number"]))
+        await status_message.edit_text(result, reply_markup=keyboard, parse_mode=ParseMode.HTML)
+    except asyncio.CancelledError:
+        raise
+    except (FamilyProfileUnavailable, LookupError, ValueError) as error:
+        logger.warning("Kids navigation/generation setup failed (%s)", type(error).__name__)
+        try:
+            ages = await asyncio.to_thread(load_family_ages, user_id)
+        except Exception:
+            ages = []
+        keyboard = kids_result_keyboard(ages, child_number, joint) if ages else InlineKeyboardMarkup(
+            inline_keyboard=[[InlineKeyboardButton(text="🏠 В главное меню", callback_data="menu:main")]]
+        )
+        await status_message.edit_text(
+            "Не получилось подобрать игру сейчас 🙈 Попробуй ещё раз или вернись в главное меню.",
+            reply_markup=keyboard,
+        )
+    finally:
+        kids_generation_in_progress.discard(user_id)
+
+
 @dispatcher.callback_query(F.data.startswith("kids:child:"))
 async def choose_kids_child(callback: CallbackQuery) -> None:
-    await callback.answer()
     if callback.message is None or not callback.data:
+        await callback.answer()
         return
     try:
         child_number = int(callback.data.rsplit(":", 1)[-1])
-        ages = await asyncio.to_thread(load_family_ages, callback.from_user.id)
-    except (ValueError, FamilyProfileUnavailable):
-        await callback.message.answer(
-            "Не получилось проверить возраст в профиле. Попробуй открыть раздел ещё раз 🌿",
-            reply_markup=MENU_KEYBOARD,
-        )
+    except ValueError:
+        await callback.answer("Не удалось определить ребёнка", show_alert=True)
         return
-    selected_age = next(
-        (age for age in ages if int(age["child_number"]) == child_number),
-        None,
-    )
-    if selected_age is None:
-        await callback.message.answer(
-            "Не нашла этот возраст в профиле семьи. Открой раздел ещё раз 🌿",
-            reply_markup=MENU_KEYBOARD,
-        )
+    if callback.from_user.id in kids_generation_in_progress:
+        await callback.answer("Уже придумываю игру ✨")
         return
-    await callback.message.answer(
-        await kids_activity_for_age(selected_age, callback.from_user.id),
-        reply_markup=kids_keyboard(),
-    )
+    await callback.answer("🎲 Подбираю игру…")
+    await send_kids_activity(callback.message, callback.from_user.id, child_number=child_number)
+
+
+@dispatcher.callback_query(F.data.startswith("kids:again:"))
+async def repeat_kids_game(callback: CallbackQuery) -> None:
+    if callback.message is None or not callback.data:
+        await callback.answer()
+        return
+    user_id = callback.from_user.id
+    if user_id in kids_generation_in_progress:
+        await callback.answer("Уже придумываю игру ✨")
+        return
+    target = callback.data.rsplit(":", 1)[-1]
+    await callback.answer("🎲 Ищу другой вариант…")
+    if target == "all":
+        await send_kids_activity(callback.message, user_id, joint=True)
+        return
+    try:
+        child_number = int(target)
+    except ValueError:
+        await callback.message.answer("Не получилось определить возраст. Открой раздел ещё раз 🌿", reply_markup=MENU_KEYBOARD)
+        return
+    await send_kids_activity(callback.message, user_id, child_number=child_number)
 
 
 @dispatcher.callback_query(F.data == "kids:joint")
 async def choose_kids_joint_game(callback: CallbackQuery) -> None:
-    await callback.answer()
     if callback.message is None:
+        await callback.answer()
         return
-    try:
-        ages = await asyncio.to_thread(load_family_ages, callback.from_user.id)
-    except FamilyProfileUnavailable:
-        await callback.message.answer(
-            "Не получилось проверить возраст в профиле. Попробуй открыть раздел ещё раз 🌿",
-            reply_markup=MENU_KEYBOARD,
-        )
+    if callback.from_user.id in kids_generation_in_progress:
+        await callback.answer("Уже придумываю игру ✨")
         return
-    if len(ages) < 2:
-        await callback.message.answer(
-            "Для общей игры нужно знать возраст хотя бы двух детей. Открой раздел ещё раз 🌿",
-            reply_markup=MENU_KEYBOARD,
-        )
-        return
-    await callback.message.answer(
-        await kids_joint_activity(ages, callback.from_user.id),
-        reply_markup=kids_keyboard(),
-    )
+    await callback.answer("🤝 Придумываю игру для всех…")
+    await send_kids_activity(callback.message, callback.from_user.id, joint=True)
 
 
 @dispatcher.callback_query(F.data == "kids:story_pdf")
@@ -1586,20 +1709,20 @@ async def handle_admin_photo(message: Message) -> None:
                 timeout=35,
             )
             try:
-                await status_message.edit_text(result, reply_markup=MENU_KEYBOARD)
+                await status_message.edit_text(result, reply_markup=radiance_result_keyboard())
             except Exception as edit_error:
                 logger.warning("Could not edit radiance status (%s); sending result separately", type(edit_error).__name__)
-                await message.answer(result, reply_markup=MENU_KEYBOARD)
+                await message.answer(result, reply_markup=radiance_result_keyboard())
         except asyncio.CancelledError:
             raise
         except Exception as error:
             logger.warning("Radiance photo analysis failed (%s)", type(error).__name__)
             error_text = "Не получилось разобрать фото сейчас 🙈 Попробуй ещё раз чуть позже или пришли фото при более ровном освещении."
             try:
-                await status_message.edit_text(error_text, reply_markup=MENU_KEYBOARD)
+                await status_message.edit_text(error_text, reply_markup=radiance_result_keyboard())
             except Exception as edit_error:
                 logger.warning("Could not edit radiance error status (%s)", type(edit_error).__name__)
-                await message.answer(error_text, reply_markup=MENU_KEYBOARD)
+                await message.answer(error_text, reply_markup=radiance_result_keyboard())
         return
     await message.answer(
         "Какая чудесная фотография! 🌸 Но разбор внешности и стиля живёт у нас в отдельном домике. "
@@ -2994,6 +3117,7 @@ async def handle_reset_me(message: Message) -> None:
             support_sessions.pop(user_id, None)
             radiance_states.pop(user_id, None)
             pending_kids_age.discard(user_id)
+            kids_generation_in_progress.discard(user_id)
     except Exception as error:
         logger.warning("Failed to reset user data (%s)", type(error).__name__)
         await message.answer(
@@ -3046,10 +3170,11 @@ async def handle_text(message: Message) -> None:
             )
             return
         pending_kids_age.discard(user_id)
-        await message.answer(
-            "Спасибо, запомнила возраст в профиле семьи 🌿\n\n" + kids_activity_for_age(parsed_ages[0], user_id),
-            reply_markup=kids_keyboard(),
-            parse_mode=ParseMode.HTML,
+        await message.answer("Спасибо, запомнила возраст в профиле семьи 🌿")
+        await send_kids_activity(
+            message,
+            user_id,
+            child_number=int(parsed_ages[0]["child_number"]),
         )
         return
 
