@@ -1127,8 +1127,6 @@ def kids_result_keyboard(
     )]]
     for age in ordered:
         child_number = int(age["child_number"])
-        if not joint and child_number == current_child_number:
-            continue
         months = kids_age_months(age)
         label = kids_picker_label(age)
         distinction = ""
@@ -1137,6 +1135,8 @@ def kids_result_keyboard(
             ordinals = ("первый", "второй", "третий", "четвёртый", "пятый", "шестой")
             ordinal = ordinals[min(same_age_seen[months] - 1, len(ordinals) - 1)]
             distinction = f" · {ordinal} в списке"
+        if not joint and child_number == current_child_number:
+            continue
         rows.append([InlineKeyboardButton(
             text=f"{label} ({format_child_age(age)}){distinction}",
             callback_data=f"kids:child:{child_number}",
@@ -1329,7 +1329,10 @@ async def kids_activity_for_age(age: dict, user_id: int | None = None) -> str:
         raise
     except Exception as error:
         logger.warning("Kids Gemini generation failed (%s); using age-appropriate fallback", type(error).__name__)
-        activity = kids_activity_fallback(age)
+        activity = kids_activity_fallback(age) + (
+            "\n\n💡 Сейчас с генерацией заминка, поэтому это запасной безопасный вариант. "
+            "Кнопки ниже остаются доступны."
+        )
     if user_id is not None:
         kids_last_activities[user_id] = activity
     return format_kids_activity_html(activity, format_child_age(age))
@@ -1349,7 +1352,10 @@ async def kids_joint_activity(ages: list[dict], user_id: int | None = None) -> s
     except Exception as error:
         logger.warning("Joint kids Gemini generation failed (%s); using safe fallback", type(error).__name__)
         youngest = min(ages, key=kids_age_months)
-        activity = "🤝 Общая игра с учётом возраста всех детей\n\n" + kids_activity_fallback(youngest)
+        activity = kids_activity_fallback(youngest) + (
+            "\n\n💡 Сейчас с генерацией заминка, поэтому это запасной безопасный вариант для всех. "
+            "Кнопки ниже остаются доступны."
+        )
     if user_id is not None:
         kids_last_activities[user_id] = activity
     ages_caption = " + ".join(format_child_age(age) for age in ages)
