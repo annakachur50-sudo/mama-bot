@@ -24,10 +24,10 @@ class KidsRiddleSpoilerTests(unittest.TestCase):
 
     def test_ordinary_detective_answer_is_last_and_spoiler_wrapped(self):
         result = self.format(
-            "🕵️ «Кто взял ключ?» (8 лет)\nУ двери мокрые следы, а на улице дождь.\nКто был снаружи?\n💡 Отгадка для мамы: по этим данным нельзя однозначно определить человека, поэтому нужно выбрать другую загадку.",
+            "🕵️ «Дождливый день» (8 лет)\nМужчина попал под дождь без зонта. Одежда промокла, но ни один волос не намок. Почему?\n💡 Отгадка для мамы: мужчина был лысым.",
             "8 лет",
         )
-        self.assertIn("<tg-spoiler>по этим данным нельзя однозначно определить человека, поэтому нужно выбрать другую загадку.</tg-spoiler>", result)
+        self.assertIn("<tg-spoiler>мужчина был лысым.</tg-spoiler>", result)
         self.assertIn("parse_mode=ParseMode.HTML", SOURCE)
 
     def test_danetka_prompt_requires_one_answer_for_teens(self):
