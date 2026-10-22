@@ -1259,13 +1259,13 @@ def format_kids_activity_html(text: str, age_caption: str) -> str:
         cleaned = f"🎯 «Игра на минутку» ({age_caption})"
     lines = cleaned.splitlines()
     first = lines[0].strip()
-    if not re.match(r"^[^\\w\\s]{1,4}\\s*«.+»\\s*\\(.+\\)$", first):
+    if not re.match(r"^[^\w\s]{1,4}\s*«.+»\s*\(.+\)$", first):
         lines.insert(0, f"🎯 «Игра на минутку» ({age_caption})")
     escaped_lines = [html.escape(line, quote=False) for line in lines]
     escaped_lines[0] = f"<b>{escaped_lines[0]}</b>"
     for index in range(1, len(escaped_lines)):
-        escaped_lines[index] = re.sub(r"«([^«»\\n]{1,700})»", r"«<b>\\1</b>»", escaped_lines[index])
-    return "\\n".join(escaped_lines)
+        escaped_lines[index] = re.sub(r"«([^«»\n]{1,700})»", r"«<b>\1</b>»", escaped_lines[index])
+    return "\n".join(escaped_lines)
 
 
 def generate_kids_activity_sync(ages: list[dict], previous: str | None = None) -> str:
