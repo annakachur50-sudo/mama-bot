@@ -140,7 +140,8 @@ class KidsAgeRulesTests(unittest.TestCase):
         end = SOURCE.index("\n\ndef generate_kids_activity_sync(", start)
         formatter = SOURCE[start:end]
         self.assertIn("html.escape(line, quote=False)", formatter)
-        self.assertIn('escaped_lines[0] = f"<b>{escaped_lines[0]}</b>"', formatter)
+        self.assertIn('escaped_line = f"<b>{escaped_line}</b>"', formatter)
+        self.assertIn("<tg-spoiler>{escaped_answer}</tg-spoiler>", formatter)
         self.assertIn("«<b>", formatter)
 
     def test_radiance_result_has_retry_and_home_navigation(self):
