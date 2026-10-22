@@ -11,6 +11,9 @@ on:
       - fix/vision-grounding-mom-directed-kids-20261023
       - improve/kids-radiance-inline-nav-20261023
       - fix/kids-riddle-spoiler-20261023-v2
+  pull_request:
+    branches:
+      - main
 
 jobs:
   compile:
