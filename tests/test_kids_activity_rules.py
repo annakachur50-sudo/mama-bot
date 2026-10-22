@@ -94,17 +94,42 @@ class KidsAgeRulesTests(unittest.TestCase):
         )
         self.assertEqual(SOURCE.count("Сделай или отправь своё любимое селфи"), 1)
 
-    def test_kids_prompt_addresses_adult_and_requires_short_natural_format(self):
+    def test_kids_prompt_addresses_adult_and_requires_scannable_format(self):
         start = SOURCE.index("def generate_kids_activity_sync(")
         end = SOURCE.index("\n\nasync def kids_activity_for_age(", start)
         prompt = SOURCE[start:end]
         self.assertIn("ответ именно взрослому, а не ребёнку", prompt)
-        self.assertIn("2–3 коротких абзаца", prompt)
+        self.assertIn("читаться по диагонали за 5 секунд", prompt)
+        self.assertIn("короткий интересный заголовок", prompt)
         self.assertIn("мама может сразу произнести или переслать ребёнку", prompt)
-        self.assertIn("без заголовков и формальных разделов", prompt)
+        self.assertIn("обязательно заключи эту реплику в «ёлочки»", prompt)
+        self.assertIn("Не используй Markdown или HTML-теги", prompt)
         self.assertIn("Для подростка 13–15 лет", prompt)
         self.assertIn("детективная загадка с логичной разгадкой", prompt)
         self.assertIn("Не предлагай малышовые игры по умолчанию", prompt)
+
+    def test_game_result_navigation_is_profile_backed(self):
+        self.assertIn('callback_data="kids:again:all" if joint else f"kids:again:{current_child_number}"', SOURCE)
+        self.assertIn('callback_data=f"kids:child:{child_number}"', SOURCE)
+        self.assertIn('text="🤝 Игра для всех"', SOURCE)
+        self.assertIn('text="🏠 В главное меню"', SOURCE)
+        self.assertIn("ages = await asyncio.to_thread(load_family_ages, user_id)", SOURCE)
+        self.assertIn("kids_generation_in_progress", SOURCE)
+        self.assertIn("if user_id in kids_generation_in_progress", SOURCE)
+
+    def test_game_html_is_escaped_before_controlled_formatting(self):
+        start = SOURCE.index("def format_kids_activity_html(")
+        end = SOURCE.index("\n\ndef generate_kids_activity_sync(", start)
+        formatter = SOURCE[start:end]
+        self.assertIn("html.escape(line, quote=False)", formatter)
+        self.assertIn('escaped_lines[0] = f"<b>{escaped_lines[0]}</b>"', formatter)
+        self.assertIn("«<b>", formatter)
+
+    def test_radiance_result_has_retry_and_home_navigation(self):
+        self.assertIn('text="🔄 Попробовать другое фото"', SOURCE)
+        self.assertIn('callback_data="radiance:retry"', SOURCE)
+        self.assertIn("await start_radiance_selfie(callback.message, callback.from_user.id)", SOURCE)
+        self.assertIn("reply_markup=radiance_result_keyboard()", SOURCE)
 
     def test_16_plus_uses_senior_teen_label(self):
         label = HELPERS["kids_picker_label"]
