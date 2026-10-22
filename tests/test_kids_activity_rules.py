@@ -100,7 +100,7 @@ class KidsAgeRulesTests(unittest.TestCase):
         prompt = SOURCE[start:end]
         self.assertIn("ответ именно взрослому, а не ребёнку", prompt)
         self.assertIn("2–3 коротких абзаца", prompt)
-        self.assertIn("которые мама может сразу произнести или переслать ребёнку", prompt)
+        self.assertIn("мама может сразу произнести или переслать ребёнку", prompt)
         self.assertIn("без заголовков и формальных разделов", prompt)
         self.assertIn("Для подростка 13–15 лет", prompt)
         self.assertIn("детективная загадка с логичной разгадкой", prompt)
