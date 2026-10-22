@@ -5,6 +5,7 @@ on:
     branches:
       - feature/radiance-kids
       - fix/kids-variety-fileid-20261022
+      - feat/multi-kids-radiance-tone-20261022
 
 jobs:
   compile:
