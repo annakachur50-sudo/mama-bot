@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - feature/radiance-kids
+      - fix/kids-variety-fileid-20261022
 
 jobs:
   compile:
