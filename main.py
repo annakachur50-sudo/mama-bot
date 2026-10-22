@@ -1145,9 +1145,9 @@ def kids_picker_label(age: dict) -> str:
         return "🎯 Старший"
     if months < 192:
         return "🎧 Подросток"
-    if months < 216:
+    if months >= 192:
         return "✨ Старший подросток"
-    return "🧠 Старший"
+    return "✨ Старший подросток"
 
 
 def kids_picker_keyboard(ages: list[dict]) -> InlineKeyboardMarkup:
@@ -1341,25 +1341,26 @@ async def start_radiance_selfie(message: Message, user_id: int) -> None:
 
 def analyze_radiance_photo_sync(image_bytes: bytes, mime_type: str = "image/jpeg") -> str:
     prompt = (
-        "Ты — тёплая, внимательная и стильная подруга, которая общается на «ты». "
-        "Пиши естественно по-русски, короткими абзацами, без официоза, лекций и чрезмерных комплиментов. "
-        "Не используй слова и выражения «Приветствую», «через призму колористики», "
-        "«предварительный ориентир» и «контрольные оттенки»; не обращайся на «вы». "
-        "Работай только с тем, что действительно видно на снимке. "
-        "Если освещение неестественное или лицо плохо видно, коротко скажи об ограничении "
-        "и не делай уверенных выводов о подтоне или контрастности. "
-        "Если фото подходит для разбора, соблюдай такой порядок: "
-        "1) искренне отметь одну-две заметные детали образа — взгляд, улыбку, волосы или аксессуар, "
-        "не выдумывая невидимых деталей; "
-        "2) простыми словами опиши видимые особенности внешности и осторожно предположи, "
-        "какие оттенки могут гармонировать, не объявляя цветотип окончательно определённым; "
-        "3) предложи 4–5 оттенков у лица, каждый с эмодзи и коротким объяснением; "
-        "4) назови 1–2 оттенка, с которыми можно поэкспериментировать осторожнее, и мягко объясни почему; "
-        "5) закончи одной короткой дружеской фразой о том, что цвета можно примерить у зеркала "
-        "при дневном свете ☀️. "
-        "Не повторяй предупреждение об освещении в конце и не добавляй длинных вступлений или заключений. "
-        "Не делай выводов о здоровье, состоянии кожи, заболеваниях, возрасте или личности по лицу; "
-        "не диагностируй и не описывай недостатки внешности."
+        "Ты — стильная, тёплая и естественная подруга, которая говорит на «ты». "
+        "Начни с одного живого, доброжелательного комплимента, основанного только на реально видимых деталях снимка "
+        "(например, улыбка, взгляд, причёска, аксессуар или удачный элемент образа). Не используй обязательную "
+        "шаблонную фразу и не преувеличивай. "
+        "Пиши простым разговорным русским языком, без профессионального сленга и сложных терминов. "
+        "Вместо «тауп» выбирай понятные названия вроде «мягкий серо-бежевый», «какао с молоком» или «кофейный», "
+        "если они действительно подходят оттенку. Не используй слова «нюанс» и «контрастность», если мысль можно "
+        "объяснить проще. "
+        "Описывай только то, что действительно видно. Не выдумывай черты внешности, цвет глаз, кожи или волос. "
+        "Если освещение, фильтр или качество фото мешают уверенно оценить оттенки, мягко обозначь это и не делай "
+        "категоричных выводов. Не делай выводов о здоровье, состоянии кожи, заболеваниях, возрасте или личности по лицу. "
+        "Если фото подходит, сохрани структуру разбора: "
+        "1) простыми словами опиши заметные особенности внешности, которые видны на фото; "
+        "2) предложи 4–5 подходящих оттенков одежды или аксессуаров у лица, каждый с коротким объяснением; "
+        "3) назови 1–2 оттенка для осторожной примерки и объясни почему; "
+        "4) закончи короткой дружеской фразой. "
+        "Не повторяй предупреждение о дневном свете, если оно уже прозвучало в разговоре. "
+        "Не обращайся на «вы», не используй фразы «Приветствую», «через призму колористики», "
+        "«предварительный ориентир» и «контрольные оттенки». Не описывай недостатки внешности. "
+        "Если данных недостаточно, скажи об этом бережно и предложи повторить фото при более ровном освещении."
     )
     response = client.models.generate_content(
         model=GEMINI_MODEL,
@@ -1372,9 +1373,8 @@ def analyze_radiance_photo_sync(image_bytes: bytes, mime_type: str = "image/jpeg
         )],
     )
     return (response.text or "").strip() or (
-        "Не получилось уверенно подобрать палитру по этому кадру. Попробуй фото у окна при дневном свете 🌸"
+        "Не получилось уверенно подобрать палитру по этому кадру. Попробуй прислать фото при более ровном освещении 🌸"
     )
-
 
 async def start_kids_flow(message: Message, user_id: int) -> None:
     radiance_states.pop(user_id, None)
@@ -1565,6 +1565,9 @@ async def handle_admin_photo(message: Message) -> None:
     user_id = message.from_user.id
     if radiance_states.get(user_id) == "waiting_for_selfie":
         radiance_states.pop(user_id, None)
+        status_message = await message.answer(
+            "Секундочку, любуюсь твоим фото и подбираю идеальную палитру... ✨"
+        )
         try:
             photo_buffer = io.BytesIO()
             await bot.download(message.photo[-1], destination=photo_buffer)
@@ -1575,18 +1578,21 @@ async def handle_admin_photo(message: Message) -> None:
                 asyncio.to_thread(analyze_radiance_photo_sync, image_bytes, "image/jpeg"),
                 timeout=35,
             )
-            await message.answer(
-                result,
-                reply_markup=MENU_KEYBOARD,
-            )
+            try:
+                await status_message.edit_text(result, reply_markup=MENU_KEYBOARD)
+            except Exception as edit_error:
+                logger.warning("Could not edit radiance status (%s); sending result separately", type(edit_error).__name__)
+                await message.answer(result, reply_markup=MENU_KEYBOARD)
         except asyncio.CancelledError:
             raise
         except Exception as error:
             logger.warning("Radiance photo analysis failed (%s)", type(error).__name__)
-            await message.answer(
-                "Не получилось разобрать фото сейчас 🙈 Попробуй позже или при дневном свете.",
-                reply_markup=MENU_KEYBOARD,
-            )
+            error_text = "Не получилось разобрать фото сейчас 🙈 Попробуй ещё раз чуть позже или пришли фото при более ровном освещении."
+            try:
+                await status_message.edit_text(error_text, reply_markup=MENU_KEYBOARD)
+            except Exception as edit_error:
+                logger.warning("Could not edit radiance error status (%s)", type(edit_error).__name__)
+                await message.answer(error_text, reply_markup=MENU_KEYBOARD)
         return
     await message.answer(
         "Какая чудесная фотография! 🌸 Но разбор внешности и стиля живёт у нас в отдельном домике. "
@@ -1598,7 +1604,6 @@ async def handle_admin_photo(message: Message) -> None:
             f"Вот file_id твоего фото:\n<code>{html.escape(message.photo[-1].file_id)}</code>",
             parse_mode=ParseMode.HTML,
         )
-
 
 @dispatcher.message(Command("testfoodphoto"))
 async def handle_test_food_photos(message: Message) -> None:
