@@ -43,8 +43,9 @@ class KidsAgeRulesTests(unittest.TestCase):
     def test_exact_selected_age_is_sent_to_gemini(self):
         self.assertIn("format_child_age(age)", SOURCE)
         self.assertIn("kids_age_months(age)", SOURCE)
-        self.assertIn("await kids_activity_for_age(selected_age, callback.from_user.id)", SOURCE)
+        self.assertIn("result = await kids_activity_for_age(selected_age, user_id)", SOURCE)
         self.assertIn('int(age["child_number"]) == child_number', SOURCE)
+        self.assertIn("ages = await asyncio.to_thread(load_family_ages, user_id)", SOURCE)
 
     def test_joint_prompt_includes_every_participant(self):
         self.assertIn("asyncio.to_thread(generate_kids_activity_sync, ages, previous)", SOURCE)
