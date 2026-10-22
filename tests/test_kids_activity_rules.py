@@ -49,11 +49,12 @@ class KidsAgeRulesTests(unittest.TestCase):
     def test_joint_prompt_includes_every_participant(self):
         self.assertIn("asyncio.to_thread(generate_kids_activity_sync, ages, previous)", SOURCE)
         self.assertIn("для всех перечисленных возрастов", SOURCE)
-        self.assertIn("разные роли/уровни сложности", SOURCE)
+        self.assertIn("разные роли", SOURCE)
+        self.assertIn("или уровни сложности", SOURCE)
 
     def test_teen_prompt_excludes_childish_games_by_default(self):
-        self.assertIn("для 13–17 лет запрещены примитивные детские игры", SOURCE)
-        self.assertIn("кроме случая, когда сам подросток явно попросил", SOURCE)
+        self.assertIn("Для любого участника 13–17 лет не предлагай примитивные детские игры", SOURCE)
+        self.assertIn("если подросток сам этого не попросил", SOURCE)
 
     def test_duplicate_ages_have_distinguishing_labels(self):
         self.assertIn("первый", SOURCE)
