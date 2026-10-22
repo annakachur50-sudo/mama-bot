@@ -49,11 +49,12 @@ class KidsAgeRulesTests(unittest.TestCase):
     def test_joint_prompt_includes_every_participant(self):
         self.assertIn("asyncio.to_thread(generate_kids_activity_sync, ages, previous)", SOURCE)
         self.assertIn("для всех перечисленных возрастов", SOURCE)
-        self.assertIn("разные роли/уровни сложности", SOURCE)
+        self.assertIn("разные роли", SOURCE)
+        self.assertIn("или уровни сложности", SOURCE)
 
     def test_teen_prompt_excludes_childish_games_by_default(self):
-        self.assertIn("для 13–17 лет запрещены примитивные детские игры", SOURCE)
-        self.assertIn("кроме случая, когда сам подросток явно попросил", SOURCE)
+        self.assertIn("Для любого участника 13–17 лет не предлагай примитивные детские игры", SOURCE)
+        self.assertIn("если подросток сам этого не попросил", SOURCE)
 
     def test_duplicate_ages_have_distinguishing_labels(self):
         self.assertIn("первый", SOURCE)
@@ -75,11 +76,35 @@ class KidsAgeRulesTests(unittest.TestCase):
         start = SOURCE.index("def analyze_radiance_photo_sync(")
         end = SOURCE.index("\n\nasync def start_kids_flow(", start)
         prompt = SOURCE[start:end]
-        self.assertIn("живого, доброжелательного комплимента", prompt)
-        self.assertIn("Не выдумывай черты внешности", prompt)
-        self.assertIn("4–5 подходящих оттенков", prompt)
+        self.assertIn("ТОЛЬКО на конкретные детали, отчётливо видимые", prompt)
+        self.assertIn("не придумывай улыбку, чёлку, макияж", prompt)
+        self.assertIn("не угадывай", prompt)
+        self.assertIn("4–5 понятных оттенков", prompt)
         self.assertIn("1–2 оттенка", prompt)
         self.assertIn("Не повторяй предупреждение о дневном свете", prompt)
+
+    def test_selfie_waiting_copy_is_exact_and_single_source(self):
+        self.assertIn(
+            "Сделай или отправь своё любимое селфи при дневном свете у окна (без фильтров и масок) 🌸",
+            SOURCE,
+        )
+        self.assertIn(
+            "А я помогу раскрыть твои природные краски и подберу цвета, которые подчеркнут твою естественную красоту! ✨",
+            SOURCE,
+        )
+        self.assertEqual(SOURCE.count("Сделай или отправь своё любимое селфи"), 1)
+
+    def test_kids_prompt_addresses_adult_and_requires_short_natural_format(self):
+        start = SOURCE.index("def generate_kids_activity_sync(")
+        end = SOURCE.index("\n\nasync def kids_activity_for_age(", start)
+        prompt = SOURCE[start:end]
+        self.assertIn("ответ именно взрослому, а не ребёнку", prompt)
+        self.assertIn("2–3 коротких абзаца", prompt)
+        self.assertIn("мама может сразу произнести или переслать ребёнку", prompt)
+        self.assertIn("без заголовков и формальных разделов", prompt)
+        self.assertIn("Для подростка 13–15 лет", prompt)
+        self.assertIn("детективная загадка с логичной разгадкой", prompt)
+        self.assertIn("Не предлагай малышовые игры по умолчанию", prompt)
 
     def test_16_plus_uses_senior_teen_label(self):
         label = HELPERS["kids_picker_label"]
