@@ -737,7 +737,7 @@ def _register_user_sync(telegram_user_id: int, username: str | None, display_nam
                 (telegram_user_id, first_seen_at, last_seen_at, username, display_name)
             VALUES (%s, now(), now(), %s, %s)
             ON CONFLICT (telegram_user_id) DO UPDATE SET
-                first_seen_at = LEAST(public.bot_users.first_seen_at, EXCLUDED.first_seen_at),
+                first_seen_at = CASE WHEN public.bot_users.first_seen_at IS NULL THEN NULL ELSE LEAST(public.bot_users.first_seen_at, EXCLUDED.first_seen_at) END,
                 last_seen_at = GREATEST(public.bot_users.last_seen_at, EXCLUDED.last_seen_at),
                 username = COALESCE(EXCLUDED.username, public.bot_users.username),
                 display_name = COALESCE(NULLIF(EXCLUDED.display_name, ''), public.bot_users.display_name)
@@ -759,7 +759,7 @@ def _backfill_sqlite_users_sync() -> None:
                     (telegram_user_id, first_seen_at, last_seen_at, display_name)
                 VALUES (%s, %s::timestamptz, %s::timestamptz, %s)
                 ON CONFLICT (telegram_user_id) DO UPDATE SET
-                    first_seen_at = LEAST(public.bot_users.first_seen_at, EXCLUDED.first_seen_at),
+                    first_seen_at = LEAST(COALESCE(public.bot_users.first_seen_at, EXCLUDED.first_seen_at), EXCLUDED.first_seen_at),
                     last_seen_at = GREATEST(public.bot_users.last_seen_at, EXCLUDED.last_seen_at),
                     display_name = COALESCE(NULLIF(EXCLUDED.display_name, ''), public.bot_users.display_name)
             """, (user_id, first_seen_at, first_seen_at, display_name))
