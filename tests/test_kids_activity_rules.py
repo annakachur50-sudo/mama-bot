@@ -140,7 +140,8 @@ class KidsAgeRulesTests(unittest.TestCase):
         end = SOURCE.index("\n\ndef generate_kids_activity_sync(", start)
         formatter = SOURCE[start:end]
         self.assertIn("html.escape(line, quote=False)", formatter)
-        self.assertIn('escaped_lines[0] = f"<b>{escaped_lines[0]}</b>"', formatter)
+        self.assertIn('escaped_line = f"<b>{escaped_line}</b>"', formatter)
+        self.assertIn("<tg-spoiler>{escaped_answer}</tg-spoiler>", formatter)
         self.assertIn("«<b>", formatter)
 
     def test_radiance_result_has_retry_and_home_navigation(self):
@@ -153,6 +154,85 @@ class KidsAgeRulesTests(unittest.TestCase):
         label = HELPERS["kids_picker_label"]
         self.assertEqual(label(age(16)), "✨ Старший подросток")
         self.assertEqual(label(age(18)), "✨ Старший подросток")
+
+    def test_riddle_prompt_requires_one_grounded_answer_for_all_ages(self):
+        start = SOURCE.index("def generate_kids_activity_sync(")
+        end = SOURCE.index("\n\nasync def kids_activity_for_age(", start)
+        prompt = SOURCE[start:end]
+        self.assertIn("одну чёткую загадку с одним обоснованным ответом", prompt)
+        self.assertIn("обязательно для детективов, данеток и логических задач для любого возраста", prompt)
+        self.assertIn("включая подростков и совместные семейные игры", prompt)
+        self.assertIn("Для занятия без загадки или логической задачи отгадку НЕ добавляй", prompt)
+        self.assertIn("Не добавляй альтернативные версии в скобках", prompt)
+        self.assertIn("размышления о том, каким мог бы быть ответ", prompt)
+
+    def test_spoiler_answer_escapes_html_sensitive_characters(self):
+        formatter_node = next(
+            node for node in TREE.body
+            if isinstance(node, ast.FunctionDef) and node.name == "format_kids_activity_html"
+        )
+        namespace = {"html": __import__("html"), "re": __import__("re")}
+        exec(compile(ast.Module(body=[formatter_node], type_ignores=[]), "main.py", "exec"), namespace)
+        result = namespace["format_kids_activity_html"](
+            '🕵️ «Дело о знаках» (14 лет)\nКто оставил записку?\n'
+            '💡 Отгадка для мамы: знак <А> & "Б" > 2',
+            "14 лет",
+        )
+        self.assertIn(
+            '<tg-spoiler>знак &lt;А&gt; &amp; "Б" &gt; 2</tg-spoiler>',
+            result,
+        )
+        self.assertEqual(result.count("<tg-spoiler>"), 1)
+
+    def test_teen_danetka_and_joint_family_game_keep_spoiler_at_the_end(self):
+        formatter_node = next(
+            node for node in TREE.body
+            if isinstance(node, ast.FunctionDef) and node.name == "format_kids_activity_html"
+        )
+        namespace = {"html": __import__("html"), "re": __import__("re")}
+        exec(compile(ast.Module(body=[formatter_node], type_ignores=[]), "main.py", "exec"), namespace)
+        samples = [
+            (
+                "🕵️ «Ночной звонок» (14 лет)\nГерой услышал звонок, но телефон не звонил. Почему?\n"
+                "💡 Отгадка для мамы: звонок шёл с другого устройства.",
+                "14 лет",
+            ),
+            (
+                "🤝 «Семейный детектив» (5, 9 и 14 лет)\nВсе вместе ищут одну улику.\n"
+                "💡 Отгадка для мамы: записка лежит под синей книгой.",
+                "5, 9 и 14 лет",
+            ),
+        ]
+        for sample, ages_caption in samples:
+            with self.subTest(ages=ages_caption):
+                result = namespace["format_kids_activity_html"](sample, ages_caption)
+                self.assertEqual(result.count("<tg-spoiler>"), 1)
+                self.assertEqual(result.count("</tg-spoiler>"), 1)
+                self.assertLess(result.index("Все вместе") if "Все вместе" in result else 0, result.index("<tg-spoiler>"))
+                self.assertTrue(result.endswith("</tg-spoiler>"))
+
+    def test_non_riddle_activity_does_not_gain_spoiler(self):
+        formatter_node = next(
+            node for node in TREE.body
+            if isinstance(node, ast.FunctionDef) and node.name == "format_kids_activity_html"
+        )
+        namespace = {"html": __import__("html"), "re": __import__("re")}
+        exec(compile(ast.Module(body=[formatter_node], type_ignores=[]), "main.py", "exec"), namespace)
+        result = namespace["format_kids_activity_html"](
+            '🎨 «Три цвета» (7 лет)\nНарисуйте необычный дом тремя цветами.',
+            "7 лет",
+        )
+        self.assertNotIn("<tg-spoiler>", result)
+        self.assertIn("Нарисуйте необычный дом", result)
+
+    def test_kids_messages_use_html_parse_mode_and_controlled_spoiler(self):
+        self.assertIn("parse_mode=ParseMode.HTML", SOURCE)
+        start = SOURCE.index("def format_kids_activity_html(")
+        end = SOURCE.index("\n\ndef generate_kids_activity_sync(", start)
+        formatter = SOURCE[start:end]
+        self.assertIn("html.escape(answer, quote=False)", formatter)
+        self.assertIn("<tg-spoiler>{escaped_answer}</tg-spoiler>", formatter)
+        self.assertIn("answer_match", formatter)
 
 
 if __name__ == "__main__":
