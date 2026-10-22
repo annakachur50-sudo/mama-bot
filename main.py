@@ -1,5 +1,6 @@
 import asyncio
 import html
+import io
 import logging
 import os
 from aiohttp import web
@@ -187,6 +188,9 @@ SUPPORT_SCENARIOS = {
     },
 }
 support_sessions: dict[int, str] = {}
+# Ephemeral states only; no photo or message content is stored in analytics.
+radiance_states: dict[int, str] = {}
+pending_kids_age: set[int] = set()
 SUPPORT_STYLE = (
     "Общайся тепло, естественно и конкретно — как внимательная подруга, а не по психологическому скрипту. "
     "Отвечай на то, что мама действительно сказала, простым разговорным языком. Не приписывай ей чувства, "
@@ -271,14 +275,18 @@ START_CAPTION = (
     "🍳 <b>Накормить семью</b> — придумаю быстрый ужин за 20 минут из того, что есть в холодильнике\n"
     "🧹 <b>Разгрести хаос</b> — подскажу, как навести порядок за 15 минут без едкой химии\n"
     "📋 <b>День по полочкам</b> — разложу дела без спешки и чувства вины\n"
-    "🫂 <b>Тёплая поддержка</b> — поддержу и напомню выпить горячий чай ☕️\n\n"
+    "🫂 <b>Тёплая поддержка</b> — поддержу и напомню выпить горячий чай ☕️\n"
+    "✨ <b>Моё сияние</b> — ориентировочная палитра цветов и идеи ухода\n"
+    "🧸 <b>Занять ребёнка</b> — безопасная игра на несколько минут\n\n"
     "<b>С чего начнём сегодня? Выбирай кнопку внизу 👇</b>"
 )
 MENU_BUTTONS = (
     "🍲 Накормить семью",
-    "📦 Разгрести хаос",
+    "🧹 Разгрести хаос",
     "📅 День по полочкам",
-    "💖 Тёплая поддержка",
+    "🫂 Тёплая поддержка",
+    "✨ Моё сияние",
+    "🧸 Занять ребёнка",
 )
 BOT_COMMANDS = [
     BotCommand(command="start", description="Главное меню и старт"),
@@ -338,6 +346,7 @@ MENU_KEYBOARD = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text=MENU_BUTTONS[0]), KeyboardButton(text=MENU_BUTTONS[1])],
         [KeyboardButton(text=MENU_BUTTONS[2]), KeyboardButton(text=MENU_BUTTONS[3])],
+        [KeyboardButton(text=MENU_BUTTONS[4]), KeyboardButton(text=MENU_BUTTONS[5])],
     ],
     resize_keyboard=True,
     is_persistent=False,
@@ -350,6 +359,8 @@ inline_kb = InlineKeyboardMarkup(
         [InlineKeyboardButton(text="🧹 Разгрести хаос", callback_data="menu_clean")],
         [InlineKeyboardButton(text="📋 День по полочкам", callback_data="menu_plan")],
         [InlineKeyboardButton(text="🫂 Тёплая поддержка", callback_data="menu_support")],
+        [InlineKeyboardButton(text="✨ Моё сияние", callback_data="menu_radiance")],
+        [InlineKeyboardButton(text="🧸 Занять ребёнка", callback_data="menu_kids")],
     ]
 )
 
@@ -398,6 +409,8 @@ class AnalyticsMessageMiddleware(BaseMiddleware):
                 MENU_BUTTONS[1]: ("clean", "menu_clean"),
                 MENU_BUTTONS[2]: ("plan", "menu_plan"),
                 MENU_BUTTONS[3]: ("support", "menu_support"),
+                MENU_BUTTONS[4]: ("radiance", "menu_radiance"),
+                MENU_BUTTONS[5]: ("kids", "menu_kids"),
             }
             if text_value in button_ids:
                 section, button_id = button_ids[text_value]
@@ -831,6 +844,18 @@ def analytics_button_info(callback_data: str) -> tuple[str, str]:
     known = {
         "menu_food": ("food", "menu_food"), "menu_clean": ("clean", "menu_clean"),
         "menu_plan": ("plan", "menu_plan"), "menu_support": ("support", "menu_support"),
+        "menu_radiance": ("radiance", "menu_radiance"), "menu_kids": ("kids", "menu_kids"),
+        "radiance:undertones": ("radiance", "undertones"),
+        "radiance:cancel": ("radiance", "cancel"),
+        "radiance:locked:wardrobe": ("radiance", "locked_wardrobe"),
+        "radiance:locked:care": ("radiance", "locked_care"),
+        "radiance:locked:suitable": ("radiance", "locked_suitable"),
+        "radiance:interest:wardrobe": ("radiance", "interest_wardrobe"),
+        "radiance:interest:care": ("radiance", "interest_care"),
+        "radiance:interest:suitable": ("radiance", "interest_suitable"),
+        "kids:story_pdf": ("kids", "story_pdf"),
+        "kids:interest:story_pdf": ("kids", "interest_story_pdf"),
+        "kids:cancel_age": ("kids", "cancel_age"),
         "menu:main": ("main", "main_menu"), "back_to_menu": ("main", "back_to_menu"),
         "another_food": ("food", "another_food"), "expand_details": ("food", "expand_details"),
     }
@@ -988,6 +1013,7 @@ async def cmd_stats(message: Message) -> None:
         section_labels = {
             "main": "Главное меню", "food": "Накормить семью", "clean": "Разгрести хаос",
             "plan": "День по полочкам", "support": "Тёплая поддержка",
+            "radiance": "Моё сияние", "kids": "Занять ребёнка",
             "family_profile": "Профиль семьи", "other": "Другие кнопки",
         }
         sections = stats["popular_sections"]
@@ -1018,6 +1044,302 @@ async def cmd_stats(message: Message) -> None:
         logger.warning("Stats query failed (%s)", type(error).__name__)
         await message.answer("Не удалось получить статистику из базы данных. Попробуй немного позже.")
 
+
+
+
+RADIANCE_MENU_TEXT = (
+    "✨ <b>Моё сияние</b>\n\n"
+    "Твой личный AI-стилист и бьюти-помощник ✨\n"
+    "Начнём с бесплатной ориентировочной палитры цветов. Остальные возможности пока закрыты."
+)
+
+
+def radiance_menu_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🌸 Подобрать мои оттенки (Бесплатно)", callback_data="radiance:undertones")],
+        [InlineKeyboardButton(text="👗 Собрать образы из шкафа 🔒", callback_data="radiance:locked:wardrobe")],
+        [InlineKeyboardButton(text="💄 Подобрать уход и косметику 🔒", callback_data="radiance:locked:care")],
+        [InlineKeyboardButton(text="🛍️ Мне это подойдёт? 🔒", callback_data="radiance:locked:suitable")],
+    ])
+
+
+RADIANCE_LOCKED_CARDS = {
+    "wardrobe": (
+        "👗 <b>Образы из твоего шкафа</b>\n\n"
+        "В будущем помощник сможет помогать сочетать вещи, собирать комплекты под разные случаи "
+        "и находить новые комбинации из того, что у тебя уже есть."
+    ),
+    "care": (
+        "💄 <b>Уход и косметика</b>\n\n"
+        "Подбор базового ухода и косметических средств с учётом твоих предпочтений, "
+        "привычного ритма и желаемого образа."
+    ),
+    "suitable": (
+        "🛍️ <b>Мне это подойдёт?</b>\n\n"
+        "Возможность обсудить вещь, оттенок или косметический продукт и понять, "
+        "как он впишется в твой стиль."
+    ),
+}
+RADIANCE_INTEREST_LABELS = {
+    "wardrobe": "interest_wardrobe",
+    "care": "interest_care",
+    "suitable": "interest_suitable",
+    "story_pdf": "interest_story_pdf",
+}
+
+
+def radiance_locked_keyboard(feature: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✨ Хочу доступ", callback_data=f"radiance:interest:{feature}")],
+        [InlineKeyboardButton(text="↩️ Назад к Моему сиянию", callback_data="menu_radiance")],
+    ])
+
+
+def kids_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📖 Персональная книжка-сказка в PDF 🔒", callback_data="kids:story_pdf")],
+    ])
+
+
+def kids_story_card_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✨ Хочу доступ", callback_data="kids:interest:story_pdf")],
+        [InlineKeyboardButton(text="↩️ Назад к играм", callback_data="menu_kids")],
+    ])
+
+
+def kids_activity_for_age(age: dict) -> str:
+    value = int(age["age_value"])
+    months = value if age["age_unit"] == "months" else value * 12
+    if months < 12:
+        return (
+            "👶 <b>Игра на минутку: «Ку-ку!»</b>\n\n"
+            "Сядь рядом, улыбнись малышу и на секунду прикрой своё лицо ладонями, затем покажись: «Ку-ку!» "
+            "Повтори несколько раз, следя за реакцией ребёнка. Всё время оставайся рядом и поддерживай малыша "
+            "так, как обычно во время игры."
+        )
+    if months < 36:
+        return (
+            "🧸 <b>Игра на минутку: «Повтори за мной»</b>\n\n"
+            "Похлопай в ладоши, потопай ногами или изобрази знакомое животное и предложи малышу повторить. "
+            "Ничего мелкого или опасного не нужно — играйте рядом на свободном безопасном месте."
+        )
+    if months < 72:
+        return (
+            "🎨 <b>Игра на минутку: «Найди цвет»</b>\n\n"
+            "Назови цвет и вместе найдите глазами три крупных предмета этого цвета в комнате. "
+            "Не нужно брать мелкие вещи в руки; играйте под присмотром взрослого."
+        )
+    return (
+        "🚀 <b>Игра на минутку: «История из комнаты»</b>\n\n"
+        "Выберите глазами три знакомых предмета вокруг и придумайте короткую смешную историю, "
+        "где они отправились в путешествие. Ничего специально доставать не нужно."
+    )
+
+
+async def start_radiance_flow(message: Message, user_id: int) -> None:
+    radiance_states.pop(user_id, None)
+    pending_kids_age.discard(user_id)
+    await message.answer(RADIANCE_MENU_TEXT, reply_markup=radiance_menu_keyboard(), parse_mode=ParseMode.HTML)
+
+
+async def start_radiance_selfie(message: Message, user_id: int) -> None:
+    radiance_states[user_id] = "waiting_for_selfie"
+    await message.answer(
+        "🌸 Пришли своё фото при дневном свете — лучше у окна, без цветных фильтров. "
+        "Я предложу предварительную палитру оттенков одежды и макияжа по видимому подтону и контрастности. "
+        "Это ориентир, а не точное заключение: освещение и камера могут менять оттенки. "
+        "Я не делаю выводов о здоровье, состоянии кожи или возрасте по лицу.",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="↩️ Отмена / Назад", callback_data="radiance:cancel")],
+        ]),
+    )
+
+
+def analyze_radiance_photo_sync(image_bytes: bytes, mime_type: str = "image/jpeg") -> str:
+    prompt = (
+        "Ты — тактичный AI-стилист. По этому фото дай только предварительную, ориентировочную "
+        "палитру цветов одежды и макияжа. Опиши возможный визуальный подтон (нейтральный/тёплый/холодный) "
+        "и уровень контрастности (низкий/средний/высокий) с осторожными формулировками, затем предложи "
+        "4–6 оттенков, которые можно попробовать у лица, и 1–2 оттенка, с которыми стоит сравнить результат. "
+        "Добавь мягкий, конкретный комплимент образу без чрезмерной лести. Свет, баланс белого и камера "
+        "могут искажать цвет — обязательно напомни проверить палитру при дневном свете и на реальных тканях. "
+        "Не делай никаких выводов о здоровье, состоянии кожи, заболеваниях, возрасте или личности по лицу. "
+        "Не диагностируй и не описывай недостатки внешности. Ответь по-русски, короткими абзацами, с эмодзи."
+    )
+    response = client.models.generate_content(
+        model=GEMINI_MODEL,
+        contents=[types.Content(
+            role="user",
+            parts=[
+                types.Part.from_text(text=prompt),
+                types.Part.from_bytes(data=image_bytes, mime_type=mime_type),
+            ],
+        )],
+    )
+    return (response.text or "").strip() or (
+        "Не получилось уверенно подобрать палитру по этому кадру. Попробуй фото у окна при дневном свете 🌸"
+    )
+
+
+async def start_kids_flow(message: Message, user_id: int) -> None:
+    radiance_states.pop(user_id, None)
+    pending_kids_age.discard(user_id)
+    try:
+        ages = await asyncio.to_thread(load_family_ages, user_id)
+    except FamilyProfileUnavailable:
+        await message.answer(
+            "Не получилось проверить сохранённый возраст. Попробуй ещё раз чуть позже 🌿",
+            reply_markup=MENU_KEYBOARD,
+        )
+        return
+    if ages:
+        await message.answer(
+            kids_activity_for_age(ages[0]),
+            reply_markup=kids_keyboard(),
+            parse_mode=ParseMode.HTML,
+        )
+        return
+    pending_kids_age.add(user_id)
+    await message.answer(
+        "Сколько малышу лет или месяцев? Например: «8 месяцев» или «2 года». "
+        "Я сохраню возраст в уже существующем профиле семьи и подберу безопасную игру на минутку 🌿",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="↩️ Отмена / Назад", callback_data="kids:cancel_age")],
+        ]),
+    )
+
+
+@dispatcher.callback_query(F.data.in_({"menu_radiance", "menu_kids"}))
+async def process_radiance_kids_menu(callback: CallbackQuery) -> None:
+    await callback.answer()
+    if callback.message is None:
+        return
+    user_id = callback.from_user.id
+    radiance_states.pop(user_id, None)
+    pending_kids_age.discard(user_id)
+    if callback.data == "menu_radiance":
+        await start_radiance_flow(callback.message, user_id)
+    else:
+        await start_kids_flow(callback.message, user_id)
+
+
+@dispatcher.callback_query(F.data == "radiance:undertones")
+async def process_radiance_undertones(callback: CallbackQuery) -> None:
+    await callback.answer()
+    if callback.message is not None:
+        await start_radiance_selfie(callback.message, callback.from_user.id)
+
+
+@dispatcher.callback_query(F.data == "radiance:cancel")
+async def cancel_radiance_selfie(callback: CallbackQuery) -> None:
+    await callback.answer()
+    user_id = callback.from_user.id
+    radiance_states.pop(user_id, None)
+    if callback.message is not None:
+        await callback.message.answer("Хорошо, разбор фото отменён 🌸", reply_markup=MENU_KEYBOARD)
+
+
+@dispatcher.callback_query(F.data.startswith("radiance:locked:"))
+async def show_radiance_locked_card(callback: CallbackQuery) -> None:
+    await callback.answer()
+    if callback.message is None or not callback.data:
+        return
+    feature = callback.data.rsplit(":", 1)[-1]
+    card = RADIANCE_LOCKED_CARDS.get(feature)
+    if card is not None:
+        await callback.message.answer(
+            card,
+            reply_markup=radiance_locked_keyboard(feature),
+            parse_mode=ParseMode.HTML,
+        )
+
+
+@dispatcher.callback_query(F.data.startswith("radiance:interest:"))
+async def radiance_interest(callback: CallbackQuery) -> None:
+    await callback.answer()
+    if callback.message is None or not callback.data:
+        return
+    feature = callback.data.rsplit(":", 1)[-1]
+    if feature not in RADIANCE_INTEREST_LABELS:
+        return
+    await callback.message.answer(
+        "Спасибо за интерес! ✨ Я отметила твой запрос. Сейчас доступ ещё не подключён, "
+        "и никаких списаний или покупок не происходит."
+    )
+
+
+@dispatcher.callback_query(F.data == "kids:story_pdf")
+async def show_kids_story_card(callback: CallbackQuery) -> None:
+    await callback.answer()
+    if callback.message is not None:
+        await callback.message.answer(
+            "📖 <b>Персональная книжка-сказка в PDF</b>\n\n"
+            "В будущем можно будет создать добрую сказку с именем ребёнка и иллюстрациями, "
+            "подходящую его возрасту. Эта возможность пока закрыта — ничего покупать сейчас не нужно.",
+            reply_markup=kids_story_card_keyboard(),
+            parse_mode=ParseMode.HTML,
+        )
+
+
+@dispatcher.callback_query(F.data == "kids:interest:story_pdf")
+async def kids_story_interest(callback: CallbackQuery) -> None:
+    await callback.answer()
+    if callback.message is not None:
+        await callback.message.answer(
+            "Спасибо за интерес к книжке-сказке! 📖✨ Я отметила запрос. "
+            "Доступ пока не подключён, списаний и покупок нет."
+        )
+
+
+@dispatcher.callback_query(F.data == "kids:cancel_age")
+async def cancel_kids_age(callback: CallbackQuery) -> None:
+    await callback.answer()
+    pending_kids_age.discard(callback.from_user.id)
+    if callback.message is not None:
+        await callback.message.answer("Хорошо, вернулись в меню 🌿", reply_markup=MENU_KEYBOARD)
+
+
+@dispatcher.message(F.photo)
+async def handle_admin_photo(message: Message) -> None:
+    if message.from_user is None or not message.photo:
+        return
+    user_id = message.from_user.id
+    if radiance_states.get(user_id) == "waiting_for_selfie":
+        radiance_states.pop(user_id, None)
+        try:
+            photo_buffer = io.BytesIO()
+            await bot.download(message.photo[-1], destination=photo_buffer)
+            image_bytes = photo_buffer.getvalue()
+            if not image_bytes:
+                raise ValueError("empty photo payload")
+            result = await asyncio.wait_for(
+                asyncio.to_thread(analyze_radiance_photo_sync, image_bytes, "image/jpeg"),
+                timeout=35,
+            )
+            await message.answer(
+                result + "\n\n_Это предварительный ориентир: проверь оттенки при дневном свете и на ткани._",
+                reply_markup=MENU_KEYBOARD,
+                parse_mode=ParseMode.MARKDOWN,
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception as error:
+            logger.warning("Radiance photo analysis failed (%s)", type(error).__name__)
+            await message.answer(
+                "Не получилось разобрать фото сейчас 🙈 Попробуй позже или при дневном свете.",
+                reply_markup=MENU_KEYBOARD,
+            )
+        return
+    await message.answer(
+        "Какая чудесная фотография! 🌸 Но разбор внешности и стиля живёт у нас в отдельном домике. "
+        "Нажми кнопку «✨ Моё сияние» в меню 👇"
+    )
+    if user_id == ADMIN_ID and message.chat.type == "private":
+        await message.answer(
+            f"Вот file_id твоего фото:\n<code>{message.photo[-1].file_id}</code>",
+            parse_mode=ParseMode.HTML,
+        )
 
 
 @dispatcher.message(F.photo)
@@ -1219,6 +1541,8 @@ async def process_start_action(callback: CallbackQuery) -> None:
     await callback.answer()
     if callback.message is None:
         return
+    radiance_states.pop(callback.from_user.id, None)
+    pending_kids_age.discard(callback.from_user.id)
     if callback.data == "menu_clean":
         support_sessions.pop(callback.from_user.id, None)
         await replace_callback_message(callback)
@@ -2439,6 +2763,39 @@ async def handle_text(message: Message) -> None:
 
     user_id = message.from_user.id
 
+    # Any reply-menu selection cancels an unfinished selfie state.
+    if prompt in MENU_BUTTONS:
+        radiance_states.pop(user_id, None)
+        if prompt != MENU_BUTTONS[5]:
+            pending_kids_age.discard(user_id)
+
+    if user_id in pending_kids_age and prompt not in MENU_BUTTONS:
+        parsed_ages = parse_child_ages(prompt)
+        if not parsed_ages or len(parsed_ages) != 1:
+            await message.answer(
+                "Не совсем поняла возраст. Напиши один возраст, например «8 месяцев» или «2 года».",
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="↩️ Отмена / Назад", callback_data="kids:cancel_age")],
+                ]),
+            )
+            return
+        try:
+            await asyncio.to_thread(save_family_ages, user_id, parsed_ages)
+        except FamilyProfileUnavailable:
+            pending_kids_age.discard(user_id)
+            await message.answer(
+                "Не получилось сохранить возраст. Ничего не изменено — попробуй позже 🌿",
+                reply_markup=MENU_KEYBOARD,
+            )
+            return
+        pending_kids_age.discard(user_id)
+        await message.answer(
+            "Спасибо, запомнила возраст в профиле семьи 🌿\n\n" + kids_activity_for_age(parsed_ages[0]),
+            reply_markup=kids_keyboard(),
+            parse_mode=ParseMode.HTML,
+        )
+        return
+
     profile_state = pending_family_profile.get(user_id)
     if profile_state:
         if profile_state.get("stage") == "collecting":
@@ -2468,6 +2825,14 @@ async def handle_text(message: Message) -> None:
         if profile_state.get("stage") == "confirming":
             await message.answer("Пожалуйста, выбери одну из кнопок: сохранить сведения или не сохранять.")
             return
+
+    if prompt == MENU_BUTTONS[4]:
+        await start_radiance_flow(message, user_id)
+        return
+
+    if prompt == MENU_BUTTONS[5]:
+        await start_kids_flow(message, user_id)
+        return
 
     # Если имя ещё не сохранено в памяти, берем его из профиля Telegram:
     if user_id not in user_names:
