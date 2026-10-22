@@ -3170,10 +3170,11 @@ async def handle_text(message: Message) -> None:
             )
             return
         pending_kids_age.discard(user_id)
-        await message.answer(
-            "Спасибо, запомнила возраст в профиле семьи 🌿\n\n" + kids_activity_for_age(parsed_ages[0], user_id),
-            reply_markup=kids_keyboard(),
-            parse_mode=ParseMode.HTML,
+        await message.answer("Спасибо, запомнила возраст в профиле семьи 🌿")
+        await send_kids_activity(
+            message,
+            user_id,
+            child_number=int(parsed_ages[0]["child_number"]),
         )
         return
 
