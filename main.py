@@ -11,7 +11,7 @@ import sqlite3
 
 import psycopg
 
-from aiogram import Bot, Dispatcher, F
+from aiogram import BaseMiddleware, Bot, Dispatcher, F
 from aiogram.enums import ParseMode
 from aiogram.filters import Command, CommandStart
 from aiogram.types import (
@@ -376,6 +376,37 @@ client = genai.Client(
 bot = Bot(token=TELEGRAM_BOT_TOKEN)
 dispatcher = Dispatcher()
 
+class AnalyticsCallbackMiddleware(BaseMiddleware):
+    async def __call__(self, handler, event, data):
+        user = getattr(event, "from_user", None)
+        if user is not None:
+            schedule_user_registration(user)
+            callback_data = getattr(event, "data", None)
+            if callback_data:
+                section, button_id = analytics_button_info(callback_data)
+                schedule_analytics_event(user.id, "button_click", section, button_id)
+        return await handler(event, data)
+
+class AnalyticsMessageMiddleware(BaseMiddleware):
+    async def __call__(self, handler, event, data):
+        user = getattr(event, "from_user", None)
+        if user is not None:
+            schedule_user_registration(user)
+            text_value = getattr(event, "text", None)
+            button_ids = {
+                MENU_BUTTONS[0]: ("food", "menu_food"),
+                MENU_BUTTONS[1]: ("clean", "menu_clean"),
+                MENU_BUTTONS[2]: ("plan", "menu_plan"),
+                MENU_BUTTONS[3]: ("support", "menu_support"),
+            }
+            if text_value in button_ids:
+                section, button_id = button_ids[text_value]
+                schedule_analytics_event(user.id, "button_click", section, button_id)
+        return await handler(event, data)
+
+dispatcher.callback_query.outer_middleware(AnalyticsCallbackMiddleware())
+dispatcher.message.outer_middleware(AnalyticsMessageMiddleware())
+
 user_names: dict[int, str] = {}
 pending_details: dict[int, str] = {}
 pending_details_food: set[int] = set()
@@ -687,6 +718,151 @@ def initialize_user_state() -> None:
     user_names = {int(user_id): name for user_id, name in name_rows}
 
 
+_analytics_last_registered: dict[int, float] = {}
+ANALYTICS_REGISTRATION_COOLDOWN_SECONDS = 300
+ANALYTICS_TASK_TIMEOUT_SECONDS = 4.0
+
+def _analytics_connect():
+    dsn = os.getenv("SUPABASE_DB_URL")
+    if not dsn:
+        raise RuntimeError("SUPABASE_DB_URL is not configured")
+    connection = psycopg.connect(dsn, connect_timeout=2)
+    connection.execute("SET statement_timeout = '2500ms'")
+    return connection
+
+def _register_user_sync(telegram_user_id: int, username: str | None, display_name: str | None) -> None:
+    with _analytics_connect() as connection:
+        connection.execute("""
+            INSERT INTO public.bot_users
+                (telegram_user_id, first_seen_at, last_seen_at, username, display_name)
+            VALUES (%s, now(), now(), %s, %s)
+            ON CONFLICT (telegram_user_id) DO UPDATE SET
+                first_seen_at = LEAST(public.bot_users.first_seen_at, EXCLUDED.first_seen_at),
+                last_seen_at = GREATEST(public.bot_users.last_seen_at, EXCLUDED.last_seen_at),
+                username = COALESCE(EXCLUDED.username, public.bot_users.username),
+                display_name = COALESCE(NULLIF(EXCLUDED.display_name, ''), public.bot_users.display_name)
+            """, (telegram_user_id, username, display_name))
+
+def _backfill_sqlite_users_sync() -> None:
+    with sqlite3.connect(STATE_DB_PATH) as local_connection:
+        rows = local_connection.execute("""
+            SELECT w.user_id, w.first_seen_at, COALESCE(u.name, '')
+            FROM welcomed_users AS w
+            LEFT JOIN user_names AS u ON u.user_id = w.user_id
+        """).fetchall()
+    if not rows:
+        return
+    with _analytics_connect() as connection:
+        for user_id, first_seen_at, display_name in rows:
+            connection.execute("""
+                INSERT INTO public.bot_users
+                    (telegram_user_id, first_seen_at, last_seen_at, display_name)
+                VALUES (%s, %s::timestamptz, %s::timestamptz, %s)
+                ON CONFLICT (telegram_user_id) DO UPDATE SET
+                    first_seen_at = LEAST(public.bot_users.first_seen_at, EXCLUDED.first_seen_at),
+                    last_seen_at = GREATEST(public.bot_users.last_seen_at, EXCLUDED.last_seen_at),
+                    display_name = COALESCE(NULLIF(EXCLUDED.display_name, ''), public.bot_users.display_name)
+            """, (user_id, first_seen_at, first_seen_at, display_name))
+
+async def _run_analytics_task(function, *args) -> None:
+    try:
+        await asyncio.wait_for(asyncio.to_thread(function, *args), timeout=ANALYTICS_TASK_TIMEOUT_SECONDS)
+    except asyncio.CancelledError:
+        raise
+    except Exception as error:
+        logger.warning("Analytics task %s failed (%s)", getattr(function, "__name__", "unknown"), type(error).__name__)
+
+def schedule_user_registration(user) -> None:
+    user_id = getattr(user, "id", None)
+    if not isinstance(user_id, int):
+        return
+    now = time.monotonic()
+    last_scheduled = _analytics_last_registered.get(user_id)
+    if last_scheduled is not None and now - last_scheduled < ANALYTICS_REGISTRATION_COOLDOWN_SECONDS:
+        return
+    _analytics_last_registered[user_id] = now
+    asyncio.create_task(_run_analytics_task(
+        _register_user_sync, user_id, getattr(user, "username", None), getattr(user, "first_name", None)
+    ))
+
+def analytics_button_info(callback_data: str) -> tuple[str, str]:
+    # Normalize callback payloads; never persist raw callback data or message content.
+    if callback_data.startswith("cln:"):
+        parts = callback_data.split(":")
+        if len(parts) >= 4:
+            action, value = parts[2], parts[3]
+            if action == "zone" and value in {"kitchen", "kids", "clothes", "living", "everywhere"}:
+                return "clean", f"zone_{value}"
+            if action == "time" and value in {"5", "10", "15"}:
+                return "clean", f"time_{value}"
+            if action == "energy" and value in {"low", "normal", "high"}:
+                return "clean", f"energy_{value}"
+            actions = {"next_room": "next", "more": "alternative", "stop": "stop", "home": "back"}
+            if action in actions:
+                return "clean", actions[action]
+            if action == "nextzone" and value in {"kitchen", "kids", "clothes", "living", "everywhere"}:
+                return "clean", f"nextzone_{value}"
+        return "clean", "clean_other_button"
+    if callback_data.startswith("support:"):
+        parts = callback_data.split(":")
+        if len(parts) == 3 and parts[1] == "choose" and parts[2] in SUPPORT_SCENARIOS:
+            return "support", f"choose_{parts[2]}"
+        if callback_data == "support:choose_again":
+            return "support", "choose_again"
+        if callback_data == "support:home":
+            return "support", "home"
+        return "support", "support_other_button"
+    if callback_data.startswith("family_age:"):
+        action = callback_data.split(":", 1)[1]
+        if action in {"skip", "edit", "save", "cancel"}:
+            return "family_profile", f"age_{action}"
+        return "family_profile", "age_other_button"
+    if callback_data.startswith("chaos:"):
+        action = callback_data.split(":", 1)[1]
+        if action in {"kitchen", "kids", "living", "bath", "menu"}:
+            return "clean", f"chaos_{action}"
+        return "clean", "chaos_other_button"
+    known = {
+        "menu_food": ("food", "menu_food"), "menu_clean": ("clean", "menu_clean"),
+        "menu_plan": ("plan", "menu_plan"), "menu_support": ("support", "menu_support"),
+        "menu:main": ("main", "main_menu"), "back_to_menu": ("main", "back_to_menu"),
+        "another_food": ("food", "another_food"), "expand_details": ("food", "expand_details"),
+    }
+    return known.get(callback_data, ("other", "other_button"))
+
+def schedule_analytics_event(telegram_user_id: int, event_name: str, section: str, button_id: str) -> None:
+    asyncio.create_task(_run_analytics_task(
+        _insert_analytics_event_sync, telegram_user_id, event_name, section, button_id
+    ))
+
+def _insert_analytics_event_sync(telegram_user_id: int, event_name: str, section: str, button_id: str) -> None:
+    with _analytics_connect() as connection:
+        connection.execute("""
+            INSERT INTO public.bot_events (telegram_user_id, event_name, section, button_id)
+            VALUES (%s, %s, %s, %s)
+        """, (telegram_user_id, event_name, section, button_id))
+
+def _read_stats_sync() -> dict:
+    with _analytics_connect() as connection:
+        row = connection.execute("""
+            SELECT COUNT(*) AS total_users,
+                   COUNT(*) FILTER (WHERE first_seen_at >= now() - interval '24 hours') AS new_24h,
+                   COUNT(*) FILTER (WHERE first_seen_at >= now() - interval '7 days') AS new_7d
+            FROM public.bot_users
+        """).fetchone()
+        sections = connection.execute("""
+            SELECT section, COUNT(*) AS clicks FROM public.bot_events
+            WHERE occurred_at >= now() - interval '7 days'
+            GROUP BY section ORDER BY clicks DESC, section LIMIT 5
+        """).fetchall()
+        buttons = connection.execute("""
+            SELECT section, button_id, COUNT(*) AS clicks FROM public.bot_events
+            WHERE occurred_at >= now() - interval '7 days'
+            GROUP BY section, button_id ORDER BY clicks DESC, section, button_id LIMIT 5
+        """).fetchall()
+    return {"total_users": row[0], "new_24h": row[1], "new_7d": row[2],
+            "popular_sections": sections, "popular_buttons": buttons}
+
 def delete_user_data_from_database(user_id: int) -> None:
     # Сохраняем welcomed_users: сброс личных данных не должен повторно
     # отправлять уведомление об этом же человеке в канал.
@@ -790,29 +966,41 @@ LOG_CHANNEL_ID = -1004353307194
 async def cmd_stats(message: Message) -> None:
     if message.from_user is None or message.from_user.id != ADMIN_ID:
         return
-
     try:
-        with sqlite3.connect(STATE_DB_PATH) as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT COUNT(*) FROM user_names")
-            total_users = cursor.fetchone()[0]
-
-            cursor.execute("SELECT name FROM user_names ORDER BY rowid DESC LIMIT 5")
-            recent_names = [row[0] for row in cursor.fetchall() if row[0]]
-
-        names_preview = ", ".join(recent_names) if recent_names else "пока нет"
-
+        stats = await asyncio.wait_for(asyncio.to_thread(_read_stats_sync), timeout=ANALYTICS_TASK_TIMEOUT_SECONDS)
+        total_users = stats["total_users"]
+        section_labels = {
+            "main": "Главное меню", "food": "Накормить семью", "clean": "Разгрести хаос",
+            "plan": "День по полочкам", "support": "Тёплая поддержка",
+            "family_profile": "Профиль семьи", "other": "Другие кнопки",
+        }
+        sections = stats["popular_sections"]
+        buttons = stats["popular_buttons"]
+        sections_text = "\n".join(
+            f"• {html.escape(section_labels.get(section, section))}: <b>{clicks}</b>"
+            for section, clicks in sections
+        ) if sections else "• Пока нет данных"
+        buttons_text = "\n".join(
+            f"• {html.escape(section_labels.get(section, section))} / <code>{html.escape(button_id)}</code>: <b>{clicks}</b>"
+            for section, button_id, clicks in buttons
+        ) if buttons else "• Пока нет данных"
         stats_text = (
-            "📊 <b>Статистика бота «Мама 24/7»:</b>\n\n"
-            f"👥 Всего пользователей: <b>{total_users}</b>\n"
-            f"🎯 Цель до платной версии: <b>100</b> (осталось {max(0, 100 - total_users)})\n\n"
-            f"🌸 <i>Последние гости:</i> {names_preview}"
+            "📊 <b>Статистика бота «Мама 24/7»</b>\n\n"
+            f"👥 Всего уникальных пользователей: <b>{total_users}</b>\n"
+            f"🆕 Новых за 24 часа: <b>{stats['new_24h']}</b>\n"
+            f"📅 Новых за 7 дней: <b>{stats['new_7d']}</b>\n"
+            f"🎯 До цели в 100: <b>{max(0, 100 - total_users)}</b>\n\n"
+            "🌿 <b>Популярность разделов за 7 дней</b>\n"
+            f"{sections_text}\n\n"
+            "🖱 <b>Популярные кнопки за 7 дней</b>\n"
+            f"{buttons_text}"
         )
         await message.answer(stats_text, parse_mode=ParseMode.HTML)
-
-    except Exception as err:
-        logger.exception("Stats error: %s", err)
-        await message.answer(f"Ошибка получения статистики: {err}")
+    except asyncio.CancelledError:
+        raise
+    except Exception as error:
+        logger.warning("Stats query failed (%s)", type(error).__name__)
+        await message.answer("Не удалось получить статистику из базы данных. Попробуй немного позже.")
 
 
 
@@ -2330,6 +2518,7 @@ async def handle_text(message: Message) -> None:
 async def main() -> None:
     logger.info("Starting Telegram bot with model %s", GEMINI_MODEL)
     initialize_user_state()
+    asyncio.create_task(_run_analytics_task(_backfill_sqlite_users_sync))
     try:
         # 1. Сначала мгновенно поднимаем веб-сервер для Render
         app = web.Application()
