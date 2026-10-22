@@ -24,13 +24,13 @@ class KidsRiddleSpoilerTests(unittest.TestCase):
 
     def test_ordinary_detective_answer_is_last_and_spoiler_wrapped(self):
         result = self.format(
-            "🕵️ «Кто взял ключ?» (8 лет)\nУ двери мокрые следы, а на улице дождь.\nКто был снаружи?",
+            "🕵️ «Кто взял ключ?» (8 лет)\nУ двери мокрые следы, а на улице дождь.\nКто был снаружи?\n💡 Отгадка для мамы: по этим данным нельзя однозначно определить человека, поэтому нужно выбрать другую загадку.",
             "8 лет",
         )
-        self.assertNotIn("<tg-spoiler>", result)  # Formatter never invents an answer.
+        self.assertIn("<tg-spoiler>по этим данным нельзя однозначно определить человека, поэтому нужно выбрать другую загадку.</tg-spoiler>", result)
         self.assertIn("parse_mode=ParseMode.HTML", SOURCE)
 
-    def test_danетка_prompt_requires_one_answer_for_teens(self):
+    def test_danetka_prompt_requires_one_answer_for_teens(self):
         start = SOURCE.index("def generate_kids_activity_sync(")
         end = SOURCE.index("\n\nasync def kids_activity_for_age(", start)
         prompt = SOURCE[start:end]
