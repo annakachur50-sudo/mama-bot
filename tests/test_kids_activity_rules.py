@@ -184,6 +184,33 @@ class KidsAgeRulesTests(unittest.TestCase):
         )
         self.assertEqual(result.count("<tg-spoiler>"), 1)
 
+    def test_teen_danetka_and_joint_family_game_keep_spoiler_at_the_end(self):
+        formatter_node = next(
+            node for node in TREE.body
+            if isinstance(node, ast.FunctionDef) and node.name == "format_kids_activity_html"
+        )
+        namespace = {"html": __import__("html"), "re": __import__("re")}
+        exec(compile(ast.Module(body=[formatter_node], type_ignores=[]), "main.py", "exec"), namespace)
+        samples = [
+            (
+                "🕵️ «Ночной звонок» (14 лет)\nГерой услышал звонок, но телефон не звонил. Почему?\n"
+                "💡 Отгадка для мамы: звонок шёл с другого устройства.",
+                "14 лет",
+            ),
+            (
+                "🤝 «Семейный детектив» (5, 9 и 14 лет)\nВсе вместе ищут одну улику.\n"
+                "💡 Отгадка для мамы: записка лежит под синей книгой.",
+                "5, 9 и 14 лет",
+            ),
+        ]
+        for sample, ages_caption in samples:
+            with self.subTest(ages=ages_caption):
+                result = namespace["format_kids_activity_html"](sample, ages_caption)
+                self.assertEqual(result.count("<tg-spoiler>"), 1)
+                self.assertEqual(result.count("</tg-spoiler>"), 1)
+                self.assertLess(result.index("Все вместе") if "Все вместе" in result else 0, result.index("<tg-spoiler>"))
+                self.assertTrue(result.endswith("</tg-spoiler>"))
+
     def test_non_riddle_activity_does_not_gain_spoiler(self):
         formatter_node = next(
             node for node in TREE.body
