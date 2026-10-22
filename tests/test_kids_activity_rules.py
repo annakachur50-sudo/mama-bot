@@ -118,6 +118,23 @@ class KidsAgeRulesTests(unittest.TestCase):
         self.assertIn("kids_generation_in_progress", SOURCE)
         self.assertIn("if user_id in kids_generation_in_progress", SOURCE)
 
+    def test_game_html_formatter_escapes_text_and_uses_real_newlines(self):
+        formatter_node = next(
+            node for node in TREE.body
+            if isinstance(node, ast.FunctionDef) and node.name == "format_kids_activity_html"
+        )
+        namespace = {"html": __import__("html"), "re": __import__("re")}
+        exec(compile(ast.Module(body=[formatter_node], type_ignores=[]), "main.py", "exec"), namespace)
+        result = namespace["format_kids_activity_html"](
+            "🕵️ «Секретный агент» (7 лет)\nПредложи игру.\nСкажи: «Найди подсказку <в комнате>».",
+            "7 лет",
+        )
+        self.assertTrue(result.startswith("<b>🕵️ «Секретный агент» (7 лет)</b>"))
+        self.assertIn("\n", result)
+        self.assertNotIn("\\n", result)
+        self.assertIn("«<b>Найди подсказку &lt;в комнате&gt;</b>»", result)
+        self.assertNotIn("<в комнате>", result)
+
     def test_game_html_is_escaped_before_controlled_formatting(self):
         start = SOURCE.index("def format_kids_activity_html(")
         end = SOURCE.index("\n\ndef generate_kids_activity_sync(", start)
