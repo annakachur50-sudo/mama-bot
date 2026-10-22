@@ -1261,10 +1261,24 @@ def format_kids_activity_html(text: str, age_caption: str) -> str:
     first = lines[0].strip()
     if not re.match(r"^[^\w\s]{1,4}\s*«.+»\s*\(.+\)$", first):
         lines.insert(0, f"🎯 «Игра на минутку» ({age_caption})")
-    escaped_lines = [html.escape(line, quote=False) for line in lines]
+    escaped_lines = []
+    answer_prefix = "💡 Отгадка для мамы:"
+    for line in lines:
+        stripped_line = line.strip()
+        if stripped_line.startswith(answer_prefix):
+            answer = stripped_line[len(answer_prefix):].strip()
+            if answer:
+                # Escape only model-generated answer; keep trusted spoiler tags intact.
+                escaped_answer = html.escape(answer, quote=True)
+                escaped_lines.append(f"{answer_prefix} <tg-spoiler>{escaped_answer}</tg-spoiler>")
+            continue
+        escaped_lines.append(html.escape(line, quote=False))
+    if not escaped_lines:
+        escaped_lines = [html.escape(f"🎯 «Игра на минутку» ({age_caption})", quote=False)]
     escaped_lines[0] = f"<b>{escaped_lines[0]}</b>"
     for index in range(1, len(escaped_lines)):
-        escaped_lines[index] = re.sub(r"«([^«»\n]{1,700})»", r"«<b>\1</b>»", escaped_lines[index])
+        if answer_prefix not in escaped_lines[index]:
+            escaped_lines[index] = re.sub(r"«([^«»\\n]{1,700})»", r"«<b>\\1</b>»", escaped_lines[index])
     return "\n".join(escaped_lines)
 
 
@@ -1296,8 +1310,17 @@ def generate_kids_activity_sync(ages: list[dict], previous: str | None = None) -
         "это допустимо, но обращение и инструкция в ответе всё равно адресованы взрослому. "
         "Загадки и задания должны иметь логичное решение, быть выполнимыми и безопасными. Не придумывай "
         "заведомо неразрешимые загадки, опасные эксперименты, задания с огнём, острыми инструментами или риском падения. "
-        "Не требуй покупок и сложной подготовки. Не используй Markdown или HTML-теги: оформление Telegram добавит код бота. "
-        "Верни только готовый текст игры."
+        "ОБЯЗАТЕЛЬНАЯ ОТГАДКА: если занятие содержит загадку, детективную историю, данетку или логическую задачу "
+        "(для любого возраста, включая подростков и совместную игру), выбери задачу с одним чётким ответом. "
+        "История, вопрос и ответ должны составлять единое целое; проверь, что ответ строго следует из условий и "
+        "не противоречит им. Не добавляй альтернативные версии в скобках, рассуждения о возможных ответах или "
+        "детали, придуманные только для подгонки решения. Если однозначность обеспечить нельзя, выбери другую задачу. "
+        "Сначала выдай законченную историю и вопрос, не раскрывая ответ раньше времени. В самом конце, отдельным "
+        "последним абзацем, добавь ровно одну строку-маркер: «💡 Отгадка для мамы: краткий точный ответ». "
+        "Вместо примера напиши настоящий ответ; при необходимости добавь одно короткое объяснение. Не добавляй "
+        "отгадку к занятиям, в которых нет загадки или логической задачи. Текст после маркера будет показан маме "
+        "под Telegram-спойлером. Не пиши HTML-теги: оформление Telegram добавит код бота. "
+        "Не требуй покупок и сложной подготовки. Верни только готовый текст игры."
         + ("\n\nДля подростка 13–15 лет выбирай уместные форматы: детективная загадка с логичной разгадкой, "
            "логическая дилемма, викторина о кино или музыке, словесная дуэль или творческий челлендж. "
            "Не предлагай малышовые игры по умолчанию и не говори снисходительно." if teen_present else "")
