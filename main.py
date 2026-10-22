@@ -1117,20 +1117,59 @@ def kids_age_months(age: dict) -> int:
     return value if age["age_unit"] == "months" else value * 12
 
 
+def kids_age_band(months: int) -> tuple[str, str]:
+    if months < 24:
+        return ("до 2 лет", "Безопасное сенсорное занятие вместе со взрослым; только крупные безопасные материалы, постоянный присмотр.")
+    if months < 60:
+        return ("2–4 года", "Простая игра с движением, воображением или крупными безопасными предметами.")
+    if months < 120:
+        return ("5–9 лет", "Домашний квест, простой шифр, конструирование, загадка или безопасный эксперимент.")
+    if months < 156:
+        return ("10–12 лет", "Детективная задачка, творческий челлендж, викторина или логическая игра; не слишком детский тон.")
+    if months < 192:
+        return ("13–15 лет", "Подростковая дилемма, детективная данетка, музыкальная/кино-викторина, словесная дуэль или эстетический челлендж. Не предлагай детские пантомимы, прятки и изображение персонажей без слов, если подросток сам этого не попросил.")
+    if months < 216:
+        return ("16–17 лет", "Более взрослое интеллектуальное, творческое или практическое задание с уважительным подростковым тоном; без снисходительности.")
+    return ("18 лет и старше", "Самостоятельный интеллектуальный, творческий или практический челлендж соответствующей сложности, без детского тона.")
+
+
+def kids_picker_label(age: dict) -> str:
+    months = kids_age_months(age)
+    if months < 24:
+        return "👶 Малыш"
+    if months < 60:
+        return "🧒 Кроха"
+    if months < 120:
+        return "🧩 Ребёнок"
+    if months < 156:
+        return "🎯 Старший"
+    if months < 192:
+        return "🎧 Подросток"
+    if months >= 192:
+        return "✨ Старший подросток"
+    return "✨ Старший подросток"
+
+
 def kids_picker_keyboard(ages: list[dict]) -> InlineKeyboardMarkup:
-    ordered = sorted(ages, key=kids_age_months)
-    buttons = []
-    for index, age in enumerate(ordered):
+    ordered = sorted(ages, key=lambda age: (kids_age_months(age), int(age["child_number"])))
+    same_age_counts: dict[int, int] = {}
+    for age in ordered:
         months = kids_age_months(age)
-        if months < 36:
-            label = "👶 Малыш"
-        elif index == len(ordered) - 1:
-            label = "🎒 Старший"
-        else:
-            label = f"🧸 Ребёнок №{age['child_number']}"
+        same_age_counts[months] = same_age_counts.get(months, 0) + 1
+    same_age_seen: dict[int, int] = {}
+    buttons = []
+    for age in ordered:
+        months = kids_age_months(age)
+        label = kids_picker_label(age)
+        distinction = ""
+        if same_age_counts[months] > 1:
+            same_age_seen[months] = same_age_seen.get(months, 0) + 1
+            ordinals = ("первый", "второй", "третий", "четвёртый", "пятый", "шестой")
+            ordinal = ordinals[min(same_age_seen[months] - 1, len(ordinals) - 1)]
+            distinction = f" · {ordinal} в списке"
         buttons.append([
             InlineKeyboardButton(
-                text=f"{label} ({format_child_age(age)})",
+                text=f"{label} ({format_child_age(age)}){distinction}",
                 callback_data=f"kids:child:{age['child_number']}",
             )
         ])
@@ -1139,14 +1178,99 @@ def kids_picker_keyboard(ages: list[dict]) -> InlineKeyboardMarkup:
     buttons.append([InlineKeyboardButton(text="↩️ Назад в меню", callback_data="kids:cancel_age")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
-
-KIDS_JOINT_ACTIVITIES = [
-    "🤝 <b>Игра для двоих: «Повтори и усложни»</b>\n\nМладший выбирает простое движение — хлопок, улыбку или поднятые руки. Старший повторяет его и добавляет своё движение, а младший пробует повторить только ту часть, которая ему по силам. Играйте рядом на свободном месте, без предметов.",
-    "🏰 <b>Игра для двоих: «Дом для игрушки»</b>\n\nВместе придумайте дом для большой мягкой игрушки. Младший может показать, где будет вход, или подать большую подушку, а старший — спланировать комнаты и рассказать историю про жильца. Используйте только крупные мягкие подушки и оставайтесь рядом.",
-    "🎭 <b>Игра для двоих: «Угадай настроение»</b>\n\nСтарший изображает радость, удивление или сонную мордочку, а младший угадывает по выражению лица. Потом поменяйтесь: младший показывает мимику, а старший угадывает. Никаких реквизитов не нужно.",
-    "🌈 <b>Игра для двоих: «Цветная экспедиция»</b>\n\nВыберите цвет. Младший показывает на один крупный предмет этого цвета, а старший ищет ещё два и придумывает им общую историю. Ничего мелкого не собирайте и не забирайтесь на мебель."
+KIDS_TEEN_FALLBACKS = [
+    "🎧 Музыкальный баттл: выбери песню, которая подходит к заданному настроению, и объясни выбор в трёх фразах. Можно играть самостоятельно или устроить семейный раунд.",
+    "🕵️ Детективная данетка: придумай короткую бытовую загадку с неожиданной разгадкой. Разрешены только вопросы, на которые можно ответить «да», «нет» или «неважно».",
+    "🎨 Эстетический челлендж: собери из трёх цветов палитру для вымышленного фильма, комнаты или обложки альбома и объясни атмосферу каждого оттенка."
 ]
 
+
+def kids_activity_fallback(age: dict) -> str:
+    months = kids_age_months(age)
+    if months >= 156:
+        return random.choice(KIDS_TEEN_FALLBACKS)
+    if months >= 120:
+        return random.choice([
+            "🕵️ Логический детектив: есть три подозреваемых и три подсказки. Придумай, какая версия объясняет все факты, и проверь, нет ли противоречий.",
+            "🔐 Шифр на пять минут: зашифруй короткое послание сдвигом букв на одну позицию и предложи разгадать его. Можно выполнять самостоятельно.",
+            "🎯 Викторина наоборот: выбери тему, придумай пять вопросов разной сложности и проверь ответы у члена семьи или по надёжному источнику."
+        ])
+    pool_key = "baby" if months < 18 else "toddler" if months < 60 else "preschool" if months < 120 else "older"
+    return re.sub(r"</?b>", "", random.choice(KIDS_ACTIVITY_POOLS[pool_key]))
+
+
+def generate_kids_activity_sync(ages: list[dict], previous: str | None = None) -> str:
+    age_lines = []
+    for index, age in enumerate(ages, start=1):
+        months = kids_age_months(age)
+        band, guidance = kids_age_band(months)
+        age_lines.append(
+            f"Участник {index}: точный возраст {format_child_age(age)} ({months} месяцев), "
+            f"возрастная группа {band}. Правила: {guidance}"
+        )
+    joint = len(ages) > 1
+    prompt = (
+        "Ты — креативный помощник для семейных занятий. Придумай ОДНО конкретное, живое и разнообразное "
+        "занятие на 5–15 минут. Пиши по-русски, дружелюбно, без длинного вступления. "
+        "Используй точный возраст каждого участника и не теряй возраст при выборе кнопки.\n\n"
+        + "\n".join(age_lines)
+        + "\n\nФормат участия: предложи самый подходящий формат — самостоятельно, вместе с мамой/членом семьи "
+        "или всей семьёй. Не делай участие взрослого обязательным, если ребёнок может безопасно справиться сам. "
+        "Не выдумывай интересы и не делай предположений по полу. Интересы в переданном контексте неизвестны — "
+        "чередуй категории: логика, творчество, движение, музыка/кино, практические задачи и загадки. "
+        "Предложи один чёткий сценарий: название, что понадобится (если что-то нужно), правила по шагам и "
+        "как понять, что игра закончена. Не предлагай опасные эксперименты, огонь, острые инструменты, "
+        "мелкие детали для детей до 3 лет или задания с риском падения. Не требуй покупок. "
+        "Верни только готовый текст задания, без анализа возраста и без HTML-тегов."
+        + ("\n\nЭто совместная игра для всех перечисленных возрастов. Сделай её интересной старшему участнику и доступной младшему: разные роли/уровни сложности, но одна общая цель. Учитывай безопасность самого младшего." if joint else "")
+        + (f"\n\nНе повторяй прошлое занятие: {previous[:300]}" if previous else "")
+        + ("\n\nКРИТИЧЕСКОЕ ПРАВИЛО: для 13–17 лет запрещены примитивные детские игры (угадывание животных пантомимой, детские прятки, изображение персонажей без слов), кроме случая, когда сам подросток явно попросил именно такой формат." if any(156 <= kids_age_months(age) < 216 for age in ages) else "")
+    )
+    response = client.models.generate_content(
+        model=GEMINI_MODEL,
+        contents=prompt,
+        config=types.GenerateContentConfig(temperature=0.9),
+    )
+    return (response.text or "").strip()
+
+
+async def kids_activity_for_age(age: dict, user_id: int | None = None) -> str:
+    previous = kids_last_activities.get(user_id) if user_id is not None else None
+    try:
+        activity = await asyncio.wait_for(
+            asyncio.to_thread(generate_kids_activity_sync, [age], previous),
+            timeout=35,
+        )
+        if not activity:
+            raise ValueError("Gemini returned an empty activity")
+    except asyncio.CancelledError:
+        raise
+    except Exception as error:
+        logger.warning("Kids Gemini generation failed (%s); using age-appropriate fallback", type(error).__name__)
+        activity = kids_activity_fallback(age)
+    if user_id is not None:
+        kids_last_activities[user_id] = activity
+    return activity
+
+
+async def kids_joint_activity(ages: list[dict], user_id: int | None = None) -> str:
+    previous = kids_last_activities.get(user_id) if user_id is not None else None
+    try:
+        activity = await asyncio.wait_for(
+            asyncio.to_thread(generate_kids_activity_sync, ages, previous),
+            timeout=35,
+        )
+        if not activity:
+            raise ValueError("Gemini returned an empty joint activity")
+    except asyncio.CancelledError:
+        raise
+    except Exception as error:
+        logger.warning("Joint kids Gemini generation failed (%s); using safe fallback", type(error).__name__)
+        youngest = min(ages, key=kids_age_months)
+        activity = "🤝 Общая игра с учётом возраста всех детей\n\n" + kids_activity_fallback(youngest)
+    if user_id is not None:
+        kids_last_activities[user_id] = activity
+    return activity
 
 KIDS_ACTIVITY_POOLS = {
     "baby": [
@@ -1191,23 +1315,6 @@ KIDS_ACTIVITY_POOLS = {
     ]
 }
 
-def kids_activity_for_age(age: dict, user_id: int | None = None) -> str:
-    months = kids_age_months(age)
-    if months < 18:
-        pool = KIDS_ACTIVITY_POOLS["baby"]
-    elif months < 48:
-        pool = KIDS_ACTIVITY_POOLS["toddler"]
-    elif months < 84:
-        pool = KIDS_ACTIVITY_POOLS["preschool"]
-    else:
-        pool = KIDS_ACTIVITY_POOLS["older"]
-
-    previous = kids_last_activities.get(user_id) if user_id is not None else None
-    choices = [activity for activity in pool if activity != previous] or pool
-    activity = random.choice(choices)
-    if user_id is not None:
-        kids_last_activities[user_id] = activity
-    return activity
 
 
 async def start_radiance_flow(message: Message, user_id: int) -> None:
@@ -1234,25 +1341,26 @@ async def start_radiance_selfie(message: Message, user_id: int) -> None:
 
 def analyze_radiance_photo_sync(image_bytes: bytes, mime_type: str = "image/jpeg") -> str:
     prompt = (
-        "Ты — тёплая, внимательная и стильная подруга, которая общается на «ты». "
-        "Пиши естественно по-русски, короткими абзацами, без официоза, лекций и чрезмерных комплиментов. "
-        "Не используй слова и выражения «Приветствую», «через призму колористики», "
-        "«предварительный ориентир» и «контрольные оттенки»; не обращайся на «вы». "
-        "Работай только с тем, что действительно видно на снимке. "
-        "Если освещение неестественное или лицо плохо видно, коротко скажи об ограничении "
-        "и не делай уверенных выводов о подтоне или контрастности. "
-        "Если фото подходит для разбора, соблюдай такой порядок: "
-        "1) искренне отметь одну-две заметные детали образа — взгляд, улыбку, волосы или аксессуар, "
-        "не выдумывая невидимых деталей; "
-        "2) простыми словами опиши видимые особенности внешности и осторожно предположи, "
-        "какие оттенки могут гармонировать, не объявляя цветотип окончательно определённым; "
-        "3) предложи 4–5 оттенков у лица, каждый с эмодзи и коротким объяснением; "
-        "4) назови 1–2 оттенка, с которыми можно поэкспериментировать осторожнее, и мягко объясни почему; "
-        "5) закончи одной короткой дружеской фразой о том, что цвета можно примерить у зеркала "
-        "при дневном свете ☀️. "
-        "Не повторяй предупреждение об освещении в конце и не добавляй длинных вступлений или заключений. "
-        "Не делай выводов о здоровье, состоянии кожи, заболеваниях, возрасте или личности по лицу; "
-        "не диагностируй и не описывай недостатки внешности."
+        "Ты — стильная, тёплая и естественная подруга, которая говорит на «ты». "
+        "Начни с одного живого, доброжелательного комплимента, основанного только на реально видимых деталях снимка "
+        "(например, улыбка, взгляд, причёска, аксессуар или удачный элемент образа). Не используй обязательную "
+        "шаблонную фразу и не преувеличивай. "
+        "Пиши простым разговорным русским языком, без профессионального сленга и сложных терминов. "
+        "Вместо «тауп» выбирай понятные названия вроде «мягкий серо-бежевый», «какао с молоком» или «кофейный», "
+        "если они действительно подходят оттенку. Не используй слова «нюанс» и «контрастность», если мысль можно "
+        "объяснить проще. "
+        "Описывай только то, что действительно видно. Не выдумывай черты внешности, цвет глаз, кожи или волос. "
+        "Если освещение, фильтр или качество фото мешают уверенно оценить оттенки, мягко обозначь это и не делай "
+        "категоричных выводов. Не делай выводов о здоровье, состоянии кожи, заболеваниях, возрасте или личности по лицу. "
+        "Если фото подходит, сохрани структуру разбора: "
+        "1) простыми словами опиши заметные особенности внешности, которые видны на фото; "
+        "2) предложи 4–5 подходящих оттенков одежды или аксессуаров у лица, каждый с коротким объяснением; "
+        "3) назови 1–2 оттенка для осторожной примерки и объясни почему; "
+        "4) закончи короткой дружеской фразой. "
+        "Не повторяй предупреждение о дневном свете, если оно уже прозвучало в разговоре. "
+        "Не обращайся на «вы», не используй фразы «Приветствую», «через призму колористики», "
+        "«предварительный ориентир» и «контрольные оттенки». Не описывай недостатки внешности. "
+        "Если данных недостаточно, скажи об этом бережно и предложи повторить фото при более ровном освещении."
     )
     response = client.models.generate_content(
         model=GEMINI_MODEL,
@@ -1265,9 +1373,8 @@ def analyze_radiance_photo_sync(image_bytes: bytes, mime_type: str = "image/jpeg
         )],
     )
     return (response.text or "").strip() or (
-        "Не получилось уверенно подобрать палитру по этому кадру. Попробуй фото у окна при дневном свете 🌸"
+        "Не получилось уверенно подобрать палитру по этому кадру. Попробуй прислать фото при более ровном освещении 🌸"
     )
-
 
 async def start_kids_flow(message: Message, user_id: int) -> None:
     radiance_states.pop(user_id, None)
@@ -1283,9 +1390,8 @@ async def start_kids_flow(message: Message, user_id: int) -> None:
         return
     if len(ages) == 1:
         await message.answer(
-            kids_activity_for_age(ages[0], user_id),
+            await kids_activity_for_age(ages[0], user_id),
             reply_markup=kids_keyboard(),
-            parse_mode=ParseMode.HTML,
         )
         return
     if len(ages) > 1:
@@ -1391,9 +1497,8 @@ async def choose_kids_child(callback: CallbackQuery) -> None:
         )
         return
     await callback.message.answer(
-        kids_activity_for_age(selected_age, callback.from_user.id),
+        await kids_activity_for_age(selected_age, callback.from_user.id),
         reply_markup=kids_keyboard(),
-        parse_mode=ParseMode.HTML,
     )
 
 
@@ -1417,9 +1522,8 @@ async def choose_kids_joint_game(callback: CallbackQuery) -> None:
         )
         return
     await callback.message.answer(
-        random.choice(KIDS_JOINT_ACTIVITIES),
+        await kids_joint_activity(ages, callback.from_user.id),
         reply_markup=kids_keyboard(),
-        parse_mode=ParseMode.HTML,
     )
 
 
@@ -1461,6 +1565,9 @@ async def handle_admin_photo(message: Message) -> None:
     user_id = message.from_user.id
     if radiance_states.get(user_id) == "waiting_for_selfie":
         radiance_states.pop(user_id, None)
+        status_message = await message.answer(
+            "Секундочку, любуюсь твоим фото и подбираю идеальную палитру... ✨"
+        )
         try:
             photo_buffer = io.BytesIO()
             await bot.download(message.photo[-1], destination=photo_buffer)
@@ -1471,18 +1578,21 @@ async def handle_admin_photo(message: Message) -> None:
                 asyncio.to_thread(analyze_radiance_photo_sync, image_bytes, "image/jpeg"),
                 timeout=35,
             )
-            await message.answer(
-                result,
-                reply_markup=MENU_KEYBOARD,
-            )
+            try:
+                await status_message.edit_text(result, reply_markup=MENU_KEYBOARD)
+            except Exception as edit_error:
+                logger.warning("Could not edit radiance status (%s); sending result separately", type(edit_error).__name__)
+                await message.answer(result, reply_markup=MENU_KEYBOARD)
         except asyncio.CancelledError:
             raise
         except Exception as error:
             logger.warning("Radiance photo analysis failed (%s)", type(error).__name__)
-            await message.answer(
-                "Не получилось разобрать фото сейчас 🙈 Попробуй позже или при дневном свете.",
-                reply_markup=MENU_KEYBOARD,
-            )
+            error_text = "Не получилось разобрать фото сейчас 🙈 Попробуй ещё раз чуть позже или пришли фото при более ровном освещении."
+            try:
+                await status_message.edit_text(error_text, reply_markup=MENU_KEYBOARD)
+            except Exception as edit_error:
+                logger.warning("Could not edit radiance error status (%s)", type(edit_error).__name__)
+                await message.answer(error_text, reply_markup=MENU_KEYBOARD)
         return
     await message.answer(
         "Какая чудесная фотография! 🌸 Но разбор внешности и стиля живёт у нас в отдельном домике. "
@@ -1494,7 +1604,6 @@ async def handle_admin_photo(message: Message) -> None:
             f"Вот file_id твоего фото:\n<code>{html.escape(message.photo[-1].file_id)}</code>",
             parse_mode=ParseMode.HTML,
         )
-
 
 @dispatcher.message(Command("testfoodphoto"))
 async def handle_test_food_photos(message: Message) -> None:
