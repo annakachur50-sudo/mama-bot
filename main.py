@@ -851,9 +851,19 @@ def _insert_analytics_event_sync(telegram_user_id: int, event_name: str, section
 def _read_stats_sync() -> dict:
     with _analytics_connect() as connection:
         row = connection.execute("""
-            SELECT COUNT(*) AS total_users,
-                   COUNT(*) FILTER (WHERE first_seen_at >= now() - interval '24 hours') AS new_24h,
-                   COUNT(*) FILTER (WHERE first_seen_at >= now() - interval '7 days') AS new_7d
+            SELECT
+                (SELECT COUNT(*) FROM public.bot_users)
+                    + COALESCE((
+                        SELECT legacy_guest_count
+                        FROM public.bot_analytics_baseline
+                        WHERE id = 1
+                    ), 0) AS total_users,
+                COUNT(*) FILTER (
+                    WHERE first_seen_at >= now() - interval '24 hours'
+                ) AS new_24h,
+                COUNT(*) FILTER (
+                    WHERE first_seen_at >= now() - interval '7 days'
+                ) AS new_7d
             FROM public.bot_users
         """).fetchone()
         sections = connection.execute("""
