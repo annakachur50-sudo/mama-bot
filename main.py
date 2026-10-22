@@ -721,6 +721,12 @@ def initialize_user_state() -> None:
 _analytics_last_registered: dict[int, float] = {}
 ANALYTICS_REGISTRATION_COOLDOWN_SECONDS = 300
 ANALYTICS_TASK_TIMEOUT_SECONDS = 4.0
+_analytics_tasks: set[asyncio.Task] = set()
+
+def _schedule_analytics_task(function, *args) -> None:
+    task = asyncio.create_task(_run_analytics_task(function, *args))
+    _analytics_tasks.add(task)
+    task.add_done_callback(_analytics_tasks.discard)
 
 def _analytics_connect():
     dsn = os.getenv("SUPABASE_DB_URL")
@@ -781,9 +787,9 @@ def schedule_user_registration(user) -> None:
     if last_scheduled is not None and now - last_scheduled < ANALYTICS_REGISTRATION_COOLDOWN_SECONDS:
         return
     _analytics_last_registered[user_id] = now
-    asyncio.create_task(_run_analytics_task(
+    _schedule_analytics_task(
         _register_user_sync, user_id, getattr(user, "username", None), getattr(user, "first_name", None)
-    ))
+    )
 
 def analytics_button_info(callback_data: str) -> tuple[str, str]:
     # Normalize callback payloads; never persist raw callback data or message content.
@@ -831,9 +837,9 @@ def analytics_button_info(callback_data: str) -> tuple[str, str]:
     return known.get(callback_data, ("other", "other_button"))
 
 def schedule_analytics_event(telegram_user_id: int, event_name: str, section: str, button_id: str) -> None:
-    asyncio.create_task(_run_analytics_task(
+    _schedule_analytics_task(
         _insert_analytics_event_sync, telegram_user_id, event_name, section, button_id
-    ))
+    )
 
 def _insert_analytics_event_sync(telegram_user_id: int, event_name: str, section: str, button_id: str) -> None:
     with _analytics_connect() as connection:
@@ -2518,7 +2524,7 @@ async def handle_text(message: Message) -> None:
 async def main() -> None:
     logger.info("Starting Telegram bot with model %s", GEMINI_MODEL)
     initialize_user_state()
-    asyncio.create_task(_run_analytics_task(_backfill_sqlite_users_sync))
+    _schedule_analytics_task(_backfill_sqlite_users_sync)
     try:
         # 1. Сначала мгновенно поднимаем веб-сервер для Render
         app = web.Application()
