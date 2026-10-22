@@ -1341,11 +1341,16 @@ async def handle_admin_photo(message: Message) -> None:
         "Какая чудесная фотография! 🌸 Но разбор внешности и стиля живёт у нас в отдельном домике. "
         "Нажми кнопку «✨ Моё сияние» в меню 👇"
     )
-    if user_id == ADMIN_ID and message.chat.type == "private":
-        await message.answer(
-            f"Вот file_id твоего фото:\n<code>{message.photo[-1].file_id}</code>",
-            parse_mode=ParseMode.HTML,
-        )
+
+    # Технический file_id показываем только администратору в личном чате.
+    # Для остальных пользователей на этом обработка фото вне раздела стиля заканчивается.
+    if user_id != ADMIN_ID or message.chat.type != "private":
+        return
+
+    await message.answer(
+        f"Вот file_id твоего фото:\n<code>{message.photo[-1].file_id}</code>",
+        parse_mode=ParseMode.HTML,
+    )
 
 
 @dispatcher.message(Command("testfoodphoto"))
