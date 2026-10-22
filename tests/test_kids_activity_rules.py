@@ -24,10 +24,12 @@ def age(years):
 class KidsAgeRulesTests(unittest.TestCase):
     def test_age_bands_for_requested_samples(self):
         band = HELPERS["kids_age_band"]
+        self.assertEqual(band(18)[0], "до 2 лет")
         self.assertEqual(band(36)[0], "2–4 года")
         self.assertEqual(band(84)[0], "5–9 лет")
         self.assertEqual(band(132)[0], "10–12 лет")
         self.assertEqual(band(168)[0], "13–15 лет")
+        self.assertEqual(band(192)[0], "16–17 лет")
 
     def test_live_button_labels(self):
         label = HELPERS["kids_picker_label"]
