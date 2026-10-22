@@ -8,6 +8,7 @@ on:
       - feat/multi-kids-radiance-tone-20261022
       - feat/age-adaptive-kids-gemini-20261022
       - fix/radiance-ux-teen-labels-20261023
+      - fix/vision-grounding-mom-directed-kids-20261023
 
 jobs:
   compile:
