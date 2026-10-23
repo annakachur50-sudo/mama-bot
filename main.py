@@ -1927,8 +1927,8 @@ async def handle_admin_photo(message: Message) -> None:
                 timeout=35,
             )
             result = radiance_text_to_html(result)
+            try:
                 await status_message.edit_text(result, reply_markup=radiance_result_keyboard(), parse_mode=ParseMode.HTML)
-            except Exception as edit_error:
                 logger.warning("Could not edit radiance status (%s); sending result separately", type(edit_error).__name__)
                 await message.answer(result, reply_markup=radiance_result_keyboard(), parse_mode=ParseMode.HTML)
         except asyncio.CancelledError:
