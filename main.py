@@ -1670,7 +1670,7 @@ def radiance_markdown_to_html(text: str) -> str:
     """Convert Gemini's Markdown bold to Telegram HTML and escape all model text."""
     parts = []
     cursor = 0
-    for match in re.finditer(r"\\*\\*(.+?)\\*\\*", text, flags=re.DOTALL):
+    for match in re.finditer(r"\*\*(.+?)\*\*", text, flags=re.DOTALL):
         parts.append(html.escape(text[cursor:match.start()].replace("**", "")))
         parts.append(f"<b>{html.escape(match.group(1))}</b>")
         cursor = match.end()
@@ -2192,7 +2192,7 @@ async def process_feedback_message(message: Message) -> None:
     feedback_processing.add(user_id)
     try:
         if photo_id:
-            combined_caption = header + (f"\n\n{body}" if body else "")
+            combined_caption = html.escape(header) + (f"\n\n{html.escape(body)}" if body else "")
             caption_fits = len(combined_caption) <= 1024
             if not progress.get("photo_sent"):
                 await message.bot.send_photo(
