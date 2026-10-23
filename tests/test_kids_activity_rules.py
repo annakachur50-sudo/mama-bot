@@ -163,7 +163,7 @@ class KidsAgeRulesTests(unittest.TestCase):
         self.assertIn("фактов без внешних предположений", prompt)
         self.assertIn("максимум 15 слов", prompt)
         self.assertIn("В отгадке запрещены слова и конструкции", prompt)
-        self.assertIn("Неоднозначную загадку замени другой до выдачи", prompt)
+        self.assertIn("Перед ответом проверь логическую согласованность", prompt)
         self.assertIn("Для занятия без загадки или логической задачи отгадку НЕ добавляй", prompt)
 
     def test_spoiler_answer_escapes_html_sensitive_characters(self):
