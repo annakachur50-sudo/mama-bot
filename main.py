@@ -1016,6 +1016,18 @@ def split_response(text: str, limit: int = TELEGRAM_CHUNK_SIZE) -> list[str]:
 ADMIN_ID = 5267406602
 LOG_CHANNEL_ID = -1004353307194
 
+
+async def send_channel_notification(
+    text: str,
+    parse_mode: ParseMode | str | None = ParseMode.HTML,
+) -> Message:
+    """Send text to the existing private notification channel."""
+    return await bot.send_message(
+        chat_id=LOG_CHANNEL_ID,
+        text=text,
+        parse_mode=parse_mode,
+    )
+
 @dispatcher.message(Command("stats"))
 async def cmd_stats(message: Message) -> None:
     if message.from_user is None or message.from_user.id != ADMIN_ID:
@@ -1726,7 +1738,7 @@ async def forward_feedback_to_channel(message: Message) -> None:
                 caption=header,
                 parse_mode=ParseMode.HTML,
             )
-            await message.bot.send_message(LOG_CHANNEL_ID, caption)
+            await send_channel_notification(caption, parse_mode=None)
         return
 
     body = (message.text or "").strip()
@@ -1734,19 +1746,11 @@ async def forward_feedback_to_channel(message: Message) -> None:
         raise ValueError("Feedback message has neither text nor photo")
     combined_text = header + f"\n\n{html.escape(body, quote=False)}"
     if len(combined_text) <= 4096:
-        await message.bot.send_message(
-            chat_id=LOG_CHANNEL_ID,
-            text=combined_text,
-            parse_mode=ParseMode.HTML,
-        )
+        await send_channel_notification(combined_text)
     else:
-        await message.bot.send_message(
-            chat_id=LOG_CHANNEL_ID,
-            text=header,
-            parse_mode=ParseMode.HTML,
-        )
+        await send_channel_notification(header)
         for start in range(0, len(body), 3500):
-            await message.bot.send_message(LOG_CHANNEL_ID, body[start:start + 3500])
+            await send_channel_notification(body[start:start + 3500], parse_mode=None)
 
 
 async def process_feedback_message(message: Message) -> bool:
@@ -2236,11 +2240,7 @@ async def handle_start(message: Message) -> None:
                 f"[{bar}] {percent}%\n"
                 f"⏳ До цели в 100 мам осталось: <b>{left}</b>"
             )
-            await message.bot.send_message(
-                -1004353307194,
-                notification_text,
-                parse_mode=ParseMode.HTML,
-            )
+            await send_channel_notification(notification_text)
         except (genai_errors.APIError, Exception) as log_err:
             logger.warning("Could not send new-user notification to channel: %s", log_err)
 
