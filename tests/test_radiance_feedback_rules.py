@@ -46,14 +46,14 @@ class RadianceFormattingTests(unittest.TestCase):
             SOURCE.index("async def handle_admin_photo("):
             SOURCE.index('@dispatcher.message(Command("testfoodphoto"))')
         ]
+        self.assertIn("result = radiance_result_to_html(result)", photo_handler)
         self.assertIn(
-            "status_message.edit_text(radiance_result_to_html(result), "
-            "reply_markup=radiance_result_keyboard(), parse_mode=ParseMode.HTML)",
+            "status_message.edit_text(result, reply_markup=radiance_result_keyboard(), "
+            "parse_mode=ParseMode.HTML)",
             photo_handler,
         )
         self.assertIn(
-            "message.answer(radiance_result_to_html(result), "
-            "reply_markup=radiance_result_keyboard(), parse_mode=ParseMode.HTML)",
+            "message.answer(result, reply_markup=radiance_result_keyboard(), parse_mode=ParseMode.HTML)",
             photo_handler,
         )
 
