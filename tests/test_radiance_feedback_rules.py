@@ -113,6 +113,8 @@ def load_feedback_runtime(fake_bot):
         node for node in TREE.body
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name in wanted
     ]
+    for node in nodes:
+        node.decorator_list = []
 
     async def send_channel_notification(text, parse_mode="HTML"):
         return await fake_bot.send_message(
