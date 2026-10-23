@@ -1405,7 +1405,7 @@ def generate_kids_activity_sync(ages: list[dict], previous: str | None = None) -
         attempt_prompt = prompt
         if attempt:
             attempt_prompt += (
-                "\\n\\nИСПРАВЬ ПРЕДЫДУЩИЙ ВАРИАНТ. Ошибка проверки отгадки: "
+                "\n\nИСПРАВЬ ПРЕДЫДУЩИЙ ВАРИАНТ. Ошибка проверки отгадки: "
                 + last_error
                 + ". Перепиши загадку целиком так, чтобы ответ однозначно следовал из условия. "
                 "Отгадка — одно утвердительное предложение до 15 слов, без альтернатив, сомнений, скобок "
@@ -1439,7 +1439,7 @@ async def kids_activity_for_age(age: dict, user_id: int | None = None) -> str:
     except KidsActivityValidationError as error:
         logger.warning("Kids activity answer validation failed (%s); using a non-riddle fallback", type(error).__name__)
         activity = (
-            f"🎨 «Три цвета» ({format_child_age(age)})\\n"
+            f"🎨 «Три цвета» ({format_child_age(age)})\n"
             "Предложи ребёнку нарисовать необычный дом, используя три цвета. "
             "Попроси придумать дому название."
         )
@@ -1469,7 +1469,7 @@ async def kids_joint_activity(ages: list[dict], user_id: int | None = None) -> s
         logger.warning("Joint kids answer validation failed (%s); using a non-riddle fallback", type(error).__name__)
         ages_caption = " + ".join(format_child_age(age) for age in ages)
         activity = (
-            f"🎨 «Три цвета» ({ages_caption})\\n"
+            f"🎨 «Три цвета» ({ages_caption})\n"
             "Предложите всем вместе нарисовать необычный дом, используя три цвета. "
             "Пусть каждый добавит одну деталь."
         )
