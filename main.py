@@ -2061,6 +2061,21 @@ def feedback_header(user) -> str:
     )
 
 
+def escape_feedback_content(text: str, max_length: int) -> str:
+    """Escape content for HTML while keeping the escaped result within Telegram's limit."""
+    result = []
+    length = 0
+    for char in text:
+        escaped_char = html.escape(char, quote=False)
+        if length + len(escaped_char) > max_length:
+            break
+        result.append(escaped_char)
+        length += len(escaped_char)
+    if len(result) < len(text) and length < max_length:
+        result.append("…")
+    return "".join(result)
+
+
 async def finish_feedback(message: Message, user_id: int) -> None:
     feedback_states.pop(user_id, None)
     await answer_with_banner(
@@ -2113,7 +2128,9 @@ async def deliver_feedback(message: Message, user_id: int, event_key: tuple[int,
         header = feedback_header(user)
         if message.photo:
             user_caption = (message.caption or "").strip()
-            payload = header + ("\n\n" + html.escape(user_caption[:700], quote=False) if user_caption else "")
+            caption_prefix = header + ("\n\n" if user_caption else "")
+            caption_body = escape_feedback_content(user_caption, max(0, 1024 - len(caption_prefix))) if user_caption else ""
+            payload = caption_prefix + caption_body
             await message.bot.send_photo(
                 chat_id=LOG_CHANNEL_ID,
                 photo=message.photo[-1].file_id,
@@ -2125,24 +2142,33 @@ async def deliver_feedback(message: Message, user_id: int, event_key: tuple[int,
             if not body:
                 await message.answer("Пришли текст или фото со скриншотом, пожалуйста 🌸")
                 return
-            body = body[:3500]
+            text_prefix = header + "\n\n"
+            body = escape_feedback_content(body, max(0, 4096 - len(text_prefix)))
             await message.bot.send_message(
                 chat_id=LOG_CHANNEL_ID,
-                text=header + "\n\n" + html.escape(body, quote=False),
+                text=text_prefix + body,
                 parse_mode=ParseMode.HTML,
             )
-        feedback_sent_events.add(event_key)
-        feedback_states.pop(user_id, None)
-        await message.answer(FEEDBACK_SUCCESS)
-        await finish_feedback(message, user_id)
     except asyncio.CancelledError:
         raise
     except Exception as error:
         logger.warning("Feedback delivery failed (%s)", type(error).__name__)
-        await message.answer(
-            "Не получилось отправить обращение 🙈 Оно пока не передано. "
-            "Попробуй отправить это сообщение ещё раз, пожалуйста."
-        )
+        try:
+            await message.answer(
+                "Не получилось отправить обращение 🙈 Оно пока не передано. "
+                "Попробуй отправить это сообщение ещё раз, пожалуйста."
+            )
+        except Exception as reply_error:
+            logger.warning("Could not show feedback delivery error (%s)", type(reply_error).__name__)
+        return
+    else:
+        feedback_sent_events.add(event_key)
+        feedback_states.pop(user_id, None)
+        try:
+            await message.answer(FEEDBACK_SUCCESS)
+            await finish_feedback(message, user_id)
+        except Exception as reply_error:
+            logger.warning("Feedback delivered but user confirmation failed (%s)", type(reply_error).__name__)
     finally:
         feedback_inflight.discard(event_key)
 

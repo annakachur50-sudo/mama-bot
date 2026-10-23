@@ -34,6 +34,13 @@ class RadianceFeedbackRulesTests(unittest.TestCase):
         User.username = "name<&"
         self.assertIn("@name&lt;&amp;", header(User()))
 
+    def test_feedback_escaping_stays_within_limit_without_breaking_entities(self):
+        escape_content = load_function("escape_feedback_content")
+        rendered = escape_content("<" * 100, 20)
+        self.assertLessEqual(len(rendered), 20)
+        self.assertTrue(rendered.startswith("&lt;"))
+        self.assertNotIn("&l…", rendered)
+
     def test_feedback_uses_existing_channel_and_state_gates_forwarding(self):
         self.assertIn("LOG_CHANNEL_ID = -1004353307194", SOURCE)
         self.assertIn('feedback_states.get(user_id) == "waiting_for_feedback"', SOURCE)
