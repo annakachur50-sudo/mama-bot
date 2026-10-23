@@ -107,6 +107,7 @@ class FakeFeedbackMessage:
 def load_feedback_runtime(fake_bot):
     wanted = {
         "feedback_header", "forward_feedback_to_channel", "process_feedback_message",
+        "start_feedback_flow", "cancel_feedback_callback",
     }
     nodes = [
         node for node in TREE.body
@@ -124,9 +125,13 @@ def load_feedback_runtime(fake_bot):
         "html": html,
         "asyncio": asyncio,
         "Message": object,
+        "CallbackQuery": object,
         "ParseMode": SimpleNamespace(HTML="HTML"),
         "LOG_CHANNEL_ID": -1004353307194,
         "feedback_states": {42: "waiting_for_feedback"},
+        "radiance_states": {},
+        "pending_kids_age": set(),
+        "support_sessions": {},
         "feedback_processing_locks": {},
         "feedback_processed_messages": set(),
         "logger": SimpleNamespace(warning=lambda *args, **kwargs: None),
@@ -138,7 +143,40 @@ def load_feedback_runtime(fake_bot):
     return namespace
 
 
+class FakeFeedbackCallback:
+    def __init__(self, user_id, message):
+        self.from_user = SimpleNamespace(id=user_id)
+        self.message = message
+        self.answered = False
+
+    async def answer(self):
+        self.answered = True
+
+
 class FeedbackFlowRuntimeTests(unittest.IsolatedAsyncioTestCase):
+    async def test_opening_feedback_sets_state_and_shows_cancel(self):
+        bot = FakeFeedbackBot()
+        runtime = load_feedback_runtime(bot)
+        runtime["feedback_states"].clear()
+        message = FakeFeedbackMessage(bot)
+        await runtime["start_feedback_flow"](message, 42)
+
+        self.assertEqual(runtime["feedback_states"][42], "waiting_for_feedback")
+        self.assertIn("Напиши свои пожелания", message.replies[0]["text"])
+        self.assertEqual(message.replies[0]["reply_markup"], "cancel")
+
+    async def test_cancel_clears_state_and_returns_to_main_menu(self):
+        bot = FakeFeedbackBot()
+        runtime = load_feedback_runtime(bot)
+        message = FakeFeedbackMessage(bot)
+        callback = FakeFeedbackCallback(42, message)
+        await runtime["cancel_feedback_callback"](callback)
+
+        self.assertTrue(callback.answered)
+        self.assertNotIn(42, runtime["feedback_states"])
+        self.assertIn("обращение отменено", message.replies[0]["text"])
+        self.assertEqual(message.replies[0]["reply_markup"], "main-menu")
+
     async def test_text_is_forwarded_and_state_clears_only_after_success(self):
         bot = FakeFeedbackBot()
         runtime = load_feedback_runtime(bot)
