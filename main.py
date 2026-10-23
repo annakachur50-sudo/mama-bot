@@ -1712,6 +1712,7 @@ async def process_radiance_kids_menu(callback: CallbackQuery) -> None:
     if callback.message is None:
         return
     user_id = callback.from_user.id
+    feedback_states.pop(user_id, None)
     radiance_states.pop(user_id, None)
     pending_kids_age.discard(user_id)
     if callback.data == "menu_radiance":
@@ -2220,6 +2221,7 @@ async def process_start_action(callback: CallbackQuery) -> None:
     await callback.answer()
     if callback.message is None:
         return
+    feedback_states.pop(callback.from_user.id, None)
     radiance_states.pop(callback.from_user.id, None)
     pending_kids_age.discard(callback.from_user.id)
     if callback.data == "menu_clean":
@@ -2693,6 +2695,7 @@ async def process_support_action(callback: CallbackQuery) -> None:
     data = callback.data or ""
     user_id = callback.from_user.id
     if data in {"support:home", "menu:main"}:
+        feedback_states.pop(user_id, None)
         support_sessions.pop(user_id, None)
         await replace_callback_message(callback)
         await callback.message.answer(
