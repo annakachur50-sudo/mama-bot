@@ -7,9 +7,19 @@ TREE = ast.parse(SOURCE)
 
 
 def load_helpers():
-    wanted = {"kids_age_months", "kids_age_band", "kids_picker_label"}
+    wanted = {
+        "kids_age_months", "kids_age_band", "kids_picker_label",
+        "kids_activity_context_key", "kids_next_activity_category",
+    }
     nodes = [node for node in TREE.body if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name in wanted]
-    namespace = {}
+    category_node = next(node for node in TREE.body if isinstance(node, ast.Assign)
+                         and any(isinstance(target, ast.Name) and target.id == "KIDS_ACTIVITY_CATEGORIES"
+                                 for target in node.targets))
+    namespace = {
+        "kids_last_categories": {},
+        "random": __import__("random"),
+    }
+    exec(compile(ast.Module(body=[category_node], type_ignores=[]), "main.py", "exec"), namespace)
     exec(compile(ast.Module(body=nodes, type_ignores=[]), "main.py", "exec"), namespace)
     return namespace
 
@@ -123,11 +133,31 @@ class KidsAgeRulesTests(unittest.TestCase):
         self.assertIn("kids_last_categories: dict[tuple[int, str], str]", SOURCE)
         self.assertIn('return (user_id, f"child:{int(ages[0][\'child_number\'])}")', SOURCE)
         self.assertIn('return (user_id, "all")', SOURCE)
-        self.assertIn("return KIDS_ACTIVITY_CATEGORIES[(index + 1) % len(KIDS_ACTIVITY_CATEGORIES)]", SOURCE)
         self.assertIn("kids_activity_context_key(user_id, [age])", SOURCE)
         self.assertIn("kids_activity_context_key(user_id, ages, joint=True)", SOURCE)
         self.assertIn("generate_kids_activity_sync, [age], previous, category", SOURCE)
         self.assertIn("generate_kids_activity_sync, ages, previous, category", SOURCE)
+
+        category_fn = HELPERS["kids_next_activity_category"]
+        context_key = HELPERS["kids_activity_context_key"](42, [age(7)])
+        first = category_fn(42, context_key[1], [age(7)])
+        HELPERS["kids_last_categories"][context_key] = first[0]
+        second = category_fn(42, context_key[1], [age(7)])
+        self.assertNotEqual(first[0], second[0])
+        self.assertEqual(
+            second[0],
+            HELPERS["KIDS_ACTIVITY_CATEGORIES"][
+                (next(i for i, item in enumerate(HELPERS["KIDS_ACTIVITY_CATEGORIES"]) if item[0] == first[0]) + 1)
+                % len(HELPERS["KIDS_ACTIVITY_CATEGORIES"])
+            ][0],
+        )
+
+        toddler_first = category_fn(99, "child:1", [age(2)])
+        HELPERS["kids_last_categories"][(99, "child:1")] = toddler_first[0]
+        toddler_next = category_fn(99, "child:1", [age(2)])
+        self.assertNotEqual(toddler_first[0], "think")
+        self.assertNotEqual(toddler_next[0], "think")
+        self.assertNotEqual(toddler_first[0], toddler_next[0])
 
     def test_age_specific_generation_preserves_selected_child_and_age(self):
         self.assertIn("format_child_age(age)", SOURCE)
