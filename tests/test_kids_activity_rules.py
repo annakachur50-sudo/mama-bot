@@ -159,12 +159,12 @@ class KidsAgeRulesTests(unittest.TestCase):
         start = SOURCE.index("def generate_kids_activity_sync(")
         end = SOURCE.index("\n\nasync def kids_activity_for_age(", start)
         prompt = SOURCE[start:end]
-        self.assertIn("одну чёткую загадку с одним обоснованным ответом", prompt)
-        self.assertIn("обязательно для детективов, данеток и логических задач для любого возраста", prompt)
-        self.assertIn("включая подростков и совместные семейные игры", prompt)
+        self.assertIn("условие, в котором достаточно фактов для одного проверяемого ответа", prompt)
+        self.assertIn("фактов без внешних предположений", prompt)
+        self.assertIn("максимум 15 слов", prompt)
+        self.assertIn("В отгадке запрещены слова и конструкции", prompt)
+        self.assertIn("Перед ответом проверь логическую согласованность", prompt)
         self.assertIn("Для занятия без загадки или логической задачи отгадку НЕ добавляй", prompt)
-        self.assertIn("Не добавляй альтернативные версии в скобках", prompt)
-        self.assertIn("размышления о том, каким мог бы быть ответ", prompt)
 
     def test_spoiler_answer_escapes_html_sensitive_characters(self):
         formatter_node = next(
@@ -234,6 +234,53 @@ class KidsAgeRulesTests(unittest.TestCase):
         self.assertIn("<tg-spoiler>{escaped_answer}</tg-spoiler>", formatter)
         self.assertIn("answer_match", formatter)
 
+
+    def test_answer_validator_accepts_one_short_grounded_sentence(self):
+        validator = self._load_answer_validator()
+        self.assertIsNone(validator(
+            "🕵️ «Дело о свете» (12 лет)\nЛампа горела в полночь.\n"
+            "💡 Отгадка для мамы: Во всём районе в полночь отключили электричество, поэтому лампа не могла гореть."
+        ))
+        self.assertIsNone(validator(
+            "🕵️ «Звонок из комнаты» (14 лет)\nТелефон героя выключен, но он слышит звонок из соседней комнаты. Что звонило?\n"
+            "💡 Отгадка для мамы: В соседней комнате звонил будильник, а телефон героя был выключен."
+        ))
+
+    def test_answer_validator_rejects_ambiguous_or_speculative_answer(self):
+        validator = self._load_answer_validator()
+        samples = [
+            "💡 Отгадка для мамы: Он ушёл домой или остался в школе.",
+            "💡 Отгадка для мамы: Бизнесмен утверждал, что читал в полночь, хотя точнее в классической задаче электричество отключили или было темно.",
+            "💡 Отгадка для мамы: Возможно, лампа работала от батарейки.",
+            "💡 Отгадка для мамы: В классической задаче ответ — фонарь.",
+            "💡 Отгадка для мамы: Он пришёл. Потом ушёл.",
+            "💡 Отгадка для мамы: Это был человек, который пришёл ночью, увидел свет и решил, что кто-то дома вместе с соседями.",
+            "💡 Отгадка для мамы: Это была батарейка (или запасной генератор).",
+        ]
+        for answer in samples:
+            with self.subTest(answer=answer):
+                self.assertIsNotNone(validator("🕵️ «Проверка» (12 лет)\nКто это сделал?\n" + answer))
+
+    def test_riddle_without_answer_is_rejected_but_non_riddle_is_allowed(self):
+        validator = self._load_answer_validator()
+        self.assertIsNotNone(validator("🕵️ «Тайна» (12 лет)\nДетектив ищет улику."))
+        self.assertIsNone(validator("🎨 «Три цвета» (7 лет)\nНарисуйте дом тремя цветами."))
+
+    def test_answer_validator_checks_only_answer_not_riddle_condition(self):
+        validator = self._load_answer_validator()
+        self.assertIsNone(validator(
+            "🕵️ «Выбор» (12 лет)\nВ условии есть слово «или»: что произошло?\n"
+            "💡 Отгадка для мамы: Виновник оставил записку на столе."
+        ))
+
+    def _load_answer_validator(self):
+        wanted = {node.name for node in TREE.body if isinstance(node, ast.ClassDef) and node.name == "KidsActivityValidationError"}
+        wanted |= {node.name for node in TREE.body if isinstance(node, ast.FunctionDef) and node.name == "kids_activity_answer_error"}
+        nodes = [node for node in TREE.body if isinstance(node, ast.ClassDef) and node.name in wanted]
+        nodes += [node for node in TREE.body if isinstance(node, ast.FunctionDef) and node.name in wanted]
+        namespace = {"re": __import__("re")}
+        exec(compile(ast.Module(body=nodes, type_ignores=[]), "main.py", "exec"), namespace)
+        return namespace["kids_activity_answer_error"]
 
 if __name__ == "__main__":
     unittest.main()
