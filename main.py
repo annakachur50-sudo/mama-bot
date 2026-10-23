@@ -1904,8 +1904,11 @@ async def handle_admin_photo(message: Message) -> None:
     if message.from_user is None or not message.photo:
         return
     user_id = message.from_user.id
+    event_key = (user_id, message.message_id)
+    if event_key in feedback_sent_events or event_key in feedback_inflight:
+        return
     if feedback_states.get(user_id) == "waiting_for_feedback":
-        await deliver_feedback(message, user_id, (user_id, message.message_id))
+        await deliver_feedback(message, user_id, event_key)
         return
     if radiance_states.get(user_id) == "waiting_for_selfie":
         radiance_states.pop(user_id, None)
