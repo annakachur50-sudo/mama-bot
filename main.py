@@ -1666,7 +1666,7 @@ def analyze_radiance_photo_sync(image_bytes: bytes, mime_type: str = "image/jpeg
 
 def radiance_text_to_html(text: str) -> str:
     """Convert Gemini bold markers to safe Telegram HTML without exposing raw markup."""
-    chunks = re.split(r"(\\*\\*.*?\\*\\*)", text or "", flags=re.DOTALL)
+    chunks = re.split(r"(\*\*.*?\*\*)", text or "", flags=re.DOTALL)
     rendered = []
     for chunk in chunks:
         if len(chunk) >= 4 and chunk.startswith("**") and chunk.endswith("**"):
