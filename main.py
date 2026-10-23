@@ -289,7 +289,8 @@ MENU_BUTTONS = (
     "🧸 Занять ребёнка",
 )
 BOT_COMMANDS = [
-    BotCommand(command="start", description="Главное меню и старт"),
+    BotCommand(command="start", description="Запустить бота"),
+    BotCommand(command="feedback", description="💌 Написать нам / Поддержка"),
     BotCommand(command="reset_me", description="Стереть мои данные"),
 ]
 SYSTEM_PROMPT = """Ты — виртуальная подруга и заботливая помощница для мам «Мама 24/7».
@@ -361,7 +362,6 @@ inline_kb = InlineKeyboardMarkup(
         [InlineKeyboardButton(text="🫂 Тёплая поддержка", callback_data="menu_support")],
         [InlineKeyboardButton(text="✨ Моё сияние", callback_data="menu_radiance")],
         [InlineKeyboardButton(text="🧸 Занять ребёнка", callback_data="menu_kids")],
-        [InlineKeyboardButton(text="💌 Написать нам / Поддержка", callback_data="feedback:start")],
     ]
 )
 
@@ -2117,23 +2117,32 @@ async def finish_feedback(message: Message, user_id: int) -> None:
     )
 
 
-@dispatcher.callback_query(F.data == "feedback:start")
-async def start_feedback(callback: CallbackQuery) -> None:
-    await callback.answer()
-    if callback.message is None:
-        return
-    user_id = callback.from_user.id
+async def start_feedback_flow(message: Message, user_id: int) -> None:
     radiance_states.pop(user_id, None)
     pending_kids_age.discard(user_id)
     pending_family_profile.pop(user_id, None)
     support_sessions.pop(user_id, None)
     feedback_states[user_id] = "waiting_for_feedback"
-    await callback.message.answer(
+    await message.answer(
         FEEDBACK_PROMPT,
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="❌ Отмена", callback_data="feedback:cancel")],
         ]),
     )
+
+
+@dispatcher.callback_query(F.data == "feedback:start")
+async def start_feedback(callback: CallbackQuery) -> None:
+    await callback.answer()
+    if callback.message is not None:
+        await start_feedback_flow(callback.message, callback.from_user.id)
+
+
+@dispatcher.message(Command("feedback"))
+async def handle_feedback_command(message: Message) -> None:
+    if message.from_user is None:
+        return
+    await start_feedback_flow(message, message.from_user.id)
 
 
 @dispatcher.callback_query(F.data == "feedback:cancel")
@@ -3475,7 +3484,9 @@ async def handle_plan_command(message: Message) -> None:
 
 @dispatcher.message(Command("support"))
 async def handle_support_command(message: Message) -> None:
-    await start_support_flow(message)
+    if message.from_user is None:
+        return
+    await start_feedback_flow(message, message.from_user.id)
 
 
 @dispatcher.message(Command("reset_me"))
