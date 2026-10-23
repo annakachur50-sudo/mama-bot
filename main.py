@@ -1669,7 +1669,7 @@ def analyze_radiance_photo_sync(image_bytes: bytes, mime_type: str = "image/jpeg
 def radiance_result_html(text: str) -> str:
     """Escape model output for Telegram HTML, then convert only supported Markdown bold markers."""
     escaped = html.escape(text or "", quote=False)
-    escaped = re.sub(r"\\*\\*(.+?)\\*\\*", r"<b>\\1</b>", escaped, flags=re.DOTALL)
+    escaped = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", escaped, flags=re.DOTALL)
     return escaped.replace("**", "")
 
 async def start_kids_flow(message: Message, user_id: int) -> None:
