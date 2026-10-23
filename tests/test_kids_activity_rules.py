@@ -238,7 +238,7 @@ class KidsAgeRulesTests(unittest.TestCase):
     def test_answer_validator_accepts_one_short_grounded_sentence(self):
         validator = self._load_answer_validator()
         self.assertIsNone(validator(
-            "🕵️ «Дело о свете» (12 лет)\\nЛампа горела в полночь.\\n"
+            "🕵️ «Дело о свете» (12 лет)\nЛампа горела в полночь.\n"
             "💡 Отгадка для мамы: Во всём районе в полночь отключили электричество, поэтому лампа не могла гореть."
         ))
 
@@ -254,17 +254,17 @@ class KidsAgeRulesTests(unittest.TestCase):
         ]
         for answer in samples:
             with self.subTest(answer=answer):
-                self.assertIsNotNone(validator("🕵️ «Проверка» (12 лет)\\nКто это сделал?\\n" + answer))
+                self.assertIsNotNone(validator("🕵️ «Проверка» (12 лет)\nКто это сделал?\n" + answer))
 
     def test_riddle_without_answer_is_rejected_but_non_riddle_is_allowed(self):
         validator = self._load_answer_validator()
-        self.assertIsNotNone(validator("🕵️ «Тайна» (12 лет)\\nДетектив ищет улику."))
-        self.assertIsNone(validator("🎨 «Три цвета» (7 лет)\\nНарисуйте дом тремя цветами."))
+        self.assertIsNotNone(validator("🕵️ «Тайна» (12 лет)\nДетектив ищет улику."))
+        self.assertIsNone(validator("🎨 «Три цвета» (7 лет)\nНарисуйте дом тремя цветами."))
 
     def test_answer_validator_checks_only_answer_not_riddle_condition(self):
         validator = self._load_answer_validator()
         self.assertIsNone(validator(
-            "🕵️ «Выбор» (12 лет)\\nВ условии есть слово «или»: что произошло?\\n"
+            "🕵️ «Выбор» (12 лет)\nВ условии есть слово «или»: что произошло?\n"
             "💡 Отгадка для мамы: Виновник оставил записку на столе."
         ))
 
