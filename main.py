@@ -1636,7 +1636,7 @@ def analyze_radiance_photo_sync(image_bytes: bytes, mime_type: str = "image/jpeg
         "Сразу дай полезную предварительную оценку палитры и несколько подходящих оттенков, если фото позволяет. "
         "Не требуй повторного фото из-за небольших недостатков света. Если свет мешает определить конкретную "
         "характеристику, продолжай разбор по видимым признакам и обозначь ограничение только для неё. "
-        "Не делай уверенных выводов о цвете глаз, оттенке кожи или волос, если они действительно неразличимы. "
+        "Не делай уверенных выводов о цвете глаз, оттенке кожи или волос, если они действительно неразличимы. Не угадывай неразличимые оттенки. "
         "Не делай выводов о здоровье, состоянии кожи, заболеваниях, возрасте или личности по лицу. "
         "Если фото позволяет, простыми словами опиши только действительно заметные особенности; затем предложи "
         "4–5 понятных оттенков одежды или аксессуаров у лица с коротким объяснением и 1–2 оттенка для осторожной "
@@ -1926,11 +1926,11 @@ async def handle_admin_photo(message: Message) -> None:
                 asyncio.to_thread(analyze_radiance_photo_sync, image_bytes, "image/jpeg"),
                 timeout=35,
             )
-            try:
-                await status_message.edit_text(radiance_text_to_html(result), reply_markup=radiance_result_keyboard(), parse_mode=ParseMode.HTML)
+            result = radiance_text_to_html(result)
+                await status_message.edit_text(result, reply_markup=radiance_result_keyboard(), parse_mode=ParseMode.HTML)
             except Exception as edit_error:
                 logger.warning("Could not edit radiance status (%s); sending result separately", type(edit_error).__name__)
-                await message.answer(radiance_text_to_html(result), reply_markup=radiance_result_keyboard(), parse_mode=ParseMode.HTML)
+                await message.answer(result, reply_markup=radiance_result_keyboard(), parse_mode=ParseMode.HTML)
         except asyncio.CancelledError:
             raise
         except Exception as error:
