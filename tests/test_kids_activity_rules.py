@@ -159,12 +159,12 @@ class KidsAgeRulesTests(unittest.TestCase):
         start = SOURCE.index("def generate_kids_activity_sync(")
         end = SOURCE.index("\n\nasync def kids_activity_for_age(", start)
         prompt = SOURCE[start:end]
-        self.assertIn("одну чёткую загадку с одним обоснованным ответом", prompt)
-        self.assertIn("обязательно для детективов, данеток и логических задач для любого возраста", prompt)
-        self.assertIn("включая подростков и совместные семейные игры", prompt)
+        self.assertIn("условие, в котором достаточно фактов для одного проверяемого ответа", prompt)
+        self.assertIn("Ответ должен прямо следовать из описанных фактов", prompt)
+        self.assertIn("максимум 15 слов", prompt)
+        self.assertIn("В отгадке запрещены слова и конструкции", prompt)
+        self.assertIn("Неоднозначную загадку замени другой до выдачи", prompt)
         self.assertIn("Для занятия без загадки или логической задачи отгадку НЕ добавляй", prompt)
-        self.assertIn("Не добавляй альтернативные версии в скобках", prompt)
-        self.assertIn("размышления о том, каким мог бы быть ответ", prompt)
 
     def test_spoiler_answer_escapes_html_sensitive_characters(self):
         formatter_node = next(
@@ -249,7 +249,7 @@ class KidsAgeRulesTests(unittest.TestCase):
             "💡 Отгадка для мамы: Возможно, лампа работала от батарейки.",
             "💡 Отгадка для мамы: В классической задаче ответ — фонарь.",
             "💡 Отгадка для мамы: Он пришёл. Потом ушёл.",
-            "💡 Отгадка для мамы: Это был человек, который пришёл ночью, увидел свет и решил, что кто-то дома.",
+            "💡 Отгадка для мамы: Это был человек, который пришёл ночью, увидел свет и решил, что кто-то дома вместе с соседями.",
             "💡 Отгадка для мамы: Это была батарейка (или запасной генератор).",
         ]
         for answer in samples:
