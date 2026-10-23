@@ -46,8 +46,9 @@ class RadianceFeedbackRulesTests(unittest.TestCase):
         self.assertIn('feedback_states.get(user_id) == "waiting_for_feedback"', SOURCE)
         self.assertIn("feedback_inflight", SOURCE)
         self.assertIn("feedback_sent_events", SOURCE)
-        self.assertIn("await message.bot.send_photo(", SOURCE)
-        self.assertIn("await message.bot.send_message(", SOURCE)
+        self.assertIn("async def send_channel_notification(", SOURCE)
+        self.assertIn("await send_channel_notification(", SOURCE)
+        self.assertIn("photo=message.photo[-1].file_id", SOURCE)
         self.assertIn('callback_data="feedback:cancel"', SOURCE)
 
     def test_vision_response_is_sent_as_html(self):

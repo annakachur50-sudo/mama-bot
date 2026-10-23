@@ -1014,6 +1014,33 @@ def split_response(text: str, limit: int = TELEGRAM_CHUNK_SIZE) -> list[str]:
 ADMIN_ID = 5267406602
 LOG_CHANNEL_ID = -1004353307194
 
+async def send_channel_notification(
+    bot_client: Bot,
+    *,
+    text: str | None = None,
+    photo: str | None = None,
+    caption: str | None = None,
+) -> None:
+    """Send a text or photo notification through the bot's one configured private channel."""
+    if photo is not None:
+        if caption is None:
+            raise ValueError("Photo notifications require a caption")
+        await bot_client.send_photo(
+            chat_id=LOG_CHANNEL_ID,
+            photo=photo,
+            caption=caption,
+            parse_mode=ParseMode.HTML,
+        )
+        return
+    if text is None:
+        raise ValueError("Text notifications require text")
+    await bot_client.send_message(
+        chat_id=LOG_CHANNEL_ID,
+        text=text,
+        parse_mode=ParseMode.HTML,
+    )
+
+
 @dispatcher.message(Command("stats"))
 async def cmd_stats(message: Message) -> None:
     if message.from_user is None or message.from_user.id != ADMIN_ID:
@@ -2134,11 +2161,10 @@ async def deliver_feedback(message: Message, user_id: int, event_key: tuple[int,
             caption_prefix = header + ("\n\n" if user_caption else "")
             caption_body = escape_feedback_content(user_caption, max(0, 1024 - len(caption_prefix))) if user_caption else ""
             payload = caption_prefix + caption_body
-            await message.bot.send_photo(
-                chat_id=LOG_CHANNEL_ID,
+            await send_channel_notification(
+                message.bot,
                 photo=message.photo[-1].file_id,
                 caption=payload[:1024],
-                parse_mode=ParseMode.HTML,
             )
         else:
             body = (message.text or "").strip()
@@ -2147,10 +2173,9 @@ async def deliver_feedback(message: Message, user_id: int, event_key: tuple[int,
                 return
             text_prefix = header + "\n\n"
             body = escape_feedback_content(body, max(0, 4096 - len(text_prefix)))
-            await message.bot.send_message(
-                chat_id=LOG_CHANNEL_ID,
+            await send_channel_notification(
+                message.bot,
                 text=text_prefix + body,
-                parse_mode=ParseMode.HTML,
             )
     except asyncio.CancelledError:
         raise
@@ -2253,10 +2278,9 @@ async def handle_start(message: Message) -> None:
                 f"[{bar}] {percent}%\n"
                 f"⏳ До цели в 100 мам осталось: <b>{left}</b>"
             )
-            await message.bot.send_message(
-                LOG_CHANNEL_ID,
-                notification_text,
-                parse_mode=ParseMode.HTML,
+            await send_channel_notification(
+                message.bot,
+                text=notification_text,
             )
         except (genai_errors.APIError, Exception) as log_err:
             logger.warning("Could not send new-user notification to channel: %s", log_err)
