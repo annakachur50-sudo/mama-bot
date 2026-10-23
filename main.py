@@ -355,6 +355,7 @@ MENU_KEYBOARD = ReplyKeyboardMarkup(
 
 inline_kb = InlineKeyboardMarkup(
     inline_keyboard=[
+        [InlineKeyboardButton(text="💌 Написать нам / Поддержка", callback_data="feedback:start")],
         [InlineKeyboardButton(text="🍳 Накормить семью", callback_data="menu_food")],
         [InlineKeyboardButton(text="🧹 Разгрести хаос", callback_data="menu_clean")],
         [InlineKeyboardButton(text="📋 День по полочкам", callback_data="menu_plan")],
@@ -428,6 +429,9 @@ user_request_locks: dict[int, asyncio.Lock] = {}
 chaos_sessions: dict[int, dict] = {}
 chaos_session_counter = 0
 pending_family_profile: dict[int, dict] = {}
+feedback_states: dict[int, str] = {}
+feedback_processing_locks: dict[int, asyncio.Lock] = {}
+feedback_processed_messages: set[tuple[int, int]] = set()
 
 CHAOS_ZONES = {
     "kitchen": "кухня",
@@ -851,6 +855,7 @@ def analytics_button_info(callback_data: str) -> tuple[str, str]:
         "menu_food": ("food", "menu_food"), "menu_clean": ("clean", "menu_clean"),
         "menu_plan": ("plan", "menu_plan"), "menu_support": ("support", "menu_support"),
         "menu_radiance": ("radiance", "menu_radiance"), "menu_kids": ("kids", "menu_kids"),
+        "feedback:start": ("support", "feedback_start"), "feedback:cancel": ("support", "feedback_cancel"),
         "radiance:undertones": ("radiance", "undertones"),
         "radiance:retry": ("radiance", "retry_photo"),
         "radiance:cancel": ("radiance", "cancel"),
@@ -1627,18 +1632,21 @@ def analyze_radiance_photo_sync(image_bytes: bytes, mime_type: str = "image/jpeg
         "аксессуары, одежду или другие особенности, если их не видно или они различимы недостаточно. "
         "Не перечисляй возможные детали наугад. Если конкретное наблюдение ненадёжно, мягко опиши общее впечатление "
         "от образа без выдуманных подробностей. "
-        "Не делай уверенных выводов о цвете глаз, оттенке кожи или волос, если освещение, фильтры, тени или качество "
-        "снимка мешают их надёжно определить. В таком случае не угадывай: осторожно объясни, что именно на фото "
-        "трудно оценить, сохраняя дружеский и поддерживающий тон. "
+        "Если лицо различимо, не отказывайся от разбора из-за обычного домашнего освещения, теней или фона. "
+        "Сразу дай полезную предварительную оценку палитры и несколько подходящих оттенков, если фото позволяет. "
+        "Не требуй повторного фото из-за небольших недостатков света. Если свет мешает определить конкретную "
+        "характеристику, продолжай разбор по видимым признакам и обозначь ограничение только для неё. "
+        "Не делай уверенных выводов о цвете глаз, оттенке кожи или волос, если они действительно неразличимы. "
         "Не делай выводов о здоровье, состоянии кожи, заболеваниях, возрасте или личности по лицу. "
         "Если фото позволяет, простыми словами опиши только действительно заметные особенности; затем предложи "
         "4–5 понятных оттенков одежды или аксессуаров у лица с коротким объяснением и 1–2 оттенка для осторожной "
-        "примерки. Используй обычные названия цветов, без профессионального сленга; не используй слова «нюанс» "
-        "и «контрастность», если можно сказать проще. Не описывай недостатки внешности. "
+        "примерки. Используй простые названия и подходящие эмодзи, например 🌿 Мягкий шалфей, 🌸 Пыльная роза, "
+        "☕ Какао с молоком, 🌊 Морская волна. Не используй профессиональный сленг и не описывай недостатки. "
         "Закончи короткой дружеской фразой. Не повторяй предупреждение о дневном свете, если оно уже прозвучало. "
         "Не обращайся на «вы», не используй фразы «Приветствую», «через призму колористики», "
-        "«предварительный ориентир» и «контрольные оттенки». Если данных недостаточно, скажи об этом бережно "
-        "и предложи повторить фото при более ровном освещении."
+        "«предварительный ориентир» и «контрольные оттенки». Не выдумывай детали и не выдавай примерную палитру "
+        "за точное определение цветотипа. Проси новое фото только если лицо или важные характеристики действительно "
+        "невозможно рассмотреть; иначе дай полезные рекомендации по тому, что видно."
     )
     response = client.models.generate_content(
         model=GEMINI_MODEL,
@@ -1651,8 +1659,21 @@ def analyze_radiance_photo_sync(image_bytes: bytes, mime_type: str = "image/jpeg
         )],
     )
     return (response.text or "").strip() or (
-        "Не получилось уверенно подобрать палитру по этому кадру. Попробуй прислать фото при более ровном освещении 🌸"
+        "По этому фото не всё удалось рассмотреть, но можем начать с мягких оттенков: 🌿 шалфей, 🌸 пыльная роза "
+        "и ☕ какао с молоком. Это только идеи для примерки, не точное определение цветотипа ✨"
     )
+
+
+def radiance_text_to_html(text: str) -> str:
+    """Convert Gemini bold markers to safe Telegram HTML without exposing raw markup."""
+    chunks = re.split(r"(\\*\\*.*?\\*\\*)", text or "", flags=re.DOTALL)
+    rendered = []
+    for chunk in chunks:
+        if len(chunk) >= 4 and chunk.startswith("**") and chunk.endswith("**"):
+            rendered.append(f"<b>{html.escape(chunk[2:-2])}</b>")
+        else:
+            rendered.append(html.escape(chunk))
+    return "".join(rendered)
 
 async def start_kids_flow(message: Message, user_id: int) -> None:
     radiance_states.pop(user_id, None)
@@ -1886,6 +1907,9 @@ async def handle_admin_photo(message: Message) -> None:
     if message.from_user is None or not message.photo:
         return
     user_id = message.from_user.id
+    if feedback_states.get(user_id) == "waiting_for_feedback":
+        await process_feedback_message(message)
+        return
     if radiance_states.get(user_id) == "waiting_for_selfie":
         radiance_states.pop(user_id, None)
         status_message = await message.answer(
@@ -1902,10 +1926,10 @@ async def handle_admin_photo(message: Message) -> None:
                 timeout=35,
             )
             try:
-                await status_message.edit_text(result, reply_markup=radiance_result_keyboard())
+                await status_message.edit_text(radiance_text_to_html(result), reply_markup=radiance_result_keyboard(), parse_mode=ParseMode.HTML)
             except Exception as edit_error:
                 logger.warning("Could not edit radiance status (%s); sending result separately", type(edit_error).__name__)
-                await message.answer(result, reply_markup=radiance_result_keyboard())
+                await message.answer(radiance_text_to_html(result), reply_markup=radiance_result_keyboard(), parse_mode=ParseMode.HTML)
         except asyncio.CancelledError:
             raise
         except Exception as error:
@@ -2023,6 +2047,7 @@ async def handle_start(message: Message) -> None:
     support_sessions.pop(user_id, None)
     radiance_states.pop(user_id, None)
     pending_kids_age.discard(user_id)
+    feedback_states.pop(user_id, None)
 
     # Берём имя из Telegram и убираем лишнее, если там смайлы или цифры
     raw_name = (message.from_user.first_name or "").strip()
@@ -2091,7 +2116,7 @@ async def handle_start(message: Message) -> None:
                 f"⏳ До цели в 100 мам осталось: <b>{left}</b>"
             )
             await message.bot.send_message(
-                -1004353307194,
+                LOG_CHANNEL_ID,
                 notification_text,
                 parse_mode=ParseMode.HTML,
             )
@@ -2105,6 +2130,89 @@ async def handle_start(message: Message) -> None:
         reply_markup=inline_kb,
         parse_mode=ParseMode.HTML,
     )
+
+@dispatcher.callback_query(F.data == "feedback:start")
+async def start_feedback(callback: CallbackQuery) -> None:
+    await callback.answer()
+    if callback.message is None:
+        return
+    user_id = callback.from_user.id
+    feedback_states[user_id] = "waiting_for_feedback"
+    radiance_states.pop(user_id, None)
+    pending_kids_age.discard(user_id)
+    support_sessions.pop(user_id, None)
+    await callback.message.answer(
+        "Напиши свои пожелания, идеи или расскажи, если что-то работает не так 🌸 "
+        "Я бережно передам сообщение создателям! (Можно прикрепить фото или скриншот)",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="❌ Отмена", callback_data="feedback:cancel")],
+        ]),
+    )
+
+
+@dispatcher.callback_query(F.data == "feedback:cancel")
+async def cancel_feedback(callback: CallbackQuery) -> None:
+    await callback.answer()
+    feedback_states.pop(callback.from_user.id, None)
+    if callback.message is not None:
+        await answer_with_banner(
+            callback.message, START_CAPTION, BANNER_START,
+            reply_markup=inline_kb, parse_mode=ParseMode.HTML,
+        )
+
+
+async def process_feedback_message(message: Message) -> None:
+    """Forward only active feedback; retain state when channel delivery fails."""
+    user = message.from_user
+    if user is None or feedback_states.get(user.id) != "waiting_for_feedback":
+        return
+    user_id = user.id
+    message_key = (user_id, message.message_id)
+    lock = feedback_processing_locks.setdefault(user_id, asyncio.Lock())
+    async with lock:
+        if message_key in feedback_processed_messages or feedback_states.get(user_id) != "waiting_for_feedback":
+            return
+        username = f"@{user.username}" if user.username else "без username"
+        header = f"💌 Новое сообщение от пользователя: {html.escape(username)} (ID: <code>{user_id}</code>)"
+        try:
+            if message.photo:
+                caption = header
+                if message.caption and message.caption.strip():
+                    caption += "\n\n" + html.escape(message.caption.strip())
+                await message.bot.send_photo(
+                    chat_id=LOG_CHANNEL_ID, photo=message.photo[-1].file_id,
+                    caption=caption, parse_mode=ParseMode.HTML,
+                )
+            elif message.text and message.text.strip():
+                await message.bot.send_message(
+                    chat_id=LOG_CHANNEL_ID,
+                    text=header + "\n\n" + html.escape(message.text.strip()),
+                    parse_mode=ParseMode.HTML,
+                )
+            else:
+                await message.answer("Пришли, пожалуйста, текст или фото с пояснением 🌸")
+                return
+        except Exception as error:
+            logger.warning("Feedback delivery failed (%s)", type(error).__name__)
+            await message.answer(
+                "Не получилось отправить сообщение создателям 🙈 Оно пока не передано. "
+                "Попробуй отправить ещё раз, пожалуйста.",
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="❌ Отмена", callback_data="feedback:cancel")],
+                ]),
+            )
+            return
+        feedback_processed_messages.add(message_key)
+        if len(feedback_processed_messages) > 2000:
+            feedback_processed_messages.clear()
+            feedback_processed_messages.add(message_key)
+        feedback_states.pop(user_id, None)
+        await message.answer(
+            "Спасибо за тепло и обратную связь! Всё бережно передала создателям 💌✨",
+            reply_markup=MENU_KEYBOARD,
+        )
+        await message.answer(START_CAPTION, reply_markup=inline_kb, parse_mode=ParseMode.HTML)
+
 
 @dispatcher.callback_query(F.data.in_({"menu_food", "menu_clean", "menu_plan", "menu_support"}))
 async def process_start_action(callback: CallbackQuery) -> None:
@@ -3336,6 +3444,10 @@ async def handle_text(message: Message) -> None:
         return
 
     user_id = message.from_user.id
+
+    if feedback_states.get(user_id) == "waiting_for_feedback":
+        await process_feedback_message(message)
+        return
 
     # Any reply-menu selection cancels an unfinished selfie state.
     if prompt in MENU_BUTTONS:
