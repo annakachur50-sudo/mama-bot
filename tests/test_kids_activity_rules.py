@@ -24,9 +24,11 @@ def age(years):
 class KidsAgeRulesTests(unittest.TestCase):
     def test_age_bands_for_requested_samples(self):
         band = HELPERS["kids_age_band"]
-        self.assertEqual(band(18)[0], "до 2 лет")
-        self.assertEqual(band(36)[0], "2–4 года")
-        self.assertEqual(band(84)[0], "5–9 лет")
+        self.assertEqual(band(24)[0], "до 3 лет")
+        self.assertEqual(band(35)[0], "до 3 лет")
+        self.assertEqual(band(36)[0], "3–5 лет")
+        self.assertEqual(band(60)[0], "3–5 лет")
+        self.assertEqual(band(84)[0], "6–9 лет")
         self.assertEqual(band(132)[0], "10–12 лет")
         self.assertEqual(band(168)[0], "13–15 лет")
         self.assertEqual(band(192)[0], "16–17 лет")
@@ -108,6 +110,30 @@ class KidsAgeRulesTests(unittest.TestCase):
         self.assertIn("Для подростка 13–15 лет", prompt)
         self.assertIn("детективная загадка с логичной разгадкой", prompt)
         self.assertIn("Не предлагай малышовые игры по умолчанию", prompt)
+        for category in (
+            "🧠 Подумать и разгадать", "🎨 Придумать и создать",
+            "🎲 Поиграть и посмеяться", "🔎 Найти и исследовать",
+            "🤝 Сделать вместе", "🌿 Спокойно переключиться",
+        ):
+            self.assertIn(category, SOURCE)
+        self.assertIn("строго соблюдай выбранную категорию", prompt.lower())
+        self.assertIn("не повторяй прошлую идею под новым названием", prompt.lower())
+
+    def test_kids_category_cycles_and_state_is_per_child(self):
+        self.assertIn("kids_last_categories: dict[tuple[int, str], str]", SOURCE)
+        self.assertIn('return (user_id, f"child:{int(ages[0][\'child_number\'])}")', SOURCE)
+        self.assertIn('return (user_id, "all")', SOURCE)
+        self.assertIn("return KIDS_ACTIVITY_CATEGORIES[(index + 1) % len(KIDS_ACTIVITY_CATEGORIES)]", SOURCE)
+        self.assertIn("kids_activity_context_key(user_id, [age])", SOURCE)
+        self.assertIn("kids_activity_context_key(user_id, ages, joint=True)", SOURCE)
+        self.assertIn("generate_kids_activity_sync, [age], previous, category", SOURCE)
+        self.assertIn("generate_kids_activity_sync, ages, previous, category", SOURCE)
+
+    def test_age_specific_generation_preserves_selected_child_and_age(self):
+        self.assertIn("format_child_age(age)", SOURCE)
+        self.assertIn('int(age["child_number"]) == child_number', SOURCE)
+        self.assertIn("selected_age, user_id", SOURCE)
+        self.assertIn("ages = await asyncio.to_thread(load_family_ages, user_id)", SOURCE)
 
     def test_game_result_navigation_is_profile_backed(self):
         self.assertIn('callback_data="kids:again:all" if joint else f"kids:again:{current_child_number}"', SOURCE)
