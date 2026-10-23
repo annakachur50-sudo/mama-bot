@@ -361,6 +361,7 @@ inline_kb = InlineKeyboardMarkup(
         [InlineKeyboardButton(text="🫂 Тёплая поддержка", callback_data="menu_support")],
         [InlineKeyboardButton(text="✨ Моё сияние", callback_data="menu_radiance")],
         [InlineKeyboardButton(text="🧸 Занять ребёнка", callback_data="menu_kids")],
+        [InlineKeyboardButton(text="💌 Написать нам / Поддержка", callback_data="feedback:start")],
     ]
 )
 
@@ -428,6 +429,10 @@ user_request_locks: dict[int, asyncio.Lock] = {}
 chaos_sessions: dict[int, dict] = {}
 chaos_session_counter = 0
 pending_family_profile: dict[int, dict] = {}
+feedback_states: dict[int, str] = {}
+feedback_processing: set[int] = set()
+feedback_delivery_progress: dict[tuple[int, str], dict[str, bool]] = {}
+FEEDBACK_STATE = "waiting_for_feedback"
 
 CHAOS_ZONES = {
     "kitchen": "кухня",
@@ -1637,8 +1642,14 @@ def analyze_radiance_photo_sync(image_bytes: bytes, mime_type: str = "image/jpeg
         "и «контрастность», если можно сказать проще. Не описывай недостатки внешности. "
         "Закончи короткой дружеской фразой. Не повторяй предупреждение о дневном свете, если оно уже прозвучало. "
         "Не обращайся на «вы», не используй фразы «Приветствую», «через призму колористики», "
-        "«предварительный ориентир» и «контрольные оттенки». Если данных недостаточно, скажи об этом бережно "
-        "и предложи повторить фото при более ровном освещении."
+        "«предварительный ориентир» и «контрольные оттенки». "
+        "Если лицо различимо, не отказывайся от полезного разбора из-за обычного домашнего освещения, теней или фона. "
+        "Сразу дай полезную предварительную оценку палитры и подбери оттенки, не требуя нового фото из-за мелких недостатков. "
+        "Если свет мешает оценить отдельную характеристику, разбери всё остальное, что действительно видно, и обозначь "
+        "ограничение только для этой характеристики. Не выдавай приблизительную палитру за точный цветотип. "
+        "Для оттенков используй эмодзи и простые названия, например 🌿 Мягкий шалфей, 🌸 Пыльная роза, "
+        "☕ Какао с молоком, 🌊 Морская волна. "
+        "Если данных действительно недостаточно, бережно объясни конкретное ограничение, не прекращая весь разбор."
     )
     response = client.models.generate_content(
         model=GEMINI_MODEL,
@@ -1653,6 +1664,19 @@ def analyze_radiance_photo_sync(image_bytes: bytes, mime_type: str = "image/jpeg
     return (response.text or "").strip() or (
         "Не получилось уверенно подобрать палитру по этому кадру. Попробуй прислать фото при более ровном освещении 🌸"
     )
+
+
+def radiance_markdown_to_html(text: str) -> str:
+    """Convert Gemini's Markdown bold to Telegram HTML and escape all model text."""
+    parts = []
+    cursor = 0
+    for match in re.finditer(r"\\*\\*(.+?)\\*\\*", text, flags=re.DOTALL):
+        parts.append(html.escape(text[cursor:match.start()].replace("**", "")))
+        parts.append(f"<b>{html.escape(match.group(1))}</b>")
+        cursor = match.end()
+    parts.append(html.escape(text[cursor:].replace("**", "")))
+    return "".join(parts)
+
 
 async def start_kids_flow(message: Message, user_id: int) -> None:
     radiance_states.pop(user_id, None)
@@ -1886,6 +1910,9 @@ async def handle_admin_photo(message: Message) -> None:
     if message.from_user is None or not message.photo:
         return
     user_id = message.from_user.id
+    if feedback_states.get(user_id) == FEEDBACK_STATE:
+        await process_feedback_message(message)
+        return
     if radiance_states.get(user_id) == "waiting_for_selfie":
         radiance_states.pop(user_id, None)
         status_message = await message.answer(
@@ -1902,10 +1929,18 @@ async def handle_admin_photo(message: Message) -> None:
                 timeout=35,
             )
             try:
-                await status_message.edit_text(result, reply_markup=radiance_result_keyboard())
+                await status_message.edit_text(
+                    radiance_markdown_to_html(result),
+                    reply_markup=radiance_result_keyboard(),
+                    parse_mode=ParseMode.HTML,
+                )
             except Exception as edit_error:
                 logger.warning("Could not edit radiance status (%s); sending result separately", type(edit_error).__name__)
-                await message.answer(result, reply_markup=radiance_result_keyboard())
+                await message.answer(
+                    radiance_markdown_to_html(result),
+                    reply_markup=radiance_result_keyboard(),
+                    parse_mode=ParseMode.HTML,
+                )
         except asyncio.CancelledError:
             raise
         except Exception as error:
@@ -2022,6 +2057,7 @@ async def handle_start(message: Message) -> None:
     user_id = message.from_user.id
     support_sessions.pop(user_id, None)
     radiance_states.pop(user_id, None)
+    feedback_states.pop(user_id, None)
     pending_kids_age.discard(user_id)
 
     # Берём имя из Telegram и убираем лишнее, если там смайлы или цифры
@@ -2105,6 +2141,103 @@ async def handle_start(message: Message) -> None:
         reply_markup=inline_kb,
         parse_mode=ParseMode.HTML,
     )
+
+FEEDBACK_CANCEL_KEYBOARD = InlineKeyboardMarkup(inline_keyboard=[
+    [InlineKeyboardButton(text="❌ Отмена", callback_data="feedback:cancel")],
+])
+
+
+@dispatcher.callback_query(F.data == "feedback:start")
+async def start_feedback(callback: CallbackQuery) -> None:
+    await callback.answer()
+    if callback.message is None:
+        return
+    user_id = callback.from_user.id
+    feedback_states[user_id] = FEEDBACK_STATE
+    radiance_states.pop(user_id, None)
+    support_sessions.pop(user_id, None)
+    pending_kids_age.discard(user_id)
+    pending_family_profile.pop(user_id, None)
+    await callback.message.answer(
+        "Напиши свои пожелания, идеи или расскажи, если что-то работает не так 🌸 "
+        "Я бережно передам сообщение создателям! (Можно прикрепить фото или скриншот)",
+        reply_markup=FEEDBACK_CANCEL_KEYBOARD,
+    )
+
+
+@dispatcher.callback_query(F.data == "feedback:cancel")
+async def cancel_feedback(callback: CallbackQuery) -> None:
+    await callback.answer()
+    user_id = callback.from_user.id
+    feedback_states.pop(user_id, None)
+    if callback.message is not None:
+        await callback.message.answer("Обращение отменено 🌿", reply_markup=inline_kb)
+
+
+async def process_feedback_message(message: Message) -> None:
+    user = message.from_user
+    if user is None or feedback_states.get(user.id) != FEEDBACK_STATE:
+        return
+    user_id = user.id
+    if user_id in feedback_processing:
+        return
+
+    username = f"@{user.username}" if user.username else "без username"
+    header = f"💌 Новое сообщение от пользователя: {username} (ID: {user_id})"
+    photo_id = message.photo[-1].file_id if message.photo else None
+    body = (message.caption or "").strip() if photo_id else (message.text or "").strip()
+    signature = f"photo:{photo_id}:{body}" if photo_id else f"text:{body}"
+    progress_key = (user_id, signature)
+    progress = feedback_delivery_progress.setdefault(progress_key, {})
+    feedback_processing.add(user_id)
+    try:
+        if photo_id:
+            combined_caption = header + (f"\n\n{body}" if body else "")
+            caption_fits = len(combined_caption) <= 1024
+            if not progress.get("photo_sent"):
+                await message.bot.send_photo(
+                    chat_id=LOG_CHANNEL_ID,
+                    photo=photo_id,
+                    caption=combined_caption if caption_fits else header,
+                    parse_mode=ParseMode.HTML,
+                )
+                progress["photo_sent"] = True
+            if body and not caption_fits and not progress.get("caption_sent"):
+                await message.bot.send_message(
+                    chat_id=LOG_CHANNEL_ID,
+                    text=f"📝 Подпись к фото от ID {user_id}:\n\n{html.escape(body)}",
+                    parse_mode=ParseMode.HTML,
+                )
+                progress["caption_sent"] = True
+        elif body:
+            if not progress.get("text_sent"):
+                await message.bot.send_message(
+                    chat_id=LOG_CHANNEL_ID,
+                    text=f"{html.escape(header)}\n\n{html.escape(body)}",
+                    parse_mode=ParseMode.HTML,
+                )
+                progress["text_sent"] = True
+        else:
+            await message.answer("Напиши текст обращения или прикрепи фото с пояснением 🌸")
+            return
+    except Exception as error:
+        logger.warning("Could not deliver feedback to channel (%s)", type(error).__name__)
+        await message.answer(
+            "Не получилось передать сообщение сейчас 🙈 Оно пока не считается отправленным. "
+            "Попробуй повторить отправку — я попробую ещё раз.",
+            reply_markup=FEEDBACK_CANCEL_KEYBOARD,
+        )
+        return
+    finally:
+        feedback_processing.discard(user_id)
+
+    feedback_states.pop(user_id, None)
+    feedback_delivery_progress.pop(progress_key, None)
+    await message.answer(
+        "Спасибо за тепло и обратную связь! Всё бережно передала создателям 💌✨",
+        reply_markup=inline_kb,
+    )
+
 
 @dispatcher.callback_query(F.data.in_({"menu_food", "menu_clean", "menu_plan", "menu_support"}))
 async def process_start_action(callback: CallbackQuery) -> None:
@@ -3309,6 +3442,7 @@ async def handle_reset_me(message: Message) -> None:
             pending_family_profile.pop(user_id, None)
             support_sessions.pop(user_id, None)
             radiance_states.pop(user_id, None)
+            feedback_states.pop(user_id, None)
             pending_kids_age.discard(user_id)
             kids_generation_in_progress.discard(user_id)
     except Exception as error:
@@ -3336,6 +3470,9 @@ async def handle_text(message: Message) -> None:
         return
 
     user_id = message.from_user.id
+    if feedback_states.get(user_id) == FEEDBACK_STATE:
+        await process_feedback_message(message)
+        return
 
     # Any reply-menu selection cancels an unfinished selfie state.
     if prompt in MENU_BUTTONS:
