@@ -18,6 +18,7 @@ def load_helpers():
     namespace = {
         "kids_last_categories": {},
         "random": __import__("random"),
+        "re": __import__("re"),
     }
     exec(compile(ast.Module(body=[category_node], type_ignores=[]), "main.py", "exec"), namespace)
     exec(compile(ast.Module(body=nodes, type_ignores=[]), "main.py", "exec"), namespace)
