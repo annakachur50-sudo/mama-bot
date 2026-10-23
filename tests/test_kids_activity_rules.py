@@ -60,7 +60,7 @@ class KidsAgeRulesTests(unittest.TestCase):
         self.assertIn("ages = await asyncio.to_thread(load_family_ages, user_id)", SOURCE)
 
     def test_joint_prompt_includes_every_participant(self):
-        self.assertIn("asyncio.to_thread(generate_kids_activity_sync, ages, previous)", SOURCE)
+        self.assertIn("asyncio.to_thread(generate_kids_activity_sync, ages, previous, category)", SOURCE)
         self.assertIn("для всех перечисленных возрастов", SOURCE)
         self.assertIn("разные роли", SOURCE)
         self.assertIn("или уровни сложности", SOURCE)
