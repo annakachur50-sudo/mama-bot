@@ -160,7 +160,7 @@ class KidsAgeRulesTests(unittest.TestCase):
         end = SOURCE.index("\n\nasync def kids_activity_for_age(", start)
         prompt = SOURCE[start:end]
         self.assertIn("условие, в котором достаточно фактов для одного проверяемого ответа", prompt)
-        self.assertIn("Ответ должен прямо следовать из описанных фактов", prompt)
+        self.assertIn("фактов без внешних предположений", prompt)
         self.assertIn("максимум 15 слов", prompt)
         self.assertIn("В отгадке запрещены слова и конструкции", prompt)
         self.assertIn("Неоднозначную загадку замени другой до выдачи", prompt)
