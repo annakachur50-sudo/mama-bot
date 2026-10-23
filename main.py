@@ -236,9 +236,8 @@ def support_return_keyboard() -> InlineKeyboardMarkup:
 
 async def start_support_flow(message: Message, request_user_id: int | None = None) -> None:
     global support_banner_index
-    if request_user_id is not None:
-        feedback_states.pop(request_user_id, None)
     user_id = request_user_id or (message.from_user.id if message.from_user else message.chat.id)
+    feedback_states.pop(user_id, None)
     # Повторный вход показывает выбор, но не сбрасывает активный сценарий.
     # Смена сценария и очистка его истории происходят атомарно при выборе кнопки.
     banner_ids = (
@@ -1667,7 +1666,7 @@ def analyze_radiance_photo_sync(image_bytes: bytes, mime_type: str = "image/jpeg
 def radiance_result_to_html(text: str) -> str:
     """Escape untrusted Vision output and convert only Markdown bold to Telegram HTML."""
     escaped = html.escape(text, quote=False)
-    escaped = re.sub(r"\\*\\*(.+?)\\*\\*", r"<b>\\1</b>", escaped, flags=re.DOTALL)
+    escaped = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", escaped, flags=re.DOTALL)
     return escaped.replace("**", "")
 
 
@@ -1687,6 +1686,12 @@ def feedback_cancel_keyboard() -> InlineKeyboardMarkup:
 
 
 async def start_feedback_flow(message: Message, user_id: int) -> None:
+    if feedback_states.get(user_id) == "waiting_for_feedback":
+        await message.answer(
+            "Я уже жду твоё сообщение 🌸 Можно отправить текст или фото, либо нажать «❌ Отмена».",
+            reply_markup=feedback_cancel_keyboard(),
+        )
+        return
     radiance_states.pop(user_id, None)
     pending_kids_age.discard(user_id)
     support_sessions.pop(user_id, None)
@@ -1706,7 +1711,7 @@ async def forward_feedback_to_channel(message: Message) -> None:
 
     if message.photo:
         caption = (message.caption or "").strip()
-        combined_caption = header + (f"\\n\\n{html.escape(caption, quote=False)}" if caption else "")
+        combined_caption = header + (f"\n\n{html.escape(caption, quote=False)}" if caption else "")
         if len(combined_caption) <= 1024:
             await message.bot.send_photo(
                 chat_id=LOG_CHANNEL_ID,
@@ -1727,7 +1732,7 @@ async def forward_feedback_to_channel(message: Message) -> None:
     body = (message.text or "").strip()
     if not body:
         raise ValueError("Feedback message has neither text nor photo")
-    combined_text = header + f"\\n\\n{html.escape(body, quote=False)}"
+    combined_text = header + f"\n\n{html.escape(body, quote=False)}"
     if len(combined_text) <= 4096:
         await message.bot.send_message(
             chat_id=LOG_CHANNEL_ID,
@@ -2477,6 +2482,8 @@ CHAOS_PRODUCT_CARD = (
 
 
 async def start_chaos_flow(message: Message) -> None:
+    user_id = message.from_user.id if message.from_user else message.chat.id
+    feedback_states.pop(user_id, None)
     await message.answer(
         "В доме с детьми идеальный порядок живёт ровно 5 минут — и это нормально! 🙈\n\n"
         "Не надо генералить всю квартиру. Выбери одну зону, и мы наведём в ней визуальный уют "
@@ -3325,6 +3332,7 @@ async def start_plan_flow(
     user_id = request_user_id or (
         message.from_user.id if message.from_user else message.chat.id
     )
+    feedback_states.pop(user_id, None)
     ages: list[dict] = []
     if not force_generic:
         try:
@@ -3505,6 +3513,8 @@ async def handle_text(message: Message) -> None:
 
     user_id = message.from_user.id
 
+    if (user_id, message.message_id) in feedback_processed_messages:
+        return
     if feedback_states.get(user_id) == "waiting_for_feedback":
         if prompt not in MENU_BUTTONS:
             await process_feedback_message(message)
