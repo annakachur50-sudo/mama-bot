@@ -1163,6 +1163,7 @@ def kids_story_card_keyboard() -> InlineKeyboardMarkup:
 # Keep recent activity and category per user + selected child (or joint-game context).
 kids_last_activities: dict[tuple[int, str], str] = {}
 kids_last_categories: dict[tuple[int, str], str] = {}
+kids_last_activity_ids: dict[tuple[int, str], str] = {}
 kids_generation_in_progress: set[int] = set()
 
 KIDS_ACTIVITY_CATEGORIES = (
@@ -1181,6 +1182,16 @@ def kids_activity_context_key(user_id: int, ages: list[dict], joint: bool = Fals
     if not ages:
         return (user_id, "unknown")
     return (user_id, f"child:{int(ages[0]['child_number'])}")
+
+
+def kids_activity_short_id(activity: str) -> str:
+    """Create a compact title-based identifier for the most recently suggested activity."""
+    cleaned = (activity or "").strip()
+    first_line = cleaned.splitlines()[0] if cleaned else ""
+    title_match = re.search(r"«([^»]{1,100})»", first_line)
+    title = title_match.group(1) if title_match else first_line
+    identifier = re.sub(r"[^a-zа-яё0-9]+", "-", title.casefold()).strip("-")
+    return identifier[:48] or "activity"
 
 
 def kids_next_activity_category(
@@ -1504,6 +1515,7 @@ async def kids_activity_for_age(age: dict, user_id: int | None = None) -> str:
     if user_id is not None and context_key is not None:
         kids_last_activities[context_key] = activity
         kids_last_categories[context_key] = category[0]
+        kids_last_activity_ids[context_key] = kids_activity_short_id(activity)
     return format_kids_activity_html(activity, format_child_age(age))
 
 
