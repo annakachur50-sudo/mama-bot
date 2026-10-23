@@ -1550,6 +1550,7 @@ async def kids_joint_activity(ages: list[dict], user_id: int | None = None) -> s
     if user_id is not None and context_key is not None:
         kids_last_activities[context_key] = activity
         kids_last_categories[context_key] = category[0]
+        kids_last_activity_ids[context_key] = kids_activity_short_id(activity)
     ages_caption = " + ".join(format_child_age(age) for age in ages)
     return format_kids_activity_html(activity, ages_caption)
 
