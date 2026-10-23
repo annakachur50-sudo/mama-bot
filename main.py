@@ -361,6 +361,7 @@ inline_kb = InlineKeyboardMarkup(
         [InlineKeyboardButton(text="🫂 Тёплая поддержка", callback_data="menu_support")],
         [InlineKeyboardButton(text="✨ Моё сияние", callback_data="menu_radiance")],
         [InlineKeyboardButton(text="🧸 Занять ребёнка", callback_data="menu_kids")],
+        [InlineKeyboardButton(text="💌 Написать нам / Поддержка", callback_data="feedback:start")],
     ]
 )
 
@@ -428,6 +429,9 @@ user_request_locks: dict[int, asyncio.Lock] = {}
 chaos_sessions: dict[int, dict] = {}
 chaos_session_counter = 0
 pending_family_profile: dict[int, dict] = {}
+feedback_states: dict[int, str] = {}
+feedback_inflight: set[tuple[int, int]] = set()
+feedback_sent_events: set[tuple[int, int]] = set()
 
 CHAOS_ZONES = {
     "kitchen": "кухня",
@@ -1009,6 +1013,33 @@ def split_response(text: str, limit: int = TELEGRAM_CHUNK_SIZE) -> list[str]:
 
 ADMIN_ID = 5267406602
 LOG_CHANNEL_ID = -1004353307194
+
+async def send_channel_notification(
+    bot_client: Bot,
+    *,
+    text: str | None = None,
+    photo: str | None = None,
+    caption: str | None = None,
+) -> None:
+    """Send a text or photo notification through the bot's one configured private channel."""
+    if photo is not None:
+        if caption is None:
+            raise ValueError("Photo notifications require a caption")
+        await bot_client.send_photo(
+            chat_id=LOG_CHANNEL_ID,
+            photo=photo,
+            caption=caption,
+            parse_mode=ParseMode.HTML,
+        )
+        return
+    if text is None:
+        raise ValueError("Text notifications require text")
+    await bot_client.send_message(
+        chat_id=LOG_CHANNEL_ID,
+        text=text,
+        parse_mode=ParseMode.HTML,
+    )
+
 
 @dispatcher.message(Command("stats"))
 async def cmd_stats(message: Message) -> None:
@@ -1627,18 +1658,25 @@ def analyze_radiance_photo_sync(image_bytes: bytes, mime_type: str = "image/jpeg
         "аксессуары, одежду или другие особенности, если их не видно или они различимы недостаточно. "
         "Не перечисляй возможные детали наугад. Если конкретное наблюдение ненадёжно, мягко опиши общее впечатление "
         "от образа без выдуманных подробностей. "
-        "Не делай уверенных выводов о цвете глаз, оттенке кожи или волос, если освещение, фильтры, тени или качество "
-        "снимка мешают их надёжно определить. В таком случае не угадывай: осторожно объясни, что именно на фото "
-        "трудно оценить, сохраняя дружеский и поддерживающий тон. "
+        "Если лицо различимо, не отказывайся от разбора из-за обычного домашнего освещения, теней или фона. "
+        "Сразу дай полезную предварительную оценку цветовой палитры и подходящих оттенков, если это возможно. "
+        "Не требуй повторного фото из-за незначительных недостатков освещения. Если свет действительно мешает "
+        "оценить отдельную характеристику, продолжай разбор по видимым признакам и обозначь ограничение только "
+        "там, где оно существенно. Не делай уверенных выводов о цвете глаз, оттенке кожи или волос, если "
+        "освещение, фильтры, тени или качество снимка мешают их надёжно определить. Не угадывай. "
         "Не делай выводов о здоровье, состоянии кожи, заболеваниях, возрасте или личности по лицу. "
         "Если фото позволяет, простыми словами опиши только действительно заметные особенности; затем предложи "
         "4–5 понятных оттенков одежды или аксессуаров у лица с коротким объяснением и 1–2 оттенка для осторожной "
-        "примерки. Используй обычные названия цветов, без профессионального сленга; не используй слова «нюанс» "
-        "и «контрастность», если можно сказать проще. Не описывай недостатки внешности. "
+        "примерки. По возможности используй эмодзи и простые названия оттенков, например: 🌿 Мягкий шалфей, "
+        "🌸 Пыльная роза, ☕ Какао с молоком, 🌊 Морская волна. Используй обычные названия цветов, без "
+        "профессионального сленга; не используй слова «нюанс» "
+        "и «контрастность», если можно сказать проще. Не описывай недостатки внешности. Тон тёплый, живой и "
+        "поддерживающий, как у внимательной подруги, без канцелярита и чрезмерной лести. Не выдумывай детали "
+        "внешности и не выдавай приблизительную палитру за точное определение цветотипа. "
         "Закончи короткой дружеской фразой. Не повторяй предупреждение о дневном свете, если оно уже прозвучало. "
         "Не обращайся на «вы», не используй фразы «Приветствую», «через призму колористики», "
-        "«предварительный ориентир» и «контрольные оттенки». Если данных недостаточно, скажи об этом бережно "
-        "и предложи повторить фото при более ровном освещении."
+        "«предварительный ориентир» и «контрольные оттенки». Если данных недостаточно, скажи об этом бережно; "
+        "предлагай повторить фото только если без этого действительно нельзя оценить нужные характеристики."
     )
     response = client.models.generate_content(
         model=GEMINI_MODEL,
@@ -1651,8 +1689,15 @@ def analyze_radiance_photo_sync(image_bytes: bytes, mime_type: str = "image/jpeg
         )],
     )
     return (response.text or "").strip() or (
-        "Не получилось уверенно подобрать палитру по этому кадру. Попробуй прислать фото при более ровном освещении 🌸"
+        "Не получилось составить палитру по этому кадру. Если захочешь, можно попробовать другое фото 🌸"
     )
+
+
+def radiance_result_html(text: str) -> str:
+    """Escape model output for Telegram HTML, then convert only supported Markdown bold markers."""
+    escaped = html.escape(text or "", quote=False)
+    escaped = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", escaped, flags=re.DOTALL)
+    return escaped.replace("**", "")
 
 async def start_kids_flow(message: Message, user_id: int) -> None:
     radiance_states.pop(user_id, None)
@@ -1886,6 +1931,12 @@ async def handle_admin_photo(message: Message) -> None:
     if message.from_user is None or not message.photo:
         return
     user_id = message.from_user.id
+    event_key = (user_id, message.message_id)
+    if event_key in feedback_sent_events or event_key in feedback_inflight:
+        return
+    if feedback_states.get(user_id) == "waiting_for_feedback":
+        await deliver_feedback(message, user_id, event_key)
+        return
     if radiance_states.get(user_id) == "waiting_for_selfie":
         radiance_states.pop(user_id, None)
         status_message = await message.answer(
@@ -1901,11 +1952,20 @@ async def handle_admin_photo(message: Message) -> None:
                 asyncio.to_thread(analyze_radiance_photo_sync, image_bytes, "image/jpeg"),
                 timeout=35,
             )
+            formatted_result = radiance_result_html(result)
             try:
-                await status_message.edit_text(result, reply_markup=radiance_result_keyboard())
+                await status_message.edit_text(
+                    formatted_result,
+                    reply_markup=radiance_result_keyboard(),
+                    parse_mode=ParseMode.HTML,
+                )
             except Exception as edit_error:
                 logger.warning("Could not edit radiance status (%s); sending result separately", type(edit_error).__name__)
-                await message.answer(result, reply_markup=radiance_result_keyboard())
+                await message.answer(
+                    formatted_result,
+                    reply_markup=radiance_result_keyboard(),
+                    parse_mode=ParseMode.HTML,
+                )
         except asyncio.CancelledError:
             raise
         except Exception as error:
@@ -2014,12 +2074,140 @@ async def replace_callback_message(callback: CallbackQuery) -> None:
         logger.debug("Could not delete previous callback message: %s", error)
 
 
+
+
+FEEDBACK_PROMPT = (
+    "Напиши свои пожелания, идеи или расскажи, если что-то работает не так 🌸 "
+    "Я бережно передам сообщение создателям! (Можно прикрепить фото или скриншот)"
+)
+FEEDBACK_SUCCESS = "Спасибо за тепло и обратную связь! Всё бережно передала создателям 💌✨"
+
+
+def feedback_header(user) -> str:
+    username = f"@{user.username}" if user.username else "без username"
+    return (
+        "💌 Новое сообщение от пользователя: "
+        f"{html.escape(username)} (ID: <code>{user.id}</code>)"
+    )
+
+
+def escape_feedback_content(text: str, max_length: int) -> str:
+    """Escape content for HTML while keeping the escaped result within Telegram's limit."""
+    result = []
+    length = 0
+    for char in text:
+        escaped_char = html.escape(char, quote=False)
+        if length + len(escaped_char) > max_length:
+            break
+        result.append(escaped_char)
+        length += len(escaped_char)
+    if len(result) < len(text) and length < max_length:
+        result.append("…")
+    return "".join(result)
+
+
+async def finish_feedback(message: Message, user_id: int) -> None:
+    feedback_states.pop(user_id, None)
+    await answer_with_banner(
+        message,
+        START_CAPTION,
+        BANNER_START,
+        reply_markup=inline_kb,
+        parse_mode=ParseMode.HTML,
+    )
+
+
+@dispatcher.callback_query(F.data == "feedback:start")
+async def start_feedback(callback: CallbackQuery) -> None:
+    await callback.answer()
+    if callback.message is None:
+        return
+    user_id = callback.from_user.id
+    radiance_states.pop(user_id, None)
+    pending_kids_age.discard(user_id)
+    pending_family_profile.pop(user_id, None)
+    support_sessions.pop(user_id, None)
+    feedback_states[user_id] = "waiting_for_feedback"
+    await callback.message.answer(
+        FEEDBACK_PROMPT,
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="❌ Отмена", callback_data="feedback:cancel")],
+        ]),
+    )
+
+
+@dispatcher.callback_query(F.data == "feedback:cancel")
+async def cancel_feedback(callback: CallbackQuery) -> None:
+    await callback.answer()
+    user_id = callback.from_user.id
+    feedback_states.pop(user_id, None)
+    if callback.message is not None:
+        await callback.message.answer("Хорошо, обращение отменено 🌿")
+        await finish_feedback(callback.message, user_id)
+
+
+async def deliver_feedback(message: Message, user_id: int, event_key: tuple[int, int]) -> None:
+    """Forward one feedback update once; retain the state when Telegram delivery fails."""
+    if event_key in feedback_sent_events or event_key in feedback_inflight:
+        return
+    feedback_inflight.add(event_key)
+    try:
+        user = message.from_user
+        if user is None:
+            return
+        header = feedback_header(user)
+        if message.photo:
+            user_caption = (message.caption or "").strip()
+            caption_prefix = header + ("\n\n" if user_caption else "")
+            caption_body = escape_feedback_content(user_caption, max(0, 1024 - len(caption_prefix))) if user_caption else ""
+            payload = caption_prefix + caption_body
+            await send_channel_notification(
+                message.bot,
+                photo=message.photo[-1].file_id,
+                caption=payload[:1024],
+            )
+        else:
+            body = (message.text or "").strip()
+            if not body:
+                await message.answer("Пришли текст или фото со скриншотом, пожалуйста 🌸")
+                return
+            text_prefix = header + "\n\n"
+            body = escape_feedback_content(body, max(0, 4096 - len(text_prefix)))
+            await send_channel_notification(
+                message.bot,
+                text=text_prefix + body,
+            )
+    except asyncio.CancelledError:
+        raise
+    except Exception as error:
+        logger.warning("Feedback delivery failed (%s)", type(error).__name__)
+        try:
+            await message.answer(
+                "Не получилось отправить обращение 🙈 Оно пока не передано. "
+                "Попробуй отправить это сообщение ещё раз, пожалуйста."
+            )
+        except Exception as reply_error:
+            logger.warning("Could not show feedback delivery error (%s)", type(reply_error).__name__)
+        return
+    else:
+        feedback_sent_events.add(event_key)
+        feedback_states.pop(user_id, None)
+        try:
+            await message.answer(FEEDBACK_SUCCESS)
+            await finish_feedback(message, user_id)
+        except Exception as reply_error:
+            logger.warning("Feedback delivered but user confirmation failed (%s)", type(reply_error).__name__)
+    finally:
+        feedback_inflight.discard(event_key)
+
+
 @dispatcher.message(CommandStart())
 async def handle_start(message: Message) -> None:
     if message.from_user is None:
         return
 
     user_id = message.from_user.id
+    feedback_states.pop(user_id, None)
     support_sessions.pop(user_id, None)
     radiance_states.pop(user_id, None)
     pending_kids_age.discard(user_id)
@@ -2090,10 +2278,9 @@ async def handle_start(message: Message) -> None:
                 f"[{bar}] {percent}%\n"
                 f"⏳ До цели в 100 мам осталось: <b>{left}</b>"
             )
-            await message.bot.send_message(
-                -1004353307194,
-                notification_text,
-                parse_mode=ParseMode.HTML,
+            await send_channel_notification(
+                message.bot,
+                text=notification_text,
             )
         except (genai_errors.APIError, Exception) as log_err:
             logger.warning("Could not send new-user notification to channel: %s", log_err)
@@ -3336,6 +3523,12 @@ async def handle_text(message: Message) -> None:
         return
 
     user_id = message.from_user.id
+    event_key = (user_id, message.message_id)
+    if event_key in feedback_sent_events or event_key in feedback_inflight:
+        return
+    if feedback_states.get(user_id) == "waiting_for_feedback":
+        await deliver_feedback(message, user_id, event_key)
+        return
 
     # Any reply-menu selection cancels an unfinished selfie state.
     if prompt in MENU_BUTTONS:

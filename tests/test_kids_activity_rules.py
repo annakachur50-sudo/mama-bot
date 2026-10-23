@@ -82,7 +82,8 @@ class KidsAgeRulesTests(unittest.TestCase):
         handler = SOURCE[handler_start:handler_end]
         self.assertIn("Секундочку, любуюсь твоим фото и подбираю идеальную палитру... ✨", handler)
         self.assertLess(handler.index("status_message = await message.answer("), handler.index("analyze_radiance_photo_sync"))
-        self.assertIn("status_message.edit_text(result", handler)
+        self.assertIn("status_message.edit_text(", handler)
+        self.assertIn("formatted_result", handler)
         self.assertIn("status_message.edit_text(error_text", handler)
         self.assertIn("await message.answer(error_text", handler)
 
@@ -92,7 +93,7 @@ class KidsAgeRulesTests(unittest.TestCase):
         prompt = SOURCE[start:end]
         self.assertIn("ТОЛЬКО на конкретные детали, отчётливо видимые", prompt)
         self.assertIn("не придумывай улыбку, чёлку, макияж", prompt)
-        self.assertIn("не угадывай", prompt)
+        self.assertIn("не угадывай", prompt.lower())
         self.assertIn("4–5 понятных оттенков", prompt)
         self.assertIn("1–2 оттенка", prompt)
         self.assertIn("Не повторяй предупреждение о дневном свете", prompt)
