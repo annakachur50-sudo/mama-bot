@@ -1646,16 +1646,19 @@ def analyze_radiance_photo_sync(image_bytes: bytes, mime_type: str = "image/jpeg
         "оценку цветовой палитры и предложи подходящие оттенки. Не проси переснять фото из-за мелких недостатков. "
         "Если свет действительно мешает определить отдельную характеристику, продолжи разбор по тому, что видно, "
         "и мягко обозначь ограничение только для этой характеристики. "
-        "Опирайся только на различимые детали: не выдумывай улыбку, чёлку, макияж, аксессуары, одежду, оттенок "
-        "глаз, кожи или волос. Не угадывай и не выдавай приблизительный подбор за точное определение цветотипа. "
+        "Начинай с наблюдений, опирающихся ТОЛЬКО на конкретные детали, отчётливо видимые на фотографии. "
+        "Не выдумывай улыбку, чёлку, макияж, аксессуары, одежду или другие особенности, если их не видно. "
+        "Не угадывай оттенки глаз, кожи или волос, когда они ненадёжно различимы, и не выдавай приблизительный "
+        "подбор за точное определение цветотипа. "
         "Не делай выводов о здоровье, заболеваниях, возрасте или личности по лицу. "
-        "Предложи 4–5 подходящих оттенков одежды или аксессуаров у лица с коротким простым объяснением и 1–2 "
+        "Предложи 4–5 понятных оттенков одежды или аксессуаров у лица с коротким простым объяснением и 1–2 "
         "оттенка для осторожной примерки. Используй тёплые понятные названия и подходящие эмодзи, например: "
         "🌿 Мягкий шалфей, 🌸 Пыльная роза, ☕ Какао с молоком, 🌊 Морская волна. Не используй профессиональный "
         "сленг, слова «нюанс», «контрастность», «через призму колористики», «предварительный ориентир» или "
         "«контрольные оттенки». "
         "Пиши доброжелательно, живо и по делу, без канцелярита и чрезмерной лести. Разделяй ответ на короткие "
-        "абзацы. Для выделения используй только Markdown **жирный текст**; не вставляй HTML-теги. "
+        "абзацы. Не повторяй предупреждение о дневном свете, если оно уже прозвучало. "
+        "Для выделения используй только Markdown **жирный текст**; не вставляй HTML-теги. "
         "Если лицо неразличимо или кадр действительно не позволяет оценить палитру, объясни это бережно, "
         "но всё равно дай полезные рекомендации по другим видимым особенностям, если они есть. Проси новое фото "
         "только если без него невозможно сделать даже ориентировочный разбор."
@@ -2050,16 +2053,17 @@ async def handle_admin_photo(message: Message) -> None:
                 asyncio.to_thread(analyze_radiance_photo_sync, image_bytes, "image/jpeg"),
                 timeout=35,
             )
+            result = radiance_result_to_html(result)
             try:
-                await status_message.edit_text(radiance_result_to_html(result), reply_markup=radiance_result_keyboard(), parse_mode=ParseMode.HTML)
+                await status_message.edit_text(result, reply_markup=radiance_result_keyboard(), parse_mode=ParseMode.HTML)
             except Exception as edit_error:
                 logger.warning("Could not edit radiance status (%s); sending result separately", type(edit_error).__name__)
-                await message.answer(radiance_result_to_html(result), reply_markup=radiance_result_keyboard(), parse_mode=ParseMode.HTML)
+                await message.answer(result, reply_markup=radiance_result_keyboard(), parse_mode=ParseMode.HTML)
         except asyncio.CancelledError:
             raise
         except Exception as error:
             logger.warning("Radiance photo analysis failed (%s)", type(error).__name__)
-            error_text = "Не получилось разобрать фото сейчас 🙈 Попробуй ещё раз чуть позже или пришли фото при более ровном освещении."
+            error_text = "Не получилось обработать фото сейчас 🙈 Попробуй ещё раз чуть позже."
             try:
                 await status_message.edit_text(error_text, reply_markup=radiance_result_keyboard())
             except Exception as edit_error:
