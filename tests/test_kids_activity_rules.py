@@ -9,7 +9,7 @@ TREE = ast.parse(SOURCE)
 def load_helpers():
     wanted = {
         "kids_age_months", "kids_age_band", "kids_picker_label",
-        "kids_activity_context_key", "kids_next_activity_category",
+        "kids_activity_context_key", "kids_activity_short_id", "kids_next_activity_category",
     }
     nodes = [node for node in TREE.body if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name in wanted]
     category_node = next(node for node in TREE.body if isinstance(node, ast.Assign)
@@ -158,6 +158,10 @@ class KidsAgeRulesTests(unittest.TestCase):
         self.assertNotEqual(toddler_first[0], "think")
         self.assertNotEqual(toddler_next[0], "think")
         self.assertNotEqual(toddler_first[0], toddler_next[0])
+        self.assertIn("kids_last_activity_ids: dict[tuple[int, str], str]", SOURCE)
+        short_id = HELPERS["kids_activity_short_id"]
+        self.assertEqual(short_id('🎨 «Фотоохота: найди треугольник» (7 лет)'), "фотоохота-найди-треугольник")
+        self.assertIn("kids_last_activity_ids[context_key] = kids_activity_short_id(activity)", SOURCE)
 
     def test_age_specific_generation_preserves_selected_child_and_age(self):
         self.assertIn("format_child_age(age)", SOURCE)
