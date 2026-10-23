@@ -1191,10 +1191,6 @@ def kids_next_activity_category(
     """Choose an age-suitable category, then cycle through all six without repeating."""
     previous_key = kids_last_categories.get((user_id, context)) if user_id is not None else None
     by_key = {category[0]: category for category in KIDS_ACTIVITY_CATEGORIES}
-    if previous_key in by_key:
-        index = next(i for i, category in enumerate(KIDS_ACTIVITY_CATEGORIES) if category[0] == previous_key)
-        return KIDS_ACTIVITY_CATEGORIES[(index + 1) % len(KIDS_ACTIVITY_CATEGORIES)]
-
     youngest = min((kids_age_months(age) for age in ages), default=84)
     if youngest < 36:
         eligible = ("create", "play", "explore", "together", "calm")
@@ -1202,6 +1198,10 @@ def kids_next_activity_category(
         eligible = ("think", "create", "play", "explore", "together", "calm")
     else:
         eligible = tuple(by_key)
+
+    if previous_key in eligible:
+        index = eligible.index(previous_key)
+        return by_key[eligible[(index + 1) % len(eligible)]]
     return by_key[random.choice(eligible)]
 
 
