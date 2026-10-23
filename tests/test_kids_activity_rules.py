@@ -82,7 +82,9 @@ class KidsAgeRulesTests(unittest.TestCase):
         handler = SOURCE[handler_start:handler_end]
         self.assertIn("Секундочку, любуюсь твоим фото и подбираю идеальную палитру... ✨", handler)
         self.assertLess(handler.index("status_message = await message.answer("), handler.index("analyze_radiance_photo_sync"))
-        self.assertIn("status_message.edit_text(result", handler)
+        self.assertIn("status_message.edit_text(", handler)
+        self.assertIn("radiance_markdown_to_html(result)", handler)
+        self.assertIn("parse_mode=ParseMode.HTML", handler)
         self.assertIn("status_message.edit_text(error_text", handler)
         self.assertIn("await message.answer(error_text", handler)
 
