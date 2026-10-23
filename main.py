@@ -1160,9 +1160,49 @@ def kids_story_card_keyboard() -> InlineKeyboardMarkup:
     ])
 
 
-# Remember the last suggestion per user so consecutive taps never repeat the same game.
-kids_last_activities: dict[int, str] = {}
+# Keep recent activity and category per user + selected child (or joint-game context).
+kids_last_activities: dict[tuple[int, str], str] = {}
+kids_last_categories: dict[tuple[int, str], str] = {}
 kids_generation_in_progress: set[int] = set()
+
+KIDS_ACTIVITY_CATEGORIES = (
+    ("think", "🧠 Подумать и разгадать", "Логическая задача, шифр, детективная загадка или данетка с однозначным решением."),
+    ("create", "🎨 Придумать и создать", "Творчество из подручных вещей, сторителлинг, персонаж или дизайн-челлендж."),
+    ("play", "🎲 Поиграть и посмеяться", "Словесный баттл, абсурдный юмор, игра на реакцию или викторина."),
+    ("explore", "🔎 Найти и исследовать", "Безопасная фотоохота, домашний мини-квест, наблюдение или простой эксперимент."),
+    ("together", "🤝 Сделать вместе", "Командный челлендж, семейный ритуал, общий проект или небольшое совместное дело."),
+    ("calm", "🌿 Спокойно переключиться", "Спокойное сенсорное занятие, внимание к окружающему или мягкое переключение после школы/садика."),
+)
+
+
+def kids_activity_context_key(user_id: int, ages: list[dict], joint: bool = False) -> tuple[int, str]:
+    if joint:
+        return (user_id, "all")
+    if not ages:
+        return (user_id, "unknown")
+    return (user_id, f"child:{int(ages[0]['child_number'])}")
+
+
+def kids_next_activity_category(
+    user_id: int | None,
+    context: str,
+    ages: list[dict],
+) -> tuple[str, str, str]:
+    """Choose an age-suitable category, then cycle through all six without repeating."""
+    previous_key = kids_last_categories.get((user_id, context)) if user_id is not None else None
+    by_key = {category[0]: category for category in KIDS_ACTIVITY_CATEGORIES}
+    if previous_key in by_key:
+        index = next(i for i, category in enumerate(KIDS_ACTIVITY_CATEGORIES) if category[0] == previous_key)
+        return KIDS_ACTIVITY_CATEGORIES[(index + 1) % len(KIDS_ACTIVITY_CATEGORIES)]
+
+    youngest = min((kids_age_months(age) for age in ages), default=84)
+    if youngest < 36:
+        eligible = ("create", "play", "explore", "together", "calm")
+    elif youngest < 72:
+        eligible = ("think", "create", "play", "explore", "together", "calm")
+    else:
+        eligible = tuple(by_key)
+    return by_key[random.choice(eligible)]
 
 
 def kids_age_months(age: dict) -> int:
@@ -1171,18 +1211,18 @@ def kids_age_months(age: dict) -> int:
 
 
 def kids_age_band(months: int) -> tuple[str, str]:
-    if months < 24:
-        return ("до 2 лет", "Безопасное сенсорное занятие вместе со взрослым; только крупные безопасные материалы, постоянный присмотр.")
-    if months < 60:
-        return ("2–4 года", "Простая игра с движением, воображением или крупными безопасными предметами.")
+    if months < 36:
+        return ("до 3 лет", "Короткое сенсорное или тактильное занятие с крупными безопасными бытовыми предметами; постоянный присмотр взрослого, никаких мелких деталей, горячих жидкостей, химии или опасных опытов.")
+    if months < 72:
+        return ("3–5 лет", "Короткая игра с воображением, движением, цветами, формами и простыми безопасными предметами.")
     if months < 120:
-        return ("5–9 лет", "Домашний квест, простой шифр, конструирование, загадка или безопасный эксперимент.")
+        return ("6–9 лет", "Квесты, логические задачи, творчество, исследование и конструирование с понятными правилами.")
     if months < 156:
-        return ("10–12 лет", "Детективная задачка, творческий челлендж, викторина или логическая игра; не слишком детский тон.")
+        return ("10–12 лет", "Более сложные головоломки, викторины, творческие челленджи и самостоятельные мини-проекты.")
     if months < 192:
-        return ("13–15 лет", "Подростковая дилемма, детективная данетка, музыкальная/кино-викторина, словесная дуэль или эстетический челлендж. Не предлагай детские пантомимы, прятки и изображение персонажей без слов, если подросток сам этого не попросил.")
+        return ("13–15 лет", "Уважительный взрослый тон; интеллектуальные задачи, юмор, дизайн, музыка, творчество, исследования и командные игры. Не предлагай малышовые игры по умолчанию.")
     if months < 216:
-        return ("16–17 лет", "Более взрослое интеллектуальное, творческое или практическое задание с уважительным подростковым тоном; без снисходительности.")
+        return ("16–17 лет", "Самостоятельные проекты, сложные логические задачи, творческие и практические челленджи, интеллектуальные и семейные активности без снисходительного тона.")
     return ("18 лет и старше", "Самостоятельный интеллектуальный, творческий или практический челлендж соответствующей сложности, без детского тона.")
 
 
@@ -1347,7 +1387,11 @@ def kids_activity_answer_error(activity: str) -> str | None:
     return None
 
 
-def generate_kids_activity_sync(ages: list[dict], previous: str | None = None) -> str:
+def generate_kids_activity_sync(
+    ages: list[dict],
+    previous: str | None = None,
+    category: tuple[str, str, str] | None = None,
+) -> str:
     age_lines = []
     for index, age in enumerate(ages, start=1):
         months = kids_age_months(age)
@@ -1371,6 +1415,11 @@ def generate_kids_activity_sync(ages: list[dict], previous: str | None = None) -
         "«Формат участия», «Правила по шагам», «Как понять, что игра закончена». "
         "Используй точный возраст каждого участника и не теряй возраст при выборе кнопки.\n\n"
         + "\n".join(age_lines)
+        + "\n\nОдна выбранная категория для этого занятия: "
+        + (f"{category[1]} — {category[2]}" if category else "выбери наиболее подходящую возрасту из шести категорий")
+        + ". Категории: "
+        + "; ".join(f"{label}: {description}" for _, label, description in KIDS_ACTIVITY_CATEGORIES)
+        + ". Строго соблюдай выбранную категорию; не повторяй прошлую идею под новым названием. "
         + "\n\nНе выдумывай интересы и не делай предположений по полу. Если ребёнок может безопасно играть сам, "
         "это допустимо, но обращение и инструкция в ответе всё равно адресованы взрослому. "
         "Загадки и задания должны иметь логичное решение, быть выполнимыми и безопасными. Не придумывай "
@@ -1395,7 +1444,7 @@ def generate_kids_activity_sync(ages: list[dict], previous: str | None = None) -
            "Не предлагай малышовые игры по умолчанию и не говори снисходительно." if teen_present else "")
         + ("\n\nЭто совместная игра для всех перечисленных возрастов. Предложи одну общую цель и разные роли "
            "или уровни сложности; учитывай безопасность самого младшего." if joint else "")
-        + (f"\n\nНе повторяй прошлое занятие: {previous[:300]}" if previous else "")
+        + (f"\n\nНе повторяй прошлое занятие: {previous[:500]}" if previous else "")
         + ("\n\nДля любого участника 13–17 лет не предлагай примитивные детские игры (детские прятки, "
            "пантомимы для малышей или изображение персонажей без слов), если подросток сам этого не попросил." 
            if any(156 <= kids_age_months(age) < 216 for age in ages) else "")
@@ -1426,10 +1475,13 @@ def generate_kids_activity_sync(ages: list[dict], previous: str | None = None) -
 
 
 async def kids_activity_for_age(age: dict, user_id: int | None = None) -> str:
-    previous = kids_last_activities.get(user_id) if user_id is not None else None
+    context_key = kids_activity_context_key(user_id, [age]) if user_id is not None else None
+    context = context_key[1] if context_key else f"child:{int(age['child_number'])}"
+    previous = kids_last_activities.get(context_key) if context_key is not None else None
+    category = kids_next_activity_category(user_id, context, [age])
     try:
         activity = await asyncio.wait_for(
-            asyncio.to_thread(generate_kids_activity_sync, [age], previous),
+            asyncio.to_thread(generate_kids_activity_sync, [age], previous, category),
             timeout=35,
         )
         if not activity:
@@ -1449,16 +1501,19 @@ async def kids_activity_for_age(age: dict, user_id: int | None = None) -> str:
             "\n\n💡 Сейчас с генерацией заминка, поэтому это запасной безопасный вариант. "
             "Кнопки ниже остаются доступны."
         )
-    if user_id is not None:
-        kids_last_activities[user_id] = activity
+    if user_id is not None and context_key is not None:
+        kids_last_activities[context_key] = activity
+        kids_last_categories[context_key] = category[0]
     return format_kids_activity_html(activity, format_child_age(age))
 
 
 async def kids_joint_activity(ages: list[dict], user_id: int | None = None) -> str:
-    previous = kids_last_activities.get(user_id) if user_id is not None else None
+    context_key = kids_activity_context_key(user_id, ages, joint=True) if user_id is not None else None
+    previous = kids_last_activities.get(context_key) if context_key is not None else None
+    category = kids_next_activity_category(user_id, "all", ages)
     try:
         activity = await asyncio.wait_for(
-            asyncio.to_thread(generate_kids_activity_sync, ages, previous),
+            asyncio.to_thread(generate_kids_activity_sync, ages, previous, category),
             timeout=35,
         )
         if not activity:
@@ -1480,8 +1535,9 @@ async def kids_joint_activity(ages: list[dict], user_id: int | None = None) -> s
             "\n\n💡 Сейчас с генерацией заминка, поэтому это запасной безопасный вариант для всех. "
             "Кнопки ниже остаются доступны."
         )
-    if user_id is not None:
-        kids_last_activities[user_id] = activity
+    if user_id is not None and context_key is not None:
+        kids_last_activities[context_key] = activity
+        kids_last_categories[context_key] = category[0]
     ages_caption = " + ".join(format_child_age(age) for age in ages)
     return format_kids_activity_html(activity, ages_caption)
 
