@@ -1289,6 +1289,64 @@ def format_kids_activity_html(text: str, age_caption: str) -> str:
         escaped_lines.append(escaped_line)
     return "\n".join(escaped_lines)
 
+class KidsActivityValidationError(ValueError):
+    """A generated riddle failed the answer-format or determinacy checks."""
+
+
+def kids_activity_answer_error(activity: str) -> str | None:
+    """Return a validation reason for a malformed riddle answer; leave ordinary games alone."""
+    lines = [line.strip() for line in (activity or "").splitlines() if line.strip()]
+    answer_indexes = [
+        index for index, line in enumerate(lines)
+        if re.match(r"^💡\\s*Отгадка для мамы\\s*:", line, flags=re.IGNORECASE)
+    ]
+    looks_like_riddle = bool(re.search(
+        r"загадк|детектив|данетк|логическ(?:ая|ую|ой|ий|ое)?\\s+(?:задач|загадк)|улика|\\bдано\\b",
+        activity or "",
+        flags=re.IGNORECASE,
+    ))
+    if not answer_indexes:
+        return "для загадки отсутствует блок отгадки" if looks_like_riddle else None
+    if len(answer_indexes) != 1:
+        return "должен быть ровно один блок отгадки"
+    index = answer_indexes[0]
+    if index != len(lines) - 1:
+        return "отгадка должна быть последним непустым абзацем"
+    answer = re.sub(r"^💡\\s*Отгадка для мамы\\s*:\\s*", "", lines[index], flags=re.IGNORECASE).strip()
+    if not answer:
+        return "отгадка пустая"
+    if "(" in answer or ")" in answer:
+        return "в отгадке запрещены скобки"
+    if re.search(r"</?\\s*[a-z][^>]*>", answer, flags=re.IGNORECASE):
+        return "в тексте отгадки запрещены HTML-теги"
+    forbidden = (
+        r"\\bили\\b",
+        r"\\bлибо\\b",
+        r"хотя\\s+точнее",
+        r"если\\s+точнее",
+        r"в\\s+классической\\s+задаче",
+        r"\\bвозможно\\b",
+        r"\\bвероятно\\b",
+        r"может\\s+быть",
+        r"скорее\\s+всего",
+        r"наверное",
+        r"предположительно",
+        r"одна\\s+из\\s+версий",
+        r"альтернативн",
+    )
+    if any(re.search(pattern, answer, flags=re.IGNORECASE) for pattern in forbidden):
+        return "в отгадке есть запрещённая конструкция или альтернативная версия"
+    words = re.findall(r"\\b[А-Яа-яЁёA-Za-z0-9]+\\b", answer)
+    if len(words) > 15:
+        return f"в отгадке {len(words)} слов, максимум 15"
+    sentence_marks = re.findall(r"[.!?]+(?=\\s|$)", answer)
+    if len(sentence_marks) != 1 or not answer.endswith("."):
+        return "отгадка должна быть одним утвердительным предложением с точкой"
+    if "?" in answer or "!" in answer:
+        return "отгадка должна быть утвердительной, не вопросом и не восклицанием"
+    return None
+
+
 def generate_kids_activity_sync(ages: list[dict], previous: str | None = None) -> str:
     age_lines = []
     for index, age in enumerate(ages, start=1):
@@ -1317,15 +1375,19 @@ def generate_kids_activity_sync(ages: list[dict], previous: str | None = None) -
         "это допустимо, но обращение и инструкция в ответе всё равно адресованы взрослому. "
         "Загадки и задания должны иметь логичное решение, быть выполнимыми и безопасными. Не придумывай "
         "заведомо неразрешимые загадки, опасные эксперименты, задания с огнём, острыми инструментами или риском падения. "
-        "Если занятие содержит загадку, детективную историю, данетку или логическую задачу, обязательно выбери "
-        "одну чёткую загадку с одним обоснованным ответом. История, вопрос и ответ должны быть единым целым: "
-        "проверь, что ответ следует из условий и не противоречит им. Не добавляй альтернативные версии в скобках, "
-        "размышления о том, каким мог бы быть ответ, или детали, придуманные только для подгонки разгадки. "
-        "Если однозначную загадку сформулировать нельзя, выбери другую. Сначала выдай законченную историю и вопрос, "
-        "не раскрывай ответ раньше времени. В самом конце отдельным абзацем добавь ровно в формате "
-        "«💡 Отгадка для мамы: краткий точный ответ»; при необходимости добавь в этот же абзац одно короткое "
-        "объяснение логики. Это обязательно для детективов, данеток и логических задач для любого возраста, "
-        "включая подростков и совместные семейные игры. Для занятия без загадки или логической задачи отгадку НЕ добавляй. "
+        "Если занятие содержит загадку, детективную историю, данетку или логическую задачу, используй только "
+        "условие, в котором достаточно фактов для одного проверяемого ответа. Ответ должен прямо следовать из описанных "
+        "фактов без внешних предположений и скрытых обстоятельств; согласуй условие, вопрос и ответ. Неоднозначную загадку "
+        "замени другой до выдачи. Перед ответом проверь логическую согласованность. "
+        "Отгадка ОБЯЗАТЕЛЬНО должна быть ровно одним коротким утвердительным предложением, максимум 15 слов, "
+        "с итоговым ответом и только при необходимости краткой причиной. Запрещены рассуждения вслух, черновики, "
+        "сомнения, самоисправления, альтернативные версии, скобки с альтернативными объяснениями и повтор условия вместо ответа. "
+        "В отгадке запрещены слова и конструкции: «или», «хотя точнее», «если точнее», «в классической задаче», "
+        "«возможно», «вероятно», «может быть», а также любые эквивалентные выражения сомнения или выбора вариантов. "
+        "Сначала выдай законченную историю и вопрос, не раскрывай ответ раньше времени. Последним непустым абзацем "
+        "добавь строго одну строку: «💡 Отгадка для мамы: одно короткое утвердительное предложение.» "
+        "Не добавляй после неё никаких строк. Это обязательно для загадок, детективов, данеток и логических задач для любого "
+        "возраста, включая подростков и совместные семейные игры. Для занятия без загадки или логической задачи отгадку НЕ добавляй. "
         "Не используй Markdown или HTML-теги: оформление Telegram добавит код бота. "
         "Верни только готовый текст игры."
         + ("\n\nДля подростка 13–15 лет выбирай уместные форматы: детективная загадка с логичной разгадкой, "
@@ -1338,12 +1400,29 @@ def generate_kids_activity_sync(ages: list[dict], previous: str | None = None) -
            "пантомимы для малышей или изображение персонажей без слов), если подросток сам этого не попросил." 
            if any(156 <= kids_age_months(age) < 216 for age in ages) else "")
     )
-    response = client.models.generate_content(
-        model=GEMINI_MODEL,
-        contents=prompt,
-        config=types.GenerateContentConfig(temperature=0.9),
+    last_error = "неизвестная ошибка проверки"
+    for attempt in range(2):
+        attempt_prompt = prompt
+        if attempt:
+            attempt_prompt += (
+                "\\n\\nИСПРАВЬ ПРЕДЫДУЩИЙ ВАРИАНТ. Ошибка проверки отгадки: "
+                + last_error
+                + ". Перепиши загадку целиком так, чтобы ответ однозначно следовал из условия. "
+                "Отгадка — одно утвердительное предложение до 15 слов, без альтернатив, сомнений, скобок "
+                "и запрещённых формулировок. Верни только готовую игру."
+            )
+        response = client.models.generate_content(
+            model=GEMINI_MODEL,
+            contents=attempt_prompt,
+            config=types.GenerateContentConfig(temperature=0.4 if attempt else 0.7),
+        )
+        activity = (response.text or "").strip()
+        last_error = kids_activity_answer_error(activity)
+        if last_error is None:
+            return activity
+    raise KidsActivityValidationError(
+        "Gemini не смогла создать загадку с короткой однозначной отгадкой"
     )
-    return (response.text or "").strip()
 
 
 async def kids_activity_for_age(age: dict, user_id: int | None = None) -> str:
@@ -1357,6 +1436,13 @@ async def kids_activity_for_age(age: dict, user_id: int | None = None) -> str:
             raise ValueError("Gemini returned an empty activity")
     except asyncio.CancelledError:
         raise
+    except KidsActivityValidationError as error:
+        logger.warning("Kids activity answer validation failed (%s); using a non-riddle fallback", type(error).__name__)
+        activity = (
+            f"🎨 «Три цвета» ({format_child_age(age)})\\n"
+            "Предложи ребёнку нарисовать необычный дом, используя три цвета. "
+            "Попроси придумать дому название."
+        )
     except Exception as error:
         logger.warning("Kids Gemini generation failed (%s); using age-appropriate fallback", type(error).__name__)
         activity = kids_activity_fallback(age) + (
@@ -1379,6 +1465,14 @@ async def kids_joint_activity(ages: list[dict], user_id: int | None = None) -> s
             raise ValueError("Gemini returned an empty joint activity")
     except asyncio.CancelledError:
         raise
+    except KidsActivityValidationError as error:
+        logger.warning("Joint kids answer validation failed (%s); using a non-riddle fallback", type(error).__name__)
+        ages_caption = " + ".join(format_child_age(age) for age in ages)
+        activity = (
+            f"🎨 «Три цвета» ({ages_caption})\\n"
+            "Предложите всем вместе нарисовать необычный дом, используя три цвета. "
+            "Пусть каждый добавит одну деталь."
+        )
     except Exception as error:
         logger.warning("Joint kids Gemini generation failed (%s); using safe fallback", type(error).__name__)
         youngest = min(ages, key=kids_age_months)
