@@ -2752,6 +2752,7 @@ async def process_support_action(callback: CallbackQuery) -> None:
         return
     data = callback.data or ""
     user_id = callback.from_user.id
+    feedback_states.pop(user_id, None)
     if data in {"support:home", "menu:main"}:
         support_sessions.pop(user_id, None)
         await replace_callback_message(callback)
@@ -2794,6 +2795,7 @@ async def process_back_to_menu(callback: CallbackQuery) -> None:
     await callback.answer()
     if callback.message is None:
         return
+    feedback_states.pop(callback.from_user.id, None)
     message = callback.message
     await replace_callback_message(callback)
     await answer_with_banner(
