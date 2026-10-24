@@ -51,6 +51,19 @@ BANNER_PHOTO_ID = "AgACAgIAAxkBAAIIL2rQhiE0ysuGPvBGRKM2DGmuKm8SAALSGGsbTc2JSv_n8
 
 # Горизонтальные баннеры Telegram. Позже сюда можно добавить несколько file_id на рубрику.
 BANNER_START = [BANNER_PHOTO_ID]  # стартовое приветствие
+
+GLOW_BANNER_IDS = [
+    "AgACAgIAAyEFAAMBA3oyOgADOGrcUOOHE9S-cVopiJdJeVhKVI4MAAKvHmsb7vnoSiz0eeI0hhlmAQADAgADdwADPQQ",
+    "AgACAgIAAyEFAAMBA3oyOgADNmrcUOM6L5ukt9JBOb5NKjbiMyV5AAKtHmsb7vnoSh4nWe4UV6xUAQADAgADdwADPQQ",
+    "AgACAgIAAyEFAAMBA3oyOgADN2rcUOPrrZL0lhc-hbkp-UNbbs9zAAKuHmsb7vnoSgkStm9N_uuUAQADAgADdwADPQQ",
+    "AgACAgIAAyEFAAMBA3oyOgADMWrcUOPySXlOD7EkO5kloUoQ8apKAAKoHmsb7vnoSmY8yJ43zUzMAQADAgADdwADPQQ",
+    "AgACAgIAAyEFAAMBA3oyOgADOWrcUOPTcoWZdSIZhkNSdK5NC5UOAAKwHmsb7vnoSpbktWa4GoD3AQADAgADdwADPQQ",
+    "AgACAgIAAyEFAAMBA3oyOgADNGrcUOMsBidEVRjt49zYzyxKoc36AAKrHmsb7vnoSo1YKWClE1rjAQADAgADdwADPQQ",
+    "AgACAgIAAyEFAAMBA3oyOgADMGrcUON8Xs5XE8PaFX18OHQTVPJoAAKnHmsb7vnoStp8Zb-wfxueAQADAgADdwADPQQ",
+    "AgACAgIAAyEFAAMBA3oyOgADNWrcUOO8A2Dt7NF_3z-CJtCauxclAAKsHmsb7vnoSvJDa8hR_bl0AQADAgADdwADPQQ",
+    "AgACAgIAAyEFAAMBA3oyOgADMmrcUOOCw_-MGsPD68YnGTsW3DU9AAKpHmsb7vnoSgNAcqoNYBVoAQADAgADdwADPQQ",
+    "AgACAgIAAyEFAAMBA3oyOgADM2rcUONFq6mA9xNru2rYftDo1L62AAKqHmsb7vnoSg-aYQYXPZXhAQADAgADdwADPQQ",
+]
 FOOD_BANNERS = [
     "AgACAgIAAxkBAAIHdGrOdXYmWYA7axciENDwEAgzwHatAALrJGsbG09wSqMQS_xQEO2lAQADAgADdwADPQQ",
     "AgACAgIAAxkBAAIHcmrOdXYOASVucKJ4EwUXQvKF9SvMAALpJGsbG09wSrXITkQkQV3YAQADAgADdwADPQQ",
@@ -1634,7 +1647,26 @@ async def start_radiance_flow(message: Message, user_id: int) -> None:
     radiance_states.pop(user_id, None)
     pending_kids_age.discard(user_id)
     support_sessions.pop(user_id, None)
-    await message.answer(RADIANCE_MENU_TEXT, reply_markup=radiance_menu_keyboard(), parse_mode=ParseMode.HTML)
+    banner_id = random.choice(GLOW_BANNER_IDS)
+    markup = radiance_menu_keyboard()
+    try:
+        await bot.send_photo(
+            message.chat.id,
+            banner_id,
+            caption=RADIANCE_MENU_TEXT,
+            reply_markup=markup,
+            parse_mode=ParseMode.HTML,
+        )
+    except Exception as error:
+        logger.exception(
+            "Could not send radiance intro banner (file_id ending %s); using text fallback",
+            banner_id[-8:],
+        )
+        await message.answer(
+            RADIANCE_MENU_TEXT,
+            reply_markup=markup,
+            parse_mode=ParseMode.HTML,
+        )
 
 
 async def start_radiance_selfie(message: Message, user_id: int) -> None:
