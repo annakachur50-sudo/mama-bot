@@ -2544,11 +2544,27 @@ CHAOS_PRODUCT_CARD = (
 
 
 async def start_chaos_flow(message: Message) -> None:
-    await message.answer(
-        "В доме с детьми идеальный порядок живёт ровно 5 минут — и это нормально! 🙈\n\n"
+    global clean_banner_index
+
+    intro = (
+        "В доме с детьми идеальный порядок живёт ровно 5 минут — и это нормально! 🙈\\n\\n"
         "Не надо генералить всю квартиру. Выбери одну зону, и мы наведём в ней визуальный уют "
-        "всего за 3–5 минут без надрыва ✨",
-        reply_markup=chaos_zone_menu_keyboard(),
+        "всего за 3–5 минут без надрыва ✨"
+    )
+    markup = chaos_zone_menu_keyboard()
+
+    # Показываем баннеры по очереди. answer_with_banner пробует остальные ID,
+    # если очередной file_id устарел или Telegram не принимает его.
+    banner_ids = BANNER_CLEAN[clean_banner_index:] + BANNER_CLEAN[:clean_banner_index]
+    if BANNER_CLEAN:
+        clean_banner_index = (clean_banner_index + 1) % len(BANNER_CLEAN)
+
+    await answer_with_banner(
+        message,
+        intro,
+        banner_ids,
+        reply_markup=markup,
+        parse_mode=ParseMode.HTML,
     )
 
 
