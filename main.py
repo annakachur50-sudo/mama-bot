@@ -220,7 +220,9 @@ SUPPORT_SCENARIOS = {
 support_sessions: dict[int, str] = {}
 # Ephemeral states only; no photo or message content is stored in analytics.
 class WardrobeStates(StatesGroup):
-    waiting_for_request = State()
+    waiting_for_occasion = State()
+    waiting_for_weather = State()
+    waiting_for_base_item = State()
 
 
 radiance_states: dict[int, str] = {}
@@ -892,6 +894,21 @@ def analytics_button_info(callback_data: str) -> tuple[str, str]:
         "radiance:undertones": ("radiance", "undertones"),
         "radiance:wardrobe:start": ("radiance", "wardrobe_start"),
         "radiance:wardrobe:cancel": ("radiance", "wardrobe_cancel"),
+        "wardrobe:occ:walk": ("radiance", "wardrobe_occasion_walk"),
+        "wardrobe:occ:cafe": ("radiance", "wardrobe_occasion_cafe"),
+        "wardrobe:occ:work": ("radiance", "wardrobe_occasion_work"),
+        "wardrobe:occ:date": ("radiance", "wardrobe_occasion_date"),
+        "wardrobe:occ:home": ("radiance", "wardrobe_occasion_home"),
+        "wardrobe:wea:warm": ("radiance", "wardrobe_weather_warm"),
+        "wardrobe:wea:cool": ("radiance", "wardrobe_weather_cool"),
+        "wardrobe:wea:cold": ("radiance", "wardrobe_weather_cold"),
+        "wardrobe:wea:rain": ("radiance", "wardrobe_weather_rain"),
+        "wardrobe:base:jeans": ("radiance", "wardrobe_base_jeans"),
+        "wardrobe:base:dress": ("radiance", "wardrobe_base_dress"),
+        "wardrobe:base:sport": ("radiance", "wardrobe_base_sport"),
+        "wardrobe:base:any": ("radiance", "wardrobe_base_any"),
+        "wardrobe:back:occasion": ("radiance", "wardrobe_back_occasion"),
+        "wardrobe:back:weather": ("radiance", "wardrobe_back_weather"),
         "radiance:retry": ("radiance", "retry_photo"),
         "radiance:cancel": ("radiance", "cancel"),
         "radiance:locked:wardrobe": ("radiance", "locked_wardrobe"),
@@ -1151,12 +1168,34 @@ WARDROBE_STYLIST_PROMPT = """
 """
 
 
-def wardrobe_request_keyboard() -> InlineKeyboardMarkup:
+def wardrobe_occasion_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(
-            text="↩️ Назад в меню",
-            callback_data="radiance:wardrobe:cancel",
-        )],
+        [InlineKeyboardButton(text="👶 На прогулку", callback_data="wardrobe:occ:walk")],
+        [InlineKeyboardButton(text="☕ Встреча / Кафе", callback_data="wardrobe:occ:cafe")],
+        [InlineKeyboardButton(text="💼 Работа / Дела", callback_data="wardrobe:occ:work")],
+        [InlineKeyboardButton(text="🍷 Свидание / Выход", callback_data="wardrobe:occ:date")],
+        [InlineKeyboardButton(text="🏠 Дома красиво", callback_data="wardrobe:occ:home")],
+        [InlineKeyboardButton(text="↩️ Назад в меню", callback_data="radiance:wardrobe:cancel")],
+    ])
+
+
+def wardrobe_weather_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="☀️ Тепло", callback_data="wardrobe:wea:warm")],
+        [InlineKeyboardButton(text="🍂 Прохладно / Ветер", callback_data="wardrobe:wea:cool")],
+        [InlineKeyboardButton(text="❄️ Мороз / Зима", callback_data="wardrobe:wea:cold")],
+        [InlineKeyboardButton(text="🌧️ Слякоть / Дождь", callback_data="wardrobe:wea:rain")],
+        [InlineKeyboardButton(text="↩️ Назад", callback_data="wardrobe:back:occasion")],
+    ])
+
+
+def wardrobe_base_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="👖 Джинсы / Кэжуал", callback_data="wardrobe:base:jeans")],
+        [InlineKeyboardButton(text="👗 Платье или юбка", callback_data="wardrobe:base:dress")],
+        [InlineKeyboardButton(text="🧥 Спортивный / Костюм", callback_data="wardrobe:base:sport")],
+        [InlineKeyboardButton(text="✨ На твой вкус (любое)", callback_data="wardrobe:base:any")],
+        [InlineKeyboardButton(text="↩️ Назад", callback_data="wardrobe:back:weather")],
     ])
 
 
@@ -3704,20 +3743,12 @@ async def start_wardrobe_flow(
     radiance_states.pop(user_id, None)
     pending_kids_age.discard(user_id)
     support_sessions.pop(user_id, None)
-    await state.set_state(WardrobeStates.waiting_for_request)
+    await state.clear()
+    await state.set_state(WardrobeStates.waiting_for_occasion)
 
-    await callback.message.answer(
-        "👗 <b>Давай соберём для тебя классный образ!</b>\n\n"
-        "Напиши мне прямо сейчас:\n"
-        "1. <b>Куда собираешься?</b> "
-        "(на прогулку с ребёнком, на встречу, свидание, работа)\n"
-        "2. <b>Какая погода?</b> (тепло, прохладно, сильный мороз)\n"
-        "3. <b>Какая вещь обязательно должна быть в образе?</b> "
-        "(например: <i>любимые синие джинсы</i>, <i>длинное пальто</i> "
-        "или <i>вязаный свитер</i>)\n\n"
-        "Можешь написать всё своими словами одним сообщением 👇",
-        reply_markup=wardrobe_request_keyboard(),
-        parse_mode=ParseMode.HTML,
+    await callback.message.edit_text(
+        "Шаг 1 из 3: Куда собираешься? 🌸",
+        reply_markup=wardrobe_occasion_keyboard(),
     )
 
 
@@ -3729,24 +3760,110 @@ async def cancel_wardrobe_flow(
     await callback.answer()
     await state.clear()
     if callback.message is not None:
-        await callback.message.answer(
+        await callback.message.edit_text(
             "Хорошо, вернёмся к выбору ✨",
             reply_markup=radiance_menu_keyboard(),
         )
 
 
-@dispatcher.message(WardrobeStates.waiting_for_request, F.text)
-async def process_wardrobe_request(
+@dispatcher.callback_query(F.data.startswith("wardrobe:occ:"), WardrobeStates.waiting_for_occasion)
+async def choose_wardrobe_occasion(callback: CallbackQuery, state: FSMContext) -> None:
+    if callback.message is None:
+        await callback.answer()
+        return
+    occasion_key = (callback.data or "").rsplit(":", 1)[-1]
+    occasions = {
+        "walk": "прогулка",
+        "cafe": "встреча или кафе",
+        "work": "работа и повседневные дела",
+        "date": "свидание или выход",
+        "home": "дома, но хочется выглядеть красиво",
+    }
+    if occasion_key not in occasions:
+        await callback.answer("Не поняла выбор. Попробуй ещё раз.", show_alert=True)
+        return
+    await callback.answer()
+    await state.update_data(occasion=occasions[occasion_key])
+    await state.set_state(WardrobeStates.waiting_for_weather)
+    await callback.message.edit_text(
+        "Шаг 2 из 3: Какая погода за окном? ⛅",
+        reply_markup=wardrobe_weather_keyboard(),
+    )
+
+
+@dispatcher.callback_query(F.data == "wardrobe:back:occasion", WardrobeStates.waiting_for_weather)
+async def wardrobe_back_to_occasion(callback: CallbackQuery, state: FSMContext) -> None:
+    await callback.answer()
+    await state.set_state(WardrobeStates.waiting_for_occasion)
+    if callback.message is not None:
+        await callback.message.edit_text(
+            "Шаг 1 из 3: Куда собираешься? 🌸",
+            reply_markup=wardrobe_occasion_keyboard(),
+        )
+
+
+@dispatcher.callback_query(F.data.startswith("wardrobe:wea:"), WardrobeStates.waiting_for_weather)
+async def choose_wardrobe_weather(callback: CallbackQuery, state: FSMContext) -> None:
+    if callback.message is None:
+        await callback.answer()
+        return
+    weather_key = (callback.data or "").rsplit(":", 1)[-1]
+    weather_options = {
+        "warm": "тёплая погода",
+        "cool": "прохладно и ветрено",
+        "cold": "морозная зимняя погода",
+        "rain": "дождь или слякоть",
+    }
+    if weather_key not in weather_options:
+        await callback.answer("Не поняла выбор. Попробуй ещё раз.", show_alert=True)
+        return
+    await callback.answer()
+    await state.update_data(weather=weather_options[weather_key])
+    await state.set_state(WardrobeStates.waiting_for_base_item)
+    await callback.message.edit_text(
+        "Шаг 3 из 3: Что возьмём за основу? 👚\n\n"
+        "Можешь выбрать вариант кнопкой или написать свою вещь сообщением — например, "
+        "«длинное пальто» или «любимые синие джинсы».",
+        reply_markup=wardrobe_base_keyboard(),
+    )
+
+
+@dispatcher.callback_query(F.data == "wardrobe:back:weather", WardrobeStates.waiting_for_base_item)
+async def wardrobe_back_to_weather(callback: CallbackQuery, state: FSMContext) -> None:
+    await callback.answer()
+    await state.set_state(WardrobeStates.waiting_for_weather)
+    if callback.message is not None:
+        await callback.message.edit_text(
+            "Шаг 2 из 3: Какая погода за окном? ⛅",
+            reply_markup=wardrobe_weather_keyboard(),
+        )
+
+
+async def generate_wardrobe_result(
     message: Message,
     state: FSMContext,
+    base_item: str,
 ) -> None:
-    user_request = (message.text or "").strip()
-    if not user_request:
+    data = await state.get_data()
+    occasion = str(data.get("occasion", "")).strip()
+    weather = str(data.get("weather", "")).strip()
+    base_item = base_item.strip()
+    if not occasion or not weather or not base_item:
         await message.answer(
-            "Напиши, пожалуйста, куда собираешься, какая погода и какую вещь хочешь включить в образ.",
-            reply_markup=wardrobe_request_keyboard(),
+            "Потеряла один из выборов 🙈 Давай начнём сначала.",
+            reply_markup=wardrobe_result_keyboard(),
         )
+        await state.clear()
         return
+
+    user_request = (
+        f"Куда собирается пользователь: {occasion}.\n"
+        f"Погода: {weather}.\n"
+        f"Основа образа или вещь, которую нужно использовать: {base_item}.\n\n"
+        "Собери 2–3 готовых, стильных и удобных образа с учётом этих трёх параметров. "
+        "В каждом укажи одежду, обувь, аксессуары и верхнюю одежду по погоде. "
+        "Добавь короткий совет по сочетанию цветов и практичности."
+    )
 
     try:
         await bot.send_chat_action(chat_id=message.chat.id, action="typing")
@@ -3765,11 +3882,59 @@ async def process_wardrobe_request(
         )
         await message.answer(
             "Не получилось собрать образы прямо сейчас 🙈 "
-            "Попробуй отправить запрос ещё раз чуть позже.",
+            "Попробуй ещё раз чуть позже.",
             reply_markup=wardrobe_result_keyboard(),
         )
     finally:
         await state.clear()
+
+
+@dispatcher.callback_query(F.data.startswith("wardrobe:base:"), WardrobeStates.waiting_for_base_item)
+async def choose_wardrobe_base(callback: CallbackQuery, state: FSMContext) -> None:
+    if callback.message is None:
+        await callback.answer()
+        return
+    base_key = (callback.data or "").rsplit(":", 1)[-1]
+    base_options = {
+        "jeans": "джинсы и повседневный стиль (кэжуал)",
+        "dress": "платье или юбка",
+        "sport": "спортивный стиль или костюм",
+        "any": "на усмотрение стилиста, любой стиль",
+    }
+    if base_key not in base_options:
+        await callback.answer("Не поняла выбор. Попробуй ещё раз.", show_alert=True)
+        return
+    await callback.answer()
+    await callback.message.edit_text("✨ Подбираю для тебя образы…")
+    await generate_wardrobe_result(callback.message, state, base_options[base_key])
+
+
+@dispatcher.message(WardrobeStates.waiting_for_occasion, F.text)
+async def wardrobe_text_on_occasion(message: Message) -> None:
+    await message.answer(
+        "Выбери, пожалуйста, куда собираешься — просто нажми одну из кнопок 🌸",
+        reply_markup=wardrobe_occasion_keyboard(),
+    )
+
+
+@dispatcher.message(WardrobeStates.waiting_for_weather, F.text)
+async def wardrobe_text_on_weather(message: Message) -> None:
+    await message.answer(
+        "Выбери погоду кнопкой — так останется всего один шаг до образов ⛅",
+        reply_markup=wardrobe_weather_keyboard(),
+    )
+
+
+@dispatcher.message(WardrobeStates.waiting_for_base_item, F.text)
+async def process_wardrobe_base_text(message: Message, state: FSMContext) -> None:
+    base_item = (message.text or "").strip()
+    if not base_item:
+        await message.answer(
+            "Напиши вещь, которую хочешь взять за основу, или выбери вариант кнопкой 👚",
+            reply_markup=wardrobe_base_keyboard(),
+        )
+        return
+    await generate_wardrobe_result(message, state, base_item)
 
 
 @dispatcher.message(F.text)
