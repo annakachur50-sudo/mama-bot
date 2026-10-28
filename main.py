@@ -1862,6 +1862,13 @@ def analyze_radiance_photo_sync(image_bytes: bytes, mime_type: str = "image/jpeg
 
 def radiance_result_html(text: str) -> str:
     """Escape model output for Telegram HTML, then convert only supported Markdown bold markers."""
+    escaped = html.escape(text or "", quote=False)
+    escaped = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", escaped, flags=re.DOTALL)
+    return escaped.replace("**", "")
+
+
+def wardrobe_result_html(text: str) -> str:
+    """Format stylist output as safe Telegram HTML, allowing only bold and italic tags."""
     raw = (text or "").strip()
     if not raw:
         return ""
@@ -1889,6 +1896,8 @@ def radiance_result_html(text: str) -> str:
     safe = safe.replace("__WARDROBE_I__", "<i>")
     safe = safe.replace("__WARDROBE_CLOSE_I__", "</i>")
     return safe.strip()
+
+
 
 async def send_kids_intro(
     message: Message,
@@ -3907,7 +3916,7 @@ async def generate_wardrobe_result(
         await bot.send_chat_action(chat_id=message.chat.id, action="typing")
         result = await asyncio.to_thread(generate_wardrobe_outfits_sync, user_request)
         await message.answer(
-            radiance_result_html(result),
+            wardrobe_result_html(result),
             reply_markup=wardrobe_result_keyboard(),
             parse_mode=ParseMode.HTML,
         )
