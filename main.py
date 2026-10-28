@@ -221,7 +221,7 @@ support_sessions: dict[int, str] = {}
 # Ephemeral states only; no photo or message content is stored in analytics.
 class WardrobeStates(StatesGroup):
     waiting_for_occasion = State()
-    waiting_for_weather = State()
+    waiting_for_layer = State()
     waiting_for_base_item = State()
 
 
@@ -899,16 +899,16 @@ def analytics_button_info(callback_data: str) -> tuple[str, str]:
         "wardrobe:occ:work": ("radiance", "wardrobe_occasion_work"),
         "wardrobe:occ:date": ("radiance", "wardrobe_occasion_date"),
         "wardrobe:occ:home": ("radiance", "wardrobe_occasion_home"),
-        "wardrobe:wea:warm": ("radiance", "wardrobe_weather_warm"),
-        "wardrobe:wea:cool": ("radiance", "wardrobe_weather_cool"),
-        "wardrobe:wea:cold": ("radiance", "wardrobe_weather_cold"),
-        "wardrobe:wea:rain": ("radiance", "wardrobe_weather_rain"),
+        "wardrobe:layer:light": ("radiance", "wardrobe_layer_light"),
+        "wardrobe:layer:mid": ("radiance", "wardrobe_layer_mid"),
+        "wardrobe:layer:demi": ("radiance", "wardrobe_layer_demi"),
+        "wardrobe:layer:winter": ("radiance", "wardrobe_layer_winter"),
         "wardrobe:base:jeans": ("radiance", "wardrobe_base_jeans"),
         "wardrobe:base:dress": ("radiance", "wardrobe_base_dress"),
         "wardrobe:base:sport": ("radiance", "wardrobe_base_sport"),
         "wardrobe:base:any": ("radiance", "wardrobe_base_any"),
         "wardrobe:back:occasion": ("radiance", "wardrobe_back_occasion"),
-        "wardrobe:back:weather": ("radiance", "wardrobe_back_weather"),
+        "wardrobe:back:layer": ("radiance", "wardrobe_back_layer"),
         "radiance:retry": ("radiance", "retry_photo"),
         "radiance:cancel": ("radiance", "cancel"),
         "radiance:locked:wardrobe": ("radiance", "locked_wardrobe"),
@@ -1148,23 +1148,37 @@ RADIANCE_MENU_TEXT = (
 
 
 WARDROBE_STYLIST_PROMPT = """
-Ты — чуткий, современный персональный AI-стилист для мам.
-Твоя задача — составить 2–3 стильных, удобных и практичных комплекта одежды
-на основе запроса пользователя. Учитывай комфорт для мамы, актуальные тенденции
-и практичность.
+Ты — персональный AI-стилист. Составь 2–3 конкретных, стильных, удобных комплекта
+строго по параметрам пользователя. Обязательно используй выбранную основу образа
+и учитывай выбранный верхний слой. Не выдумывай, что пользователь владеет конкретными
+вещами: предлагай варианты сочетаний, которые можно заменить аналогами. Учитывай
+комфорт, практичность и доступность.
 
-Для каждого комплекта добавь:
-- основные вещи и способы их сочетания;
-- подходящую обувь и аксессуары;
-- верхнюю одежду с учётом указанной погоды;
-- простой лайфхак по сочетанию цветов.
+СТРОГО ЗАПРЕЩЕНО:
+1. Здороваться или обращаться с приветствием: никаких «Привет», «Здравствуйте»,
+«Приветствую» и подобных фраз.
+2. Писать вступления, пояснения до комплектов, заключительные фразы, вежливые
+предложения или общие лозунги. Никаких «С удовольствием помогу», «Выбирайте то,
+что откликается» и подобных фраз.
+3. Использовать Markdown-разметку и технические символы Markdown: решётки (#),
+звёздочки (*), обратные кавычки и строки-разделители из дефисов (---).
+4. Добавлять любой текст до первого комплекта или после последнего.
 
-Обязательно включай вещь, которую пользователь хочет видеть в образе.
-Не предполагай, что у неё есть вещи, о которых она не сообщала: предлагай
-разумные варианты и доступные замены. Не стыди за одежду, бюджет или фигуру.
-Если информации немного, всё равно предложи полезные комплекты, не устраивая
-длинный допрос. Тон вдохновляющий, поддерживающий, живой, с уместными эмодзи.
-Отвечай по-русски и сразу выдавай готовые комплекты.
+Первая строка ответа должна сразу начинаться с:
+<b>Комплект 1: Название образа с эмодзи</b>
+
+Выводи только 2–3 комплекта. Каждый комплект оформляй строго по шаблону ниже,
+меняя номер, название и конкретные рекомендации:
+
+<b>Комплект 1: Расслабленный шик ☕</b>
+• <b>Одежда:</b> конкретные вещи и сочетание.
+• <b>Обувь и детали:</b> обувь, сумка и аксессуары.
+• <b>Верхний слой:</b> вариант, соответствующий выбранному верхнему слою пользователя.
+• 💡 <b>Фишка образа:</b> один короткий практичный совет по цвету, пропорциям или комфорту.
+
+Между комплектами оставляй одну пустую строку. Используй для выделения ТОЛЬКО HTML-теги
+<b>жирный</b> и <i>курсив</i>. Не используй другие HTML-теги. Ответ должен быть визуально
+чистым, лёгким для чтения и полностью на русском языке.
 """
 
 
@@ -1179,12 +1193,12 @@ def wardrobe_occasion_keyboard() -> InlineKeyboardMarkup:
     ])
 
 
-def wardrobe_weather_keyboard() -> InlineKeyboardMarkup:
+def wardrobe_layer_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="☀️ Тепло", callback_data="wardrobe:wea:warm")],
-        [InlineKeyboardButton(text="🍂 Прохладно / Ветер", callback_data="wardrobe:wea:cool")],
-        [InlineKeyboardButton(text="❄️ Мороз / Зима", callback_data="wardrobe:wea:cold")],
-        [InlineKeyboardButton(text="🌧️ Слякоть / Дождь", callback_data="wardrobe:wea:rain")],
+        [InlineKeyboardButton(text="☀️ Налегке (без куртки / в помещении)", callback_data="wardrobe:layer:light")],
+        [InlineKeyboardButton(text="🧥 Лёгкий верх (тренч, косуха, джинсовка)", callback_data="wardrobe:layer:mid")],
+        [InlineKeyboardButton(text="🍂 Демисезон (пальто, тёплая куртка, ботинки)", callback_data="wardrobe:layer:demi")],
+        [InlineKeyboardButton(text="❄️ Зима / Мороз (пуховик, дублёнка, тёплая обувь)", callback_data="wardrobe:layer:winter")],
         [InlineKeyboardButton(text="↩️ Назад", callback_data="wardrobe:back:occasion")],
     ])
 
@@ -1195,7 +1209,7 @@ def wardrobe_base_keyboard() -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="👗 Платье или юбка", callback_data="wardrobe:base:dress")],
         [InlineKeyboardButton(text="🧥 Спортивный / Костюм", callback_data="wardrobe:base:sport")],
         [InlineKeyboardButton(text="✨ На твой вкус (любое)", callback_data="wardrobe:base:any")],
-        [InlineKeyboardButton(text="↩️ Назад", callback_data="wardrobe:back:weather")],
+        [InlineKeyboardButton(text="↩️ Назад", callback_data="wardrobe:back:layer")],
     ])
 
 
@@ -1848,9 +1862,33 @@ def analyze_radiance_photo_sync(image_bytes: bytes, mime_type: str = "image/jpeg
 
 def radiance_result_html(text: str) -> str:
     """Escape model output for Telegram HTML, then convert only supported Markdown bold markers."""
-    escaped = html.escape(text or "", quote=False)
-    escaped = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", escaped, flags=re.DOTALL)
-    return escaped.replace("**", "")
+    raw = (text or "").strip()
+    if not raw:
+        return ""
+
+    # Start directly at the first outfit, even if the model accidentally adds an intro.
+    heading = re.search(r"<b>\s*Комплект\s*1\s*:", raw, flags=re.IGNORECASE)
+    if not heading:
+        heading = re.search(r"Комплект\s*1\s*:", raw, flags=re.IGNORECASE)
+    if heading:
+        raw = raw[heading.start():]
+
+    # Preserve only permitted HTML tags and escape all other model-provided markup.
+    raw = re.sub(
+        r"<\s*(/?)\s*(b|i)\s*>",
+        lambda m: f"__WARDROBE_{'CLOSE_' if m.group(1) else ''}{m.group(2).upper()}__",
+        raw,
+        flags=re.IGNORECASE,
+    )
+    safe = html.escape(raw, quote=False)
+    safe = re.sub(r"(?m)^\s*#{1,6}\s*", "", safe)
+    safe = re.sub(r"(?m)^\s*-{3,}\s*$", "", safe)
+    safe = safe.replace("*", "").replace(chr(96), "")
+    safe = safe.replace("__WARDROBE_B__", "<b>")
+    safe = safe.replace("__WARDROBE_CLOSE_B__", "</b>")
+    safe = safe.replace("__WARDROBE_I__", "<i>")
+    safe = safe.replace("__WARDROBE_CLOSE_I__", "</i>")
+    return safe.strip()
 
 async def send_kids_intro(
     message: Message,
@@ -3784,14 +3822,14 @@ async def choose_wardrobe_occasion(callback: CallbackQuery, state: FSMContext) -
         return
     await callback.answer()
     await state.update_data(occasion=occasions[occasion_key])
-    await state.set_state(WardrobeStates.waiting_for_weather)
+    await state.set_state(WardrobeStates.waiting_for_layer)
     await callback.message.edit_text(
-        "Шаг 2 из 3: Какая погода за окном? ⛅",
-        reply_markup=wardrobe_weather_keyboard(),
+        "Шаг 2 из 3: В чём идёшь / какой верхний слой? 🧥",
+        reply_markup=wardrobe_layer_keyboard(),
     )
 
 
-@dispatcher.callback_query(F.data == "wardrobe:back:occasion", WardrobeStates.waiting_for_weather)
+@dispatcher.callback_query(F.data == "wardrobe:back:occasion", WardrobeStates.waiting_for_layer)
 async def wardrobe_back_to_occasion(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
     await state.set_state(WardrobeStates.waiting_for_occasion)
@@ -3802,23 +3840,23 @@ async def wardrobe_back_to_occasion(callback: CallbackQuery, state: FSMContext) 
         )
 
 
-@dispatcher.callback_query(F.data.startswith("wardrobe:wea:"), WardrobeStates.waiting_for_weather)
-async def choose_wardrobe_weather(callback: CallbackQuery, state: FSMContext) -> None:
+@dispatcher.callback_query(F.data.startswith("wardrobe:layer:"), WardrobeStates.waiting_for_layer)
+async def choose_wardrobe_layer(callback: CallbackQuery, state: FSMContext) -> None:
     if callback.message is None:
         await callback.answer()
         return
-    weather_key = (callback.data or "").rsplit(":", 1)[-1]
-    weather_options = {
-        "warm": "тёплая погода",
-        "cool": "прохладно и ветрено",
-        "cold": "морозная зимняя погода",
-        "rain": "дождь или слякоть",
+    layer_key = (callback.data or "").rsplit(":", 1)[-1]
+    layer_options = {
+        "light": "налегке, без куртки или в помещении",
+        "mid": "лёгкий верх: тренч, косуха или джинсовка",
+        "demi": "демисезон: пальто, тёплая куртка и ботинки",
+        "winter": "зима или мороз: пуховик, дублёнка и тёплая обувь",
     }
-    if weather_key not in weather_options:
+    if layer_key not in layer_options:
         await callback.answer("Не поняла выбор. Попробуй ещё раз.", show_alert=True)
         return
     await callback.answer()
-    await state.update_data(weather=weather_options[weather_key])
+    await state.update_data(layer=layer_options[layer_key])
     await state.set_state(WardrobeStates.waiting_for_base_item)
     await callback.message.edit_text(
         "Шаг 3 из 3: Что возьмём за основу? 👚\n\n"
@@ -3828,14 +3866,14 @@ async def choose_wardrobe_weather(callback: CallbackQuery, state: FSMContext) ->
     )
 
 
-@dispatcher.callback_query(F.data == "wardrobe:back:weather", WardrobeStates.waiting_for_base_item)
-async def wardrobe_back_to_weather(callback: CallbackQuery, state: FSMContext) -> None:
+@dispatcher.callback_query(F.data == "wardrobe:back:layer", WardrobeStates.waiting_for_base_item)
+async def wardrobe_back_to_layer(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
-    await state.set_state(WardrobeStates.waiting_for_weather)
+    await state.set_state(WardrobeStates.waiting_for_layer)
     if callback.message is not None:
         await callback.message.edit_text(
-            "Шаг 2 из 3: Какая погода за окном? ⛅",
-            reply_markup=wardrobe_weather_keyboard(),
+            "Шаг 2 из 3: В чём идёшь / какой верхний слой? 🧥",
+            reply_markup=wardrobe_layer_keyboard(),
         )
 
 
@@ -3846,9 +3884,9 @@ async def generate_wardrobe_result(
 ) -> None:
     data = await state.get_data()
     occasion = str(data.get("occasion", "")).strip()
-    weather = str(data.get("weather", "")).strip()
+    layer = str(data.get("layer", "")).strip()
     base_item = base_item.strip()
-    if not occasion or not weather or not base_item:
+    if not occasion or not layer or not base_item:
         await message.answer(
             "Потеряла один из выборов 🙈 Давай начнём сначала.",
             reply_markup=wardrobe_result_keyboard(),
@@ -3858,11 +3896,11 @@ async def generate_wardrobe_result(
 
     user_request = (
         f"Куда собирается пользователь: {occasion}.\n"
-        f"Погода: {weather}.\n"
+        f"Выбранный верхний слой: {layer}.\n"
         f"Основа образа или вещь, которую нужно использовать: {base_item}.\n\n"
         "Собери 2–3 готовых, стильных и удобных образа с учётом этих трёх параметров. "
-        "В каждом укажи одежду, обувь, аксессуары и верхнюю одежду по погоде. "
-        "Добавь короткий совет по сочетанию цветов и практичности."
+        "Соблюдай формат из системного промпта: одежда, обувь и детали, верхний слой, "
+        "одна короткая фишка образа. Не добавляй приветствия или вводные фразы."
     )
 
     try:
@@ -3917,11 +3955,11 @@ async def wardrobe_text_on_occasion(message: Message) -> None:
     )
 
 
-@dispatcher.message(WardrobeStates.waiting_for_weather, F.text)
-async def wardrobe_text_on_weather(message: Message) -> None:
+@dispatcher.message(WardrobeStates.waiting_for_layer, F.text)
+async def wardrobe_text_on_layer(message: Message) -> None:
     await message.answer(
-        "Выбери погоду кнопкой — так останется всего один шаг до образов ⛅",
-        reply_markup=wardrobe_weather_keyboard(),
+        "Выбери верхний слой кнопкой — так останется всего один шаг до образов 🧥",
+        reply_markup=wardrobe_layer_keyboard(),
     )
 
 
