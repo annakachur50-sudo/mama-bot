@@ -1065,6 +1065,12 @@ def split_response(text: str, limit: int = TELEGRAM_CHUNK_SIZE) -> list[str]:
     return chunks or [""]
 
 ADMIN_ID = 5267406602
+# Explicit allowlist for owner-only features. Render can override/add IDs via ADMIN_USER_IDS.
+ADMIN_USER_IDS = {
+    int(value.strip())
+    for value in os.getenv("ADMIN_USER_IDS", str(ADMIN_ID)).split(",")
+    if value.strip().isdigit()
+}
 LOG_CHANNEL_ID = -1004353307194
 
 async def send_channel_notification(
@@ -1249,10 +1255,15 @@ def generate_wardrobe_outfits_sync(user_request: str) -> str:
     return result
 
 
-def radiance_menu_keyboard() -> InlineKeyboardMarkup:
+def radiance_menu_keyboard(user_id: int | None = None) -> InlineKeyboardMarkup:
+    wardrobe_is_unlocked = user_id is not None and user_id in ADMIN_USER_IDS
+    wardrobe_button = InlineKeyboardButton(
+        text="👗 Собрать образы из шкафа" if wardrobe_is_unlocked else "👗 Собрать образы из шкафа 🔒",
+        callback_data="radiance:wardrobe:start" if wardrobe_is_unlocked else "radiance:locked:wardrobe",
+    )
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🌸 Подобрать мои оттенки (Бесплатно)", callback_data="radiance:undertones")],
-        [InlineKeyboardButton(text="👗 Собрать образы из шкафа", callback_data="radiance:wardrobe:start")],
+        [wardrobe_button],
         [InlineKeyboardButton(text="💄 Подобрать уход и косметику 🔒", callback_data="radiance:locked:care")],
         [InlineKeyboardButton(text="🛍️ Мне это подойдёт? 🔒", callback_data="radiance:locked:suitable")],
     ])
@@ -1792,7 +1803,7 @@ async def start_radiance_flow(message: Message, user_id: int) -> None:
     pending_kids_age.discard(user_id)
     support_sessions.pop(user_id, None)
     banner_id = random.choice(GLOW_BANNER_IDS)
-    markup = radiance_menu_keyboard()
+    markup = radiance_menu_keyboard(user_id)
     try:
         await bot.send_photo(
             message.chat.id,
@@ -2011,7 +2022,7 @@ async def cancel_radiance_selfie(callback: CallbackQuery) -> None:
     if callback.message is not None:
         await callback.message.answer(
             "Хорошо, разбор фото отменён 🌸",
-            reply_markup=radiance_menu_keyboard(),
+            reply_markup=radiance_menu_keyboard(callback.from_user.id),
         )
 
 
@@ -3791,6 +3802,15 @@ async def start_wardrobe_flow(
     callback: CallbackQuery,
     state: FSMContext,
 ) -> None:
+    if callback.from_user.id not in ADMIN_USER_IDS:
+        await callback.answer()
+        if callback.message is not None:
+            await callback.message.answer(
+                RADIANCE_LOCKED_CARDS["wardrobe"],
+                reply_markup=radiance_locked_keyboard("wardrobe"),
+                parse_mode=ParseMode.HTML,
+            )
+        return
     await callback.answer()
     if callback.message is None:
         return
@@ -3818,7 +3838,7 @@ async def cancel_wardrobe_flow(
     if callback.message is not None:
         await callback.message.edit_text(
             "Хорошо, вернёмся к выбору ✨",
-            reply_markup=radiance_menu_keyboard(),
+            reply_markup=radiance_menu_keyboard(callback.from_user.id),
         )
 
 
