@@ -49,6 +49,21 @@ VOICE_REPLY_INSTRUCTION = (
 )
 BANNER_PHOTO_ID = "AgACAgIAAxkBAAIIL2rQhiE0ysuGPvBGRKM2DGmuKm8SAALSGGsbTc2JSv_n8D26j6uhAQADAgADeQADPQQ"
 
+# Баннеры рубрики «Занять ребёнка»: показываем по очереди и начинаем заново после последнего.
+KIDS_BANNER_IDS = [
+    "AgACAgIAAxkBAAIM02rheXh25cJ_iWfOmoYobTvx_dMVAAKgIGsb7T0JS8zx66SojUXDAQADAgADdwADPQQ",
+    "AgACAgIAAxkBAAIM1WrheXiByggUMG-sO0sZtJJmu-SDAAKiIGsb7T0JS0brub_9Nq1FAQADAgADdwADPQQ",
+    "AgACAgIAAxkBAAIM0GrheXgV9ShIMaSPwKQ-l9TktjKCAAKdIGsb7T0JS3Oli2W4pjMfAQADAgADdwADPQQ",
+    "AgACAgIAAxkBAAIMzWrheXjVKZiAJ-ysaSr7_iPNuTi2AAKaIGsb7T0JSxXlnWFw4tfdAQADAgADdwADPQQ",
+    "AgACAgIAAxkBAAIMz2rheXi_yo1c1bpBxSz_VvjXqaeBAAKcIGsb7T0JS0VdTWAKYEF0AQADAgADdwADPQQ",
+    "AgACAgIAAxkBAAIM0WrheXjdEjXHe8k8sy_dARUAAWVUZwACniBrG-09CUs0tm5OkurqWwEAAwIAA3cAAz0E",
+    "AgACAgIAAxkBAAIMzGrheXhfGFrmRlHcmGfQXI84oZnPAAKZIGsb7T0JS-ikmXU22sQpAQADAgADdwADPQQ",
+    "AgACAgIAAxkBAAIMzmrheXg1EfZ4-e7PJ-2Xh10gLzs3AAKbIGsb7T0JS8XNQ4o1VhXmAQADAgADdwADPQQ",
+    "AgACAgIAAxkBAAIM0mrheXjj8IpjHLMii3bkkOzFKaLDAAKfIGsb7T0JS3IUPNY9yS8dAQADAgADdwADPQQ",
+    "AgACAgIAAxkBAAIM1GrheXgykpRdaqNxVjg7NhIpt2ikAAKhIGsb7T0JS2RYNnXLQg8mAQADAgADdwADPQQ",
+]
+kids_banner_index = 0
+
 # Горизонтальные баннеры Telegram. Позже сюда можно добавить несколько file_id на рубрику.
 BANNER_START = [BANNER_PHOTO_ID]  # стартовое приветствие
 
@@ -1731,6 +1746,35 @@ def radiance_result_html(text: str) -> str:
     escaped = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", escaped, flags=re.DOTALL)
     return escaped.replace("**", "")
 
+async def send_kids_intro(
+    message: Message,
+    caption: str,
+    reply_markup: InlineKeyboardMarkup | None = None,
+) -> None:
+    """Send the kids-section intro with the next banner, falling back to text if needed."""
+    global kids_banner_index
+    if not KIDS_BANNER_IDS:
+        await message.answer(caption, reply_markup=reply_markup, parse_mode=ParseMode.HTML)
+        return
+
+    banner_id = KIDS_BANNER_IDS[kids_banner_index % len(KIDS_BANNER_IDS)]
+    kids_banner_index = (kids_banner_index + 1) % len(KIDS_BANNER_IDS)
+    try:
+        await message.answer_photo(
+            photo=banner_id,
+            caption=caption,
+            reply_markup=reply_markup,
+            parse_mode=ParseMode.HTML,
+        )
+    except Exception as error:
+        logger.exception(
+            "Could not send kids intro banner (file_id ending %s): %s",
+            banner_id[-8:],
+            type(error).__name__,
+        )
+        await message.answer(caption, reply_markup=reply_markup, parse_mode=ParseMode.HTML)
+
+
 async def start_kids_flow(message: Message, user_id: int) -> None:
     radiance_states.pop(user_id, None)
     pending_kids_age.discard(user_id)
@@ -1744,16 +1788,22 @@ async def start_kids_flow(message: Message, user_id: int) -> None:
         )
         return
     if len(ages) == 1:
+        await send_kids_intro(
+            message,
+            "🧸 Сейчас подберу игру с учётом возраста ребёнка 🌿",
+        )
         await send_kids_activity(message, user_id, child_number=int(ages[0]["child_number"]))
         return
     if len(ages) > 1:
-        await message.answer(
+        await send_kids_intro(
+            message,
             "Кому подберём игру прямо сейчас? 🧸",
             reply_markup=kids_picker_keyboard(ages),
         )
         return
     pending_kids_age.add(user_id)
-    await message.answer(
+    await send_kids_intro(
+        message,
         "Сколько малышу лет или месяцев? Например: «8 месяцев» или «2 года». "
         "Я сохраню возраст в уже существующем профиле семьи и подберу безопасную игру на минутку 🌿",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
