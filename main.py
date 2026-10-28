@@ -15,6 +15,8 @@ import psycopg
 from aiogram import BaseMiddleware, Bot, Dispatcher, F
 from aiogram.enums import ParseMode
 from aiogram.filters import Command, CommandStart
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import (
     BotCommand,
     CallbackQuery,
@@ -217,6 +219,10 @@ SUPPORT_SCENARIOS = {
 }
 support_sessions: dict[int, str] = {}
 # Ephemeral states only; no photo or message content is stored in analytics.
+class WardrobeStates(StatesGroup):
+    waiting_for_request = State()
+
+
 radiance_states: dict[int, str] = {}
 pending_kids_age: set[int] = set()
 SUPPORT_STYLE = (
@@ -884,6 +890,8 @@ def analytics_button_info(callback_data: str) -> tuple[str, str]:
         "menu_plan": ("plan", "menu_plan"), "menu_support": ("support", "menu_support"),
         "menu_radiance": ("radiance", "menu_radiance"), "menu_kids": ("kids", "menu_kids"),
         "radiance:undertones": ("radiance", "undertones"),
+        "radiance:wardrobe:start": ("radiance", "wardrobe_start"),
+        "radiance:wardrobe:cancel": ("radiance", "wardrobe_cancel"),
         "radiance:retry": ("radiance", "retry_photo"),
         "radiance:cancel": ("radiance", "cancel"),
         "radiance:locked:wardrobe": ("radiance", "locked_wardrobe"),
@@ -1114,16 +1122,75 @@ async def cmd_stats(message: Message) -> None:
 
 
 RADIANCE_MENU_TEXT = (
-    "✨ <b>Моё сияние</b>\n\n"
     "Твой личный AI-стилист и бьюти-помощник ✨\n"
-    "Начнём с бесплатной ориентировочной палитры цветов. Остальные возможности пока закрыты."
+    "Начнём с бесплатной ориентировочной палитры цветов. "
+    "Остальные возможности пока закрыты."
 )
+
+
+
+
+WARDROBE_STYLIST_PROMPT = """
+Ты — чуткий, современный персональный AI-стилист для мам.
+Твоя задача — составить 2–3 стильных, удобных и практичных комплекта одежды
+на основе запроса пользователя. Учитывай комфорт для мамы, актуальные тенденции
+и практичность.
+
+Для каждого комплекта добавь:
+- основные вещи и способы их сочетания;
+- подходящую обувь и аксессуары;
+- верхнюю одежду с учётом указанной погоды;
+- простой лайфхак по сочетанию цветов.
+
+Обязательно включай вещь, которую пользователь хочет видеть в образе.
+Не предполагай, что у неё есть вещи, о которых она не сообщала: предлагай
+разумные варианты и доступные замены. Не стыди за одежду, бюджет или фигуру.
+Если информации немного, всё равно предложи полезные комплекты, не устраивая
+длинный допрос. Тон вдохновляющий, поддерживающий, живой, с уместными эмодзи.
+Отвечай по-русски и сразу выдавай готовые комплекты.
+"""
+
+
+def wardrobe_request_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(
+            text="↩️ Назад в меню",
+            callback_data="radiance:wardrobe:cancel",
+        )],
+    ])
+
+
+def wardrobe_result_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(
+            text="👗 Собрать ещё образ",
+            callback_data="radiance:wardrobe:start",
+        )],
+        [InlineKeyboardButton(
+            text="✨ В меню сияния",
+            callback_data="menu_radiance",
+        )],
+    ])
+
+
+def generate_wardrobe_outfits_sync(user_request: str) -> str:
+    response = client.models.generate_content(
+        model=GEMINI_MODEL,
+        contents=user_request,
+        config=types.GenerateContentConfig(
+            system_instruction=WARDROBE_STYLIST_PROMPT,
+        ),
+    )
+    result = (response.text or "").strip()
+    if not result:
+        raise ValueError("Gemini returned an empty wardrobe response")
+    return result
 
 
 def radiance_menu_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🌸 Подобрать мои оттенки (Бесплатно)", callback_data="radiance:undertones")],
-        [InlineKeyboardButton(text="👗 Собрать образы из шкафа 🔒", callback_data="radiance:locked:wardrobe")],
+        [InlineKeyboardButton(text="👗 Собрать образы из шкафа", callback_data="radiance:wardrobe:start")],
         [InlineKeyboardButton(text="💄 Подобрать уход и косметику 🔒", callback_data="radiance:locked:care")],
         [InlineKeyboardButton(text="🛍️ Мне это подойдёт? 🔒", callback_data="radiance:locked:suitable")],
     ])
@@ -3620,6 +3687,89 @@ async def handle_reset_me(message: Message) -> None:
         "Отправь /start, чтобы проверить запуск как для нового пользователя.",
         reply_markup=MENU_KEYBOARD,
     )
+
+
+
+
+@dispatcher.callback_query(F.data == "radiance:wardrobe:start")
+async def start_wardrobe_flow(
+    callback: CallbackQuery,
+    state: FSMContext,
+) -> None:
+    await callback.answer()
+    if callback.message is None:
+        return
+
+    user_id = callback.from_user.id
+    radiance_states.pop(user_id, None)
+    pending_kids_age.discard(user_id)
+    support_sessions.pop(user_id, None)
+    await state.set_state(WardrobeStates.waiting_for_request)
+
+    await callback.message.answer(
+        "👗 <b>Давай соберём для тебя классный образ!</b>\n\n"
+        "Напиши мне прямо сейчас:\n"
+        "1. <b>Куда собираешься?</b> "
+        "(на прогулку с ребёнком, на встречу, свидание, работа)\n"
+        "2. <b>Какая погода?</b> (тепло, прохладно, сильный мороз)\n"
+        "3. <b>Какая вещь обязательно должна быть в образе?</b> "
+        "(например: <i>любимые синие джинсы</i>, <i>длинное пальто</i> "
+        "или <i>вязаный свитер</i>)\n\n"
+        "Можешь написать всё своими словами одним сообщением 👇",
+        reply_markup=wardrobe_request_keyboard(),
+        parse_mode=ParseMode.HTML,
+    )
+
+
+@dispatcher.callback_query(F.data == "radiance:wardrobe:cancel")
+async def cancel_wardrobe_flow(
+    callback: CallbackQuery,
+    state: FSMContext,
+) -> None:
+    await callback.answer()
+    await state.clear()
+    if callback.message is not None:
+        await callback.message.answer(
+            "Хорошо, вернёмся к выбору ✨",
+            reply_markup=radiance_menu_keyboard(),
+        )
+
+
+@dispatcher.message(WardrobeStates.waiting_for_request, F.text)
+async def process_wardrobe_request(
+    message: Message,
+    state: FSMContext,
+) -> None:
+    user_request = (message.text or "").strip()
+    if not user_request:
+        await message.answer(
+            "Напиши, пожалуйста, куда собираешься, какая погода и какую вещь хочешь включить в образ.",
+            reply_markup=wardrobe_request_keyboard(),
+        )
+        return
+
+    try:
+        await bot.send_chat_action(chat_id=message.chat.id, action="typing")
+        result = await asyncio.to_thread(generate_wardrobe_outfits_sync, user_request)
+        await message.answer(
+            radiance_result_html(result),
+            reply_markup=wardrobe_result_keyboard(),
+            parse_mode=ParseMode.HTML,
+        )
+    except asyncio.CancelledError:
+        raise
+    except Exception as error:
+        logger.warning(
+            "Wardrobe outfit generation failed (%s)",
+            type(error).__name__,
+        )
+        await message.answer(
+            "Не получилось собрать образы прямо сейчас 🙈 "
+            "Попробуй отправить запрос ещё раз чуть позже.",
+            reply_markup=wardrobe_result_keyboard(),
+        )
+    finally:
+        await state.clear()
 
 
 @dispatcher.message(F.text)
