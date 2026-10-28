@@ -3746,7 +3746,7 @@ async def start_wardrobe_flow(
     await state.clear()
     await state.set_state(WardrobeStates.waiting_for_occasion)
 
-    await callback.message.edit_text(
+    await callback.message.answer(
         "Шаг 1 из 3: Куда собираешься? 🌸",
         reply_markup=wardrobe_occasion_keyboard(),
     )
