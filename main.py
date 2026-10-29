@@ -3974,18 +3974,17 @@ def wardrobe_palette_header(palette_context: str | None) -> str:
     """Build a compact, HTML-safe confirmation of the palette used for wardrobe styling."""
     if not palette_context:
         return (
-            "🎨 <b>Подобрано в базовой гармоничной палитре</b> ✨\\n"
-            "<i>(Пройди разбор палитры по фото, чтобы образы строились под твою внешность)</i>\\n\\n"
+            "🎨 <b>Подобрано в базовой гармоничной палитре</b> ✨\n"
+            "<i>(Пройди разбор палитры по фото, чтобы образы строились под твою внешность)</i>\n\n"
         )
 
     summary = re.sub(r"<[^>]*>", " ", palette_context)
     summary = re.sub(r"[*_`]+", "", summary)
-    summary = re.sub(r"\\s+", " ", summary).strip()
+    summary = re.sub(r"\s+", " ", summary).strip()
     if len(summary) > 220:
         summary = summary[:217].rsplit(" ", 1)[0].rstrip(" ,;:") + "…"
     safe_summary = html.escape(summary, quote=False)
-    return f"🎨 <b>Подобрано под твою палитру:</b> <i>{safe_summary}</i> ✨\\n\\n"
-
+    return f"🎨 <b>Подобрано под твою палитру:</b> <i>{safe_summary}</i> ✨\n\n"
 
 async def generate_wardrobe_result(
     message: Message,
