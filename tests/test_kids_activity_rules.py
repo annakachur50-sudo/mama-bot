@@ -219,6 +219,10 @@ class KidsAgeRulesTests(unittest.TestCase):
 
     def test_game_result_navigation_is_profile_backed(self):
         self.assertIn('callback_data="kids:again:all" if joint else f"kids:again:{current_child_number}"', SOURCE)
+        self.assertIn('text="🔄 Ещё вариант"', SOURCE)
+        self.assertIn('text="👶 Сменить возраст"', SOURCE)
+        self.assertIn('callback_data="kids:choose_age"', SOURCE)
+        self.assertIn('@dispatcher.callback_query(F.data == "kids:choose_age")', SOURCE)
         self.assertIn('callback_data=f"kids:child:{child_number}"', SOURCE)
         self.assertIn('text="🤝 Игра для всех"', SOURCE)
         self.assertIn('text="🏠 В главное меню"', SOURCE)
