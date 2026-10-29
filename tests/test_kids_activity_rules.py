@@ -119,7 +119,7 @@ class KidsAgeRulesTests(unittest.TestCase):
         start = SOURCE.index("async def kids_activity_for_age(")
         end = SOURCE.index("\n\nasync def kids_joint_activity(", start)
         single = SOURCE[start:end]
-        self.assertIn("kids_activity_fallback(age, excluded_ids=excluded)", single)
+        self.assertIn("kids_activity_fallback(age, excluded_ids=excluded, previous=previous)", single)
         self.assertNotIn('f"🎨 «Три цвета»', single)
 
     def test_radiance_status_precedes_vision_call_and_handles_result(self):
@@ -441,7 +441,7 @@ class KidsDuplicateGuardTests(unittest.TestCase):
         start = source.index("async def kids_activity_for_age(")
         end = source.index("\\n\\nasync def kids_joint_activity(", start)
         handler = source[start:end]
-        self.assertIn("kids_activity_fallback(age, excluded_ids=excluded)", handler)
+        self.assertIn("kids_activity_fallback(age, excluded_ids=excluded, previous=previous)", handler)
         self.assertNotIn('f"🎨 «Три цвета» ({format_child_age(age)})', handler)
 
 if __name__ == "__main__":
