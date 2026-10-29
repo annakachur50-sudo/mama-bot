@@ -789,6 +789,40 @@ def _analytics_connect():
     connection.execute("SET statement_timeout = '2500ms'")
     return connection
 
+
+def save_radiance_palette_sync(telegram_user_id: int, palette_summary: str) -> None:
+    """Persist the text palette recommendations; never store the selfie itself."""
+    if not palette_summary.strip():
+        return
+    with _analytics_connect() as connection:
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS public.user_radiance_palettes (
+                telegram_user_id BIGINT PRIMARY KEY,
+                palette_summary TEXT NOT NULL,
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+            )
+        """)
+        connection.execute("""
+            INSERT INTO public.user_radiance_palettes
+                (telegram_user_id, palette_summary, updated_at)
+            VALUES (%s, %s, now())
+            ON CONFLICT (telegram_user_id) DO UPDATE SET
+                palette_summary = EXCLUDED.palette_summary,
+                updated_at = now()
+        """, (telegram_user_id, palette_summary[:12000]))
+
+
+def load_radiance_palette_sync(telegram_user_id: int) -> str | None:
+    """Return a saved palette summary, or None if the user has not completed selfie analysis."""
+    with _analytics_connect() as connection:
+        connection.execute("SET statement_timeout = '2500ms'")
+        row = connection.execute("""
+            SELECT palette_summary
+            FROM public.user_radiance_palettes
+            WHERE telegram_user_id = %s
+        """, (telegram_user_id,)).fetchone()
+    return str(row[0]).strip() if row and row[0] else None
+
 def _register_user_sync(telegram_user_id: int, username: str | None, display_name: str | None) -> None:
     with _analytics_connect() as connection:
         connection.execute("""
@@ -1156,8 +1190,15 @@ RADIANCE_MENU_TEXT = (
 WARDROBE_STYLIST_PROMPT = """
 Ты — персональный AI-стилист. Составь РОВНО 2 конкретных, стильных и удобных комплекта
 по параметрам пользователя. Обязательно используй выбранную основу образа и учитывай
-выбранный верхний слой. Не утверждай, что у пользователя уже есть конкретные вещи:
-предлагай сочетания и допускай замену аналогами. Учитывай комфорт, практичность и сезон.
+выбранный верхний слой. Если пользователь назвал конкретную вещь из своего шкафа текстом
+(например, «бордовый оверсайз свитер», «кожаные леггинсы», «зелёный свитер» или «серое пальто»),
+сделай именно эту вещь главным центром ОБОИХ комплектов: сохрани её цвет, тип и характер,
+а остальные элементы подбирай простыми, базовыми и легко сочетаемыми, чтобы вещь была главным
+акцентом. Не заменяй её другой вещью и не теряй конкретику. Не утверждай, что у пользователя
+есть другие вещи: предлагай сочетания и допускай замену аналогами только для дополнений.
+Учитывай комфорт, практичность и сезон. Если сохранённая цветовая палитра пользователя передана
+в контексте, обязательно согласуй с ней цвета одежды и акцентов; если палитры нет, используй
+универсальные гармоничные природные сочетания.
 
 СТРОГО СОБЛЮДАЙ ПРАВИЛА:
 1. Не здоровайся, не пиши вступлений, пояснений перед комплектами и заключений после них.
@@ -1220,10 +1261,10 @@ def wardrobe_layer_keyboard() -> InlineKeyboardMarkup:
 
 def wardrobe_base_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="👖 Джинсы / Кэжуал", callback_data="wardrobe:base:jeans")],
-        [InlineKeyboardButton(text="👗 Платье или юбка", callback_data="wardrobe:base:dress")],
-        [InlineKeyboardButton(text="🧥 Спортивный / Костюм", callback_data="wardrobe:base:sport")],
-        [InlineKeyboardButton(text="✨ На твой вкус (любое)", callback_data="wardrobe:base:any")],
+        [InlineKeyboardButton(text="👖 Джинсы / Брюки", callback_data="wardrobe:base:jeans")],
+        [InlineKeyboardButton(text="👗 Платье / Юбка", callback_data="wardrobe:base:dress")],
+        [InlineKeyboardButton(text="🧶 Уютный трикотаж / Костюм", callback_data="wardrobe:base:sport")],
+        [InlineKeyboardButton(text="✨ На твой вкус (собери с нуля)", callback_data="wardrobe:base:any")],
         [InlineKeyboardButton(text="↩️ Назад", callback_data="wardrobe:back:layer")],
     ])
 
@@ -1241,12 +1282,21 @@ def wardrobe_result_keyboard() -> InlineKeyboardMarkup:
     ])
 
 
-def generate_wardrobe_outfits_sync(user_request: str) -> str:
+def generate_wardrobe_outfits_sync(user_request: str, palette_context: str | None = None) -> str:
+    system_instruction = WARDROBE_STYLIST_PROMPT
+    if palette_context:
+        system_instruction += (
+            "\n\nПЕРСОНАЛЬНАЯ ЦВЕТОВАЯ ПАЛИТРА ПОЛЬЗОВАТЕЛЯ:\n"
+            + palette_context
+            + "\nОбязательно подбирай палитру комплектов и акценты комплементарно сохранённым "
+            "оттенкам. Не объявляй сезонный цветотип, если он не был достоверно определён; "
+            "используй только сохранённые рекомендации по цветам."
+        )
     response = client.models.generate_content(
         model=GEMINI_MODEL,
         contents=user_request,
         config=types.GenerateContentConfig(
-            system_instruction=WARDROBE_STYLIST_PROMPT,
+            system_instruction=system_instruction,
         ),
     )
     result = (response.text or "").strip()
@@ -1258,7 +1308,7 @@ def generate_wardrobe_outfits_sync(user_request: str) -> str:
 def radiance_menu_keyboard(user_id: int | None = None) -> InlineKeyboardMarkup:
     wardrobe_is_unlocked = user_id is not None and user_id in ADMIN_USER_IDS
     wardrobe_button = InlineKeyboardButton(
-        text="👗 Собрать образы из шкафа" if wardrobe_is_unlocked else "👗 Собрать образы из шкафа 🔒",
+        text="👗 Стильный образ на сегодня" if wardrobe_is_unlocked else "👗 Стильный образ на сегодня 🔒",
         callback_data="radiance:wardrobe:start" if wardrobe_is_unlocked else "radiance:locked:wardrobe",
     )
     return InlineKeyboardMarkup(inline_keyboard=[
@@ -1271,9 +1321,9 @@ def radiance_menu_keyboard(user_id: int | None = None) -> InlineKeyboardMarkup:
 
 RADIANCE_LOCKED_CARDS = {
     "wardrobe": (
-        "👗 <b>Образы из твоего шкафа</b>\n\n"
-        "В будущем помощник сможет помогать сочетать вещи, собирать комплекты под разные случаи "
-        "и находить новые комбинации из того, что у тебя уже есть."
+        "👗 <b>Стильный образ на сегодня</b>\n\n"
+        "Персональный AI-стилист поможет подобрать сочетания под разные случаи, "
+        "отталкиваясь от твоей вещи и цветовой палитры."
     ),
     "care": (
         "💄 <b>Уход и косметика</b>\n\n"
@@ -2207,6 +2257,10 @@ async def handle_admin_photo(message: Message) -> None:
                 asyncio.to_thread(analyze_radiance_photo_sync, image_bytes, "image/jpeg"),
                 timeout=35,
             )
+            try:
+                await asyncio.to_thread(save_radiance_palette_sync, user_id, result)
+            except Exception as save_error:
+                logger.warning("Could not save radiance palette (%s)", type(save_error).__name__)
             formatted_result = radiance_result_html(result)
             try:
                 await status_message.edit_text(
@@ -3894,13 +3948,14 @@ async def choose_wardrobe_layer(callback: CallbackQuery, state: FSMContext) -> N
         await callback.answer("Не поняла выбор. Попробуй ещё раз.", show_alert=True)
         return
     await callback.answer()
-    await state.update_data(layer=layer_options[layer_key])
+    await state.update_data(layer=layer_options[layer_key], base_item_is_custom=False)
     await state.set_state(WardrobeStates.waiting_for_base_item)
     await callback.message.edit_text(
-        "Шаг 3 из 3: Что возьмём за основу? 👚\n\n"
-        "Можешь выбрать вариант кнопкой или написать свою вещь сообщением — например, "
-        "«длинное пальто» или «любимые синие джинсы».",
+        "<b>Шаг 3 из 3: Какую вещь из шкафа возьмём за основу? 👚</b>\n\n"
+        "Выбери базовую категорию кнопкой или <b>напиши текстом свою конкретную вещь</b> "
+        "(например: <i>кожаные леггинсы</i>, <i>зелёный свитер</i>, <i>серое пальто</i>) 👇",
         reply_markup=wardrobe_base_keyboard(),
+        parse_mode=ParseMode.HTML,
     )
 
 
@@ -3932,13 +3987,34 @@ async def generate_wardrobe_result(
         await state.clear()
         return
 
+    user_id = message.from_user.id if message.from_user is not None else 0
+    is_custom_item = bool(data.get("base_item_is_custom", False))
+    palette_context = None
+    try:
+        palette_context = await asyncio.to_thread(load_radiance_palette_sync, user_id)
+    except Exception as error:
+        logger.warning("Could not load saved radiance palette (%s)", type(error).__name__)
+
+    item_instruction = (
+        "Это конкретная вещь пользователя. Сделай её главным центром обоих комплектов; "
+        "сохрани её цвет, тип и характер. Остальные элементы — простые базовые дополнения."
+        if is_custom_item
+        else "Это выбранная базовая категория; собери два гармоничных варианта вокруг неё."
+    )
     user_request = (
         f"Куда собирается пользователь: {occasion}.\n"
         f"Выбранный верхний слой: {layer}.\n"
-        f"Основа образа или вещь, которую нужно использовать: {base_item}.\n\n"
-        "Собери 2–3 готовых, стильных и удобных образа с учётом этих трёх параметров. "
-        "Соблюдай формат из системного промпта: одежда, обувь и детали, верхний слой, "
-        "одна короткая фишка образа. Не добавляй приветствия или вводные фразы."
+        f"Основа образа или вещь, которую нужно использовать: {base_item}.\n"
+        f"Инструкция по основе: {item_instruction}\n\n"
+        + (
+            f"Сохранённая цветовая палитра пользователя из анализа селфи:\n{palette_context}\n\n"
+            "Обязательно согласуй палитру комплектов и акцентов с сохранёнными оттенками.\n\n"
+            if palette_context
+            else "Сохранённая цветовая палитра не найдена. Используй универсальные гармоничные природные сочетания.\n\n"
+        )
+        + "Собери ровно 2 готовых, стильных и удобных комплекта с учётом этих параметров. "
+        "Соблюдай формат из системного промпта: формула через +, палитра с цветными кружочками, "
+        "короткие детали одежды, обуви и верхнего слоя, один акцент. Не добавляй приветствия или вводные фразы."
     )
 
     try:
@@ -3972,15 +4048,16 @@ async def choose_wardrobe_base(callback: CallbackQuery, state: FSMContext) -> No
         return
     base_key = (callback.data or "").rsplit(":", 1)[-1]
     base_options = {
-        "jeans": "джинсы и повседневный стиль (кэжуал)",
+        "jeans": "джинсы или брюки",
         "dress": "платье или юбка",
-        "sport": "спортивный стиль или костюм",
-        "any": "на усмотрение стилиста, любой стиль",
+        "sport": "уютный трикотаж или костюм",
+        "any": "собери с нуля на свой вкус",
     }
     if base_key not in base_options:
         await callback.answer("Не поняла выбор. Попробуй ещё раз.", show_alert=True)
         return
     await callback.answer()
+    await state.update_data(base_item_is_custom=False)
     await callback.message.edit_text("✨ Подбираю для тебя образы…")
     await generate_wardrobe_result(callback.message, state, base_options[base_key])
 
@@ -4010,6 +4087,7 @@ async def process_wardrobe_base_text(message: Message, state: FSMContext) -> Non
             reply_markup=wardrobe_base_keyboard(),
         )
         return
+    await state.update_data(base_item_is_custom=True)
     await generate_wardrobe_result(message, state, base_item)
 
 
