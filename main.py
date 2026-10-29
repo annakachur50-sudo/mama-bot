@@ -909,6 +909,8 @@ def analytics_button_info(callback_data: str) -> tuple[str, str]:
         return "kids", "switch_child"
     if callback_data.startswith("kids:again:"):
         return "kids", "another_game"
+    if callback_data == "kids:choose_age":
+        return "kids", "choose_age"
     if callback_data == "kids:joint":
         return "kids", "joint_game"
     if callback_data.startswith("family_age:"):
@@ -1378,9 +1380,10 @@ def kids_result_keyboard(
         same_age_counts[months] = same_age_counts.get(months, 0) + 1
     same_age_seen: dict[int, int] = {}
     rows = [[InlineKeyboardButton(
-        text="🎲 Другая игра",
+        text="🔄 Ещё вариант",
         callback_data="kids:again:all" if joint else f"kids:again:{current_child_number}",
     )]]
+    rows.append([InlineKeyboardButton(text="👶 Сменить возраст", callback_data="kids:choose_age")])
     for age in ordered:
         child_number = int(age["child_number"])
         months = kids_age_months(age)
@@ -1448,6 +1451,26 @@ def kids_activity_short_id(activity: str) -> str:
     title = title_match.group(1) if title_match else first_line
     identifier = re.sub(r"[^a-zа-яё0-9]+", "-", title.casefold()).strip("-")
     return identifier[:48] or "activity"
+
+
+def kids_activity_is_duplicate(activity: str, previous: str | None) -> bool:
+    """Reject a repeated title or identical activity body, even if the title changed."""
+    if not activity or not previous:
+        return False
+    if kids_activity_short_id(activity) == kids_activity_short_id(previous):
+        return True
+
+    def normalized_body(value: str) -> str:
+        lines = (value or "").strip().splitlines()
+        # Titles may be cosmetically changed; compare the actual instructions too.
+        body = "\n".join(lines[1:]) if len(lines) > 1 else value
+        body = re.sub(r"</?b>|</?i>|</?tg-spoiler>", "", body, flags=re.IGNORECASE)
+        body = re.sub(r"\s+", " ", body.casefold()).strip()
+        return re.sub(r"[^a-zа-яё0-9]+", " ", body).strip()
+
+    current_body = normalized_body(activity)
+    previous_body = normalized_body(previous)
+    return bool(current_body and current_body == previous_body)
 
 
 def kids_next_activity_category(
@@ -1533,8 +1556,9 @@ def kids_picker_keyboard(ages: list[dict]) -> InlineKeyboardMarkup:
                 callback_data=f"kids:child:{age['child_number']}",
             )
         ])
-    joint_label = "🤝 Общая игра для двоих" if len(ages) == 2 else "🤝 Общая игра для всех"
-    buttons.append([InlineKeyboardButton(text=joint_label, callback_data="kids:joint")])
+    if len(ages) > 1:
+        joint_label = "🤝 Общая игра для двоих" if len(ages) == 2 else "🤝 Общая игра для всех"
+        buttons.append([InlineKeyboardButton(text=joint_label, callback_data="kids:joint")])
     buttons.append([InlineKeyboardButton(text="↩️ Назад в меню", callback_data="kids:cancel_age")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
@@ -1545,18 +1569,57 @@ KIDS_TEEN_FALLBACKS = [
 ]
 
 
-def kids_activity_fallback(age: dict) -> str:
+def kids_activity_fallback(
+    age: dict,
+    excluded_ids: set[str] | None = None,
+    previous: str | None = None,
+) -> str:
+    """Choose a safe age-matched fallback, rotating away from recent titles and bodies."""
     months = kids_age_months(age)
     if months >= 156:
-        return random.choice(KIDS_TEEN_FALLBACKS)
-    if months >= 120:
-        return random.choice([
+        candidates = list(KIDS_TEEN_FALLBACKS)
+    elif months >= 120:
+        candidates = [
             "🕵️ Предложи ребёнку логический детектив.\n\nСпроси: «У Ани, Бори и Вики по одному питомцу: кот, рыбка или попугай. У Ани кот. У Бори не рыбка. У Вики не попугай. Кто у кого?» Попроси объяснить решение, не угадывая наугад.\n\n💡 Отгадка для мамы: у Ани кот, у Бори попугай, у Вики рыбка.",
             "🔐 Предложи ребёнку словесный челлендж.\n\nСкажи: «Зашифруй моё имя, заменив каждую букву следующей буквой русского алфавита, и дай мне разгадать». Заранее договоритесь, считать ли «ё» отдельной буквой.",
             "🎯 Устрой викторину наоборот.\n\nПредложи ребёнку выбрать тему и придумать три вопроса разной сложности, а затем ответьте друг другу и вместе проверьте спорные факты."
-        ])
-    pool_key = "baby" if months < 18 else "toddler" if months < 60 else "preschool" if months < 120 else "older"
-    return re.sub(r"</?b>", "", random.choice(KIDS_ACTIVITY_POOLS[pool_key]))
+        ]
+    else:
+        pool_key = "baby" if months < 18 else "toddler" if months < 60 else "preschool" if months < 120 else "older"
+        candidates = list(KIDS_ACTIVITY_POOLS[pool_key])
+
+    def make_card(candidate: str) -> str:
+        cleaned = re.sub(r"</?b>", "", candidate)
+        lines = cleaned.splitlines()
+        first_line = lines[0].strip() if lines else ""
+        title_match = re.search(r"«([^»]{1,100})»", first_line)
+        if title_match:
+            emoji = first_line.split("«", 1)[0].strip() or "🎯"
+            lines[0] = f"{emoji} «{title_match.group(1)}» ({format_child_age(age)})"
+        else:
+            emoji_match = re.match(r"^([^\w\s]{1,4})", first_line)
+            emoji = emoji_match.group(1) if emoji_match else "🎯"
+            title = re.sub(r"^[^\wА-Яа-яЁё]+", "", first_line).strip().rstrip(".")
+            title = re.sub(
+                r"^(предложи подростку|предложи ребёнку|предложи ребенку|предложи|загадай подростку|устрой)\s+",
+                "",
+                title,
+                flags=re.IGNORECASE,
+            )
+            title = title[:70] or "Новый челлендж"
+            lines[0] = f"{emoji} «{title}» ({format_child_age(age)})"
+        return "\n".join(lines)
+
+    cards = [make_card(candidate) for candidate in candidates]
+    excluded = excluded_ids or set()
+    available = [
+        card for card in cards
+        if kids_activity_short_id(card) not in excluded
+        and not kids_activity_is_duplicate(card, previous)
+    ]
+    # Every pool has several choices; if all have been seen, choose the least-bad safe option.
+    selected = random.choice(available or cards)
+    return selected
 
 
 def format_kids_activity_html(text: str, age_caption: str) -> str:
@@ -1680,7 +1743,9 @@ def generate_kids_activity_sync(
         "которую мама может сразу произнести или переслать ребёнку; обязательно заключи эту реплику в «ёлочки». "
         "Последний короткий абзац — только если полезно: как продолжить интерес. Не пиши разделы «Что понадобится», "
         "«Формат участия», «Правила по шагам», «Как понять, что игра закончена». "
-        "Используй точный возраст каждого участника и не теряй возраст при выборе кнопки.\n\n"
+        "Используй точный возраст каждого участника и не теряй возраст при выборе кнопки. "
+        "После заголовка укажи примерное время с ⏱; предметы перечисляй кратко с 🧺 только если они нужны. "
+        "Затем коротко объясни идею для взрослого и дай готовую реплику с 🗣, которую мама может произнести или переслать.\n\n"
         + "\n".join(age_lines)
         + "\n\nОдна выбранная категория для этого занятия: "
         + (f"{category[1]} — {category[2]}" if category else "выбери наиболее подходящую возрасту из шести категорий")
@@ -1721,7 +1786,7 @@ def generate_kids_activity_sync(
         attempt_prompt = prompt
         if attempt:
             attempt_prompt += (
-                "\n\nИСПРАВЬ ПРЕДЫДУЩИЙ ВАРИАНТ. Ошибка проверки отгадки: "
+                "\n\nИСПРАВЬ ПРЕДЫДУЩИЙ ВАРИАНТ. Причина повторной попытки: "
                 + last_error
                 + ". Перепиши загадку целиком так, чтобы ответ однозначно следовал из условия. "
                 "Отгадка — одно утвердительное предложение до 15 слов, без альтернатив, сомнений, скобок "
@@ -1734,6 +1799,8 @@ def generate_kids_activity_sync(
         )
         activity = (response.text or "").strip()
         last_error = kids_activity_answer_error(activity)
+        if last_error is None and kids_activity_is_duplicate(activity, previous):
+            last_error = "повтор предыдущей идеи"
         if last_error is None:
             return activity
     raise KidsActivityValidationError(
@@ -1756,18 +1823,19 @@ async def kids_activity_for_age(age: dict, user_id: int | None = None) -> str:
     except asyncio.CancelledError:
         raise
     except KidsActivityValidationError as error:
-        logger.warning("Kids activity answer validation failed (%s); using a non-riddle fallback", type(error).__name__)
-        activity = (
-            f"🎨 «Три цвета» ({format_child_age(age)})\n"
-            "Предложи ребёнку нарисовать необычный дом, используя три цвета. "
-            "Попроси придумать дому название."
-        )
+        logger.warning("Kids activity answer validation failed (%s); using a rotated safe fallback", type(error).__name__)
+        excluded = {kids_activity_short_id(previous)} if previous else set()
+        activity = kids_activity_fallback(age, excluded_ids=excluded, previous=previous)
     except Exception as error:
         logger.warning("Kids Gemini generation failed (%s); using age-appropriate fallback", type(error).__name__)
-        activity = kids_activity_fallback(age) + (
+        excluded = {kids_activity_short_id(previous)} if previous else set()
+        activity = kids_activity_fallback(age, excluded_ids=excluded) + (
             "\n\n💡 Сейчас с генерацией заминка, поэтому это запасной безопасный вариант. "
             "Кнопки ниже остаются доступны."
         )
+    if kids_activity_is_duplicate(activity, previous):
+        excluded = {kids_activity_short_id(previous)} if previous else set()
+        activity = kids_activity_fallback(age, excluded_ids=excluded)
     if user_id is not None and context_key is not None:
         kids_last_activities[context_key] = activity
         kids_last_categories[context_key] = category[0]
@@ -1789,20 +1857,22 @@ async def kids_joint_activity(ages: list[dict], user_id: int | None = None) -> s
     except asyncio.CancelledError:
         raise
     except KidsActivityValidationError as error:
-        logger.warning("Joint kids answer validation failed (%s); using a non-riddle fallback", type(error).__name__)
-        ages_caption = " + ".join(format_child_age(age) for age in ages)
-        activity = (
-            f"🎨 «Три цвета» ({ages_caption})\n"
-            "Предложите всем вместе нарисовать необычный дом, используя три цвета. "
-            "Пусть каждый добавит одну деталь."
-        )
+        logger.warning("Joint kids answer validation failed (%s); using a rotated safe fallback", type(error).__name__)
+        youngest = min(ages, key=kids_age_months)
+        excluded = {kids_activity_short_id(previous)} if previous else set()
+        activity = kids_activity_fallback(youngest, excluded_ids=excluded, previous=previous)
     except Exception as error:
         logger.warning("Joint kids Gemini generation failed (%s); using safe fallback", type(error).__name__)
         youngest = min(ages, key=kids_age_months)
-        activity = kids_activity_fallback(youngest) + (
+        excluded = {kids_activity_short_id(previous)} if previous else set()
+        activity = kids_activity_fallback(youngest, excluded_ids=excluded) + (
             "\n\n💡 Сейчас с генерацией заминка, поэтому это запасной безопасный вариант для всех. "
             "Кнопки ниже остаются доступны."
         )
+    if kids_activity_is_duplicate(activity, previous):
+        youngest = min(ages, key=kids_age_months)
+        excluded = {kids_activity_short_id(previous)} if previous else set()
+        activity = kids_activity_fallback(youngest, excluded_ids=excluded)
     if user_id is not None and context_key is not None:
         kids_last_activities[context_key] = activity
         kids_last_categories[context_key] = category[0]
@@ -2162,6 +2232,35 @@ async def send_kids_activity(
         )
     finally:
         kids_generation_in_progress.discard(user_id)
+
+
+@dispatcher.callback_query(F.data == "kids:choose_age")
+async def choose_kids_age(callback: CallbackQuery) -> None:
+    await callback.answer()
+    if callback.message is None:
+        return
+    user_id = callback.from_user.id
+    try:
+        ages = await asyncio.to_thread(load_family_ages, user_id)
+    except FamilyProfileUnavailable:
+        await callback.message.answer(
+            "Не получилось проверить возраст в профиле. Попробуй ещё раз чуть позже 🌿",
+            reply_markup=MENU_KEYBOARD,
+        )
+        return
+    if ages:
+        await callback.message.answer(
+            "Кому подберём занятие? Выбери ребёнка — возраст останется точным 🧸",
+            reply_markup=kids_picker_keyboard(ages),
+        )
+        return
+    pending_kids_age.add(user_id)
+    await callback.message.answer(
+        "Возраст не сохранён. Напиши возраст ребёнка, например «8 месяцев» или «14 лет» 🌿",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="↩️ Отмена / Назад", callback_data="kids:cancel_age")],
+        ]),
+    )
 
 
 @dispatcher.callback_query(F.data.startswith("kids:child:"))
