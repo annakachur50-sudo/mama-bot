@@ -3970,6 +3970,23 @@ async def wardrobe_back_to_layer(callback: CallbackQuery, state: FSMContext) -> 
         )
 
 
+def wardrobe_palette_header(palette_context: str | None) -> str:
+    """Build a compact, HTML-safe confirmation of the palette used for wardrobe styling."""
+    if not palette_context:
+        return (
+            "🎨 <b>Подобрано в базовой гармоничной палитре</b> ✨\\n"
+            "<i>(Пройди разбор палитры по фото, чтобы образы строились под твою внешность)</i>\\n\\n"
+        )
+
+    summary = re.sub(r"<[^>]*>", " ", palette_context)
+    summary = re.sub(r"[*_`]+", "", summary)
+    summary = re.sub(r"\\s+", " ", summary).strip()
+    if len(summary) > 220:
+        summary = summary[:217].rsplit(" ", 1)[0].rstrip(" ,;:") + "…"
+    safe_summary = html.escape(summary, quote=False)
+    return f"🎨 <b>Подобрано под твою палитру:</b> <i>{safe_summary}</i> ✨\\n\\n"
+
+
 async def generate_wardrobe_result(
     message: Message,
     state: FSMContext,
@@ -4020,8 +4037,10 @@ async def generate_wardrobe_result(
     try:
         await bot.send_chat_action(chat_id=message.chat.id, action="typing")
         result = await asyncio.to_thread(generate_wardrobe_outfits_sync, user_request, palette_context)
+        formatted_result = wardrobe_result_html(result)
+        header = wardrobe_palette_header(palette_context)
         await message.answer(
-            wardrobe_result_html(result),
+            header + formatted_result,
             reply_markup=wardrobe_result_keyboard(),
             parse_mode=ParseMode.HTML,
         )
