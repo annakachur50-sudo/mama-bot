@@ -1572,8 +1572,9 @@ KIDS_TEEN_FALLBACKS = [
 def kids_activity_fallback(
     age: dict,
     excluded_ids: set[str] | None = None,
+    previous: str | None = None,
 ) -> str:
-    """Choose a safe age-matched fallback, rotating away from recently used titles."""
+    """Choose a safe age-matched fallback, rotating away from recent titles and bodies."""
     months = kids_age_months(age)
     if months >= 156:
         candidates = list(KIDS_TEEN_FALLBACKS)
@@ -1587,46 +1588,38 @@ def kids_activity_fallback(
         pool_key = "baby" if months < 18 else "toddler" if months < 60 else "preschool" if months < 120 else "older"
         candidates = list(KIDS_ACTIVITY_POOLS[pool_key])
 
-    def format_candidate(candidate: str) -> str:
+    def make_card(candidate: str) -> str:
         cleaned = re.sub(r"</?b>", "", candidate)
         lines = cleaned.splitlines()
         first_line = lines[0].strip() if lines else ""
         title_match = re.search(r"«([^»]{1,100})»", first_line)
         if title_match:
-            emoji_match = re.match(r"^([^\w\s]{1,4})", first_line)
-            emoji = emoji_match.group(1) if emoji_match else "🎯"
+            emoji = first_line.split("«", 1)[0].strip() or "🎯"
             lines[0] = f"{emoji} «{title_match.group(1)}» ({format_child_age(age)})"
         else:
-            # Older teen fallbacks were stored as prose rather than titled cards.
             emoji_match = re.match(r"^([^\w\s]{1,4})", first_line)
             emoji = emoji_match.group(1) if emoji_match else "🎯"
             title = re.sub(r"^[^\wА-Яа-яЁё]+", "", first_line).strip().rstrip(".")
-            title = re.sub(r"^(предложи подростку|предложи ребёнку|предложи ребенку|предложи|загадай подростку|устрой)\s+", "", title, flags=re.IGNORECASE)
+            title = re.sub(
+                r"^(предложи подростку|предложи ребёнку|предложи ребенку|предложи|загадай подростку|устрой)\s+",
+                "",
+                title,
+                flags=re.IGNORECASE,
+            )
             title = title[:70] or "Новый челлендж"
             lines[0] = f"{emoji} «{title}» ({format_child_age(age)})"
-        duration = "1–3 минуты" if months < 36 else "3–5 минут" if months < 120 else "5–10 минут"
-        lines.insert(1, f"⏱ {duration}")
-        if not re.search(r"(?:скажи|спроси|предложи)[^\n]{0,80}«", "\n".join(lines[1:]), flags=re.IGNORECASE):
-            if months < 36:
-                phrase = "🗣 Скажи: «Давай вместе посмотрим, что получится!»"
-            elif months < 72:
-                phrase = "🗣 Скажи: «Давай попробуем вместе — теперь твоя очередь!»"
-            elif months < 156:
-                phrase = "🗣 Скажи: «Какой вариант придумаешь ты?»"
-            else:
-                phrase = "🗣 Скажи: «Какой вариант ты выберешь и почему?»"
-            lines.insert(2, phrase)
         return "\n".join(lines)
 
-    formatted_candidates = [format_candidate(candidate) for candidate in candidates]
+    cards = [make_card(candidate) for candidate in candidates]
     excluded = excluded_ids or set()
     available = [
-        candidate for candidate in formatted_candidates
-        if kids_activity_short_id(candidate) not in excluded
+        card for card in cards
+        if kids_activity_short_id(card) not in excluded
+        and not kids_activity_is_duplicate(card, previous)
     ]
-    # All age pools contain multiple alternatives. If every title was excluded,
-    # retain a safe option rather than failing generation completely.
-    return random.choice(available or formatted_candidates)
+    # Every pool has several choices; if all have been seen, choose the least-bad safe option.
+    selected = random.choice(available or cards)
+    return selected
 
 
 def format_kids_activity_html(text: str, age_caption: str) -> str:
@@ -1832,7 +1825,7 @@ async def kids_activity_for_age(age: dict, user_id: int | None = None) -> str:
     except KidsActivityValidationError as error:
         logger.warning("Kids activity answer validation failed (%s); using a rotated safe fallback", type(error).__name__)
         excluded = {kids_activity_short_id(previous)} if previous else set()
-        activity = kids_activity_fallback(age, excluded_ids=excluded)
+        activity = kids_activity_fallback(age, excluded_ids=excluded, previous=previous)
     except Exception as error:
         logger.warning("Kids Gemini generation failed (%s); using age-appropriate fallback", type(error).__name__)
         excluded = {kids_activity_short_id(previous)} if previous else set()
@@ -1867,7 +1860,7 @@ async def kids_joint_activity(ages: list[dict], user_id: int | None = None) -> s
         logger.warning("Joint kids answer validation failed (%s); using a rotated safe fallback", type(error).__name__)
         youngest = min(ages, key=kids_age_months)
         excluded = {kids_activity_short_id(previous)} if previous else set()
-        activity = kids_activity_fallback(youngest, excluded_ids=excluded)
+        activity = kids_activity_fallback(youngest, excluded_ids=excluded, previous=previous)
     except Exception as error:
         logger.warning("Joint kids Gemini generation failed (%s); using safe fallback", type(error).__name__)
         youngest = min(ages, key=kids_age_months)
