@@ -243,7 +243,7 @@ class KidsAgeRulesTests(unittest.TestCase):
         )
         self.assertTrue(result.startswith("<b>🕵️ «Секретный агент» (7 лет)</b>"))
         self.assertIn("\n", result)
-        self.assertNotIn("\n", result)
+        self.assertNotIn("\\n", result)
         self.assertIn("«<b>Найди подсказку &lt;в комнате&gt;</b>»", result)
         self.assertNotIn("<в комнате>", result)
 
