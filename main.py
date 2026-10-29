@@ -1321,9 +1321,11 @@ def radiance_menu_keyboard(user_id: int | None = None) -> InlineKeyboardMarkup:
 
 RADIANCE_LOCKED_CARDS = {
     "wardrobe": (
-        "👗 <b>Стильный образ на сегодня</b>\n\n"
-        "Персональный AI-стилист поможет подобрать сочетания под разные случаи, "
-        "отталкиваясь от твоей вещи и цветовой палитры."
+        "<b>✨ Персональный AI-стилист гардероба</b>\n\n"
+        "• Подбор 2 готовых образов под твою внешность и природный колорит\n"
+        "• Сборка стильного комплекта вокруг твоей вещи из шкафа\n"
+        "• Формулы сочетаний, цветовая палитра и акценты\n\n"
+        "💳 <b>Стоимость: 99 ₽</b> (разовый подбор)"
     ),
     "care": (
         "💄 <b>Уход и косметика</b>\n\n"
@@ -1345,6 +1347,11 @@ RADIANCE_INTEREST_LABELS = {
 
 
 def radiance_locked_keyboard(feature: str) -> InlineKeyboardMarkup:
+    if feature == "wardrobe":
+        return InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="✨ Оплатить 99 ₽", callback_data="buy:stylist:preview")],
+            [InlineKeyboardButton(text="↩️ Назад к Моему сиянию", callback_data="menu_radiance")],
+        ])
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="✨ Хочу доступ", callback_data=f"radiance:interest:{feature}")],
         [InlineKeyboardButton(text="↩️ Назад к Моему сиянию", callback_data="menu_radiance")],
@@ -2089,6 +2096,14 @@ async def show_radiance_locked_card(callback: CallbackQuery) -> None:
             reply_markup=radiance_locked_keyboard(feature),
             parse_mode=ParseMode.HTML,
         )
+
+
+@dispatcher.callback_query(F.data == "buy:stylist:preview")
+async def stylist_payment_preview(callback: CallbackQuery) -> None:
+    await callback.answer(
+        "Функция оплаты проходит модерацию платёжной системы. Скоро будет доступна!",
+        show_alert=True,
+    )
 
 
 @dispatcher.callback_query(F.data.startswith("radiance:interest:"))
@@ -3970,6 +3985,22 @@ async def wardrobe_back_to_layer(callback: CallbackQuery, state: FSMContext) -> 
         )
 
 
+def wardrobe_palette_header(palette_context: str | None) -> str:
+    """Build a compact, HTML-safe confirmation of the palette used for wardrobe styling."""
+    if not palette_context:
+        return (
+            "🎨 <b>Подобрано в базовой гармоничной палитре</b> ✨\n"
+            "<i>(Пройди разбор палитры по фото, чтобы образы строились под твою внешность)</i>\n\n"
+        )
+
+    summary = re.sub(r"<[^>]*>", " ", palette_context)
+    summary = re.sub(r"[*_`]+", "", summary)
+    summary = re.sub(r"\s+", " ", summary).strip()
+    if len(summary) > 220:
+        summary = summary[:217].rsplit(" ", 1)[0].rstrip(" ,;:") + "…"
+    safe_summary = html.escape(summary, quote=False)
+    return f"🎨 <b>Подобрано под твою палитру:</b> <i>{safe_summary}</i> ✨\n\n"
+
 async def generate_wardrobe_result(
     message: Message,
     state: FSMContext,
@@ -4020,8 +4051,10 @@ async def generate_wardrobe_result(
     try:
         await bot.send_chat_action(chat_id=message.chat.id, action="typing")
         result = await asyncio.to_thread(generate_wardrobe_outfits_sync, user_request, palette_context)
+        formatted_result = wardrobe_result_html(result)
+        header = wardrobe_palette_header(palette_context)
         await message.answer(
-            wardrobe_result_html(result),
+            header + formatted_result,
             reply_markup=wardrobe_result_keyboard(),
             parse_mode=ParseMode.HTML,
         )
