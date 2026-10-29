@@ -394,5 +394,25 @@ class KidsAgeRulesTests(unittest.TestCase):
         exec(compile(ast.Module(body=nodes, type_ignores=[]), "main.py", "exec"), namespace)
         return namespace["kids_activity_answer_error"]
 
+    def test_duplicate_guard_rejects_same_title_and_same_body(self):
+        wanted = {"kids_activity_short_id", "kids_activity_is_duplicate"}
+        nodes = [
+            node for node in TREE.body
+            if isinstance(node, ast.FunctionDef) and node.name in wanted
+        ]
+        namespace = {"re": __import__("re")}
+        exec(compile(ast.Module(body=nodes, type_ignores=[]), "main.py", "exec"), namespace)
+        is_duplicate = namespace["kids_activity_is_duplicate"]
+        previous = "🎧 «Музыкальный баттл» (14 лет)\\nПредложи выбрать трек для финала фильма."
+        self.assertTrue(is_duplicate(
+            "🎧 «Музыкальный баттл» (14 лет)\\nПредложи выбрать другой трек.", previous
+        ))
+        self.assertTrue(is_duplicate(
+            "🎨 «Новая идея» (14 лет)\\nПредложи выбрать трек для финала фильма.", previous
+        ))
+        self.assertFalse(is_duplicate(
+            "🎨 «Постер фильма» (14 лет)\\nПридумай постер в трёх цветах.", previous
+        ))
+
 if __name__ == "__main__":
     unittest.main()
