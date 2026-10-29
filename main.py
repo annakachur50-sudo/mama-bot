@@ -1593,7 +1593,8 @@ def kids_activity_fallback(
         first_line = lines[0].strip() if lines else ""
         title_match = re.search(r"«([^»]{1,100})»", first_line)
         if title_match:
-            emoji = first_line.split("«", 1)[0].strip() or "🎯"
+            emoji_match = re.match(r"^([^\w\s]{1,4})", first_line)
+            emoji = emoji_match.group(1) if emoji_match else "🎯"
             lines[0] = f"{emoji} «{title_match.group(1)}» ({format_child_age(age)})"
         else:
             # Older teen fallbacks were stored as prose rather than titled cards.
@@ -1603,6 +1604,18 @@ def kids_activity_fallback(
             title = re.sub(r"^(предложи подростку|предложи ребёнку|предложи ребенку|предложи|загадай подростку|устрой)\s+", "", title, flags=re.IGNORECASE)
             title = title[:70] or "Новый челлендж"
             lines[0] = f"{emoji} «{title}» ({format_child_age(age)})"
+        duration = "1–3 минуты" if months < 36 else "3–5 минут" if months < 120 else "5–10 минут"
+        lines.insert(1, f"⏱ {duration}")
+        if not re.search(r"(?:скажи|спроси|предложи)[^\n]{0,80}«", "\n".join(lines[1:]), flags=re.IGNORECASE):
+            if months < 36:
+                phrase = "🗣 Скажи: «Давай вместе посмотрим, что получится!»"
+            elif months < 72:
+                phrase = "🗣 Скажи: «Давай попробуем вместе — теперь твоя очередь!»"
+            elif months < 156:
+                phrase = "🗣 Скажи: «Какой вариант придумаешь ты?»"
+            else:
+                phrase = "🗣 Скажи: «Какой вариант ты выберешь и почему?»"
+            lines.insert(2, phrase)
         return "\n".join(lines)
 
     formatted_candidates = [format_candidate(candidate) for candidate in candidates]
