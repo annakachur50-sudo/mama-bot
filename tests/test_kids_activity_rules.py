@@ -243,7 +243,7 @@ class KidsAgeRulesTests(unittest.TestCase):
         )
         self.assertTrue(result.startswith("<b>🕵️ «Секретный агент» (7 лет)</b>"))
         self.assertIn("\n", result)
-        self.assertNotIn("\\n", result)
+        self.assertNotIn("\n", result)
         self.assertIn("«<b>Найди подсказку &lt;в комнате&gt;</b>»", result)
         self.assertNotIn("<в комнате>", result)
 
@@ -408,24 +408,24 @@ class KidsDuplicateGuardTests(unittest.TestCase):
 
     def test_same_title_is_rejected_even_if_body_changes(self):
         self.assertTrue(self.is_duplicate(
-            "🕵️ «Дело о ключе» (14 лет)\\nНайди улику.",
-            "🕵️ «Дело о ключе» (14 лет)\\nСоставь шифр.",
+            "🕵️ «Дело о ключе» (14 лет)\nНайди улику.",
+            "🕵️ «Дело о ключе» (14 лет)\nСоставь шифр.",
         ))
 
     def test_same_body_is_rejected_when_title_changes(self):
         self.assertTrue(self.is_duplicate(
-            "🎨 «Новый челлендж» (14 лет)\\nПридумай постер из трёх цветов.",
-            "🎯 «Совсем другое название» (14 лет)\\nПридумай постер из трёх цветов.",
+            "🎨 «Новый челлендж» (14 лет)\nПридумай постер из трёх цветов.",
+            "🎯 «Совсем другое название» (14 лет)\nПридумай постер из трёх цветов.",
         ))
 
     def test_different_title_and_body_are_allowed(self):
         self.assertFalse(self.is_duplicate(
-            "🎨 «Постер» (14 лет)\\nПридумай постер из трёх цветов.",
-            "🧠 «Шифр» (14 лет)\\nЗашифруй короткое слово сдвигом букв.",
+            "🎨 «Постер» (14 лет)\nПридумай постер из трёх цветов.",
+            "🧠 «Шифр» (14 лет)\nЗашифруй короткое слово сдвигом букв.",
         ))
 
     def test_empty_activity_is_not_mistaken_for_duplicate(self):
-        self.assertFalse(self.is_duplicate("", "🎨 «Постер» (14 лет)\\nПридумай постер."))
+        self.assertFalse(self.is_duplicate("", "🎨 «Постер» (14 лет)\nПридумай постер."))
 
     def test_kids_navigation_has_required_controls_and_callbacks(self):
         source = Path("main.py").read_text(encoding="utf-8")
@@ -439,7 +439,7 @@ class KidsDuplicateGuardTests(unittest.TestCase):
     def test_validation_failure_no_longer_uses_one_hardcoded_three_colors_card(self):
         source = Path("main.py").read_text(encoding="utf-8")
         start = source.index("async def kids_activity_for_age(")
-        end = source.index("\\n\\nasync def kids_joint_activity(", start)
+        end = source.index("\n\nasync def kids_joint_activity(", start)
         handler = source[start:end]
         self.assertIn("kids_activity_fallback(age, excluded_ids=excluded, previous=previous)", handler)
         self.assertNotIn('f"🎨 «Три цвета» ({format_child_age(age)})', handler)
