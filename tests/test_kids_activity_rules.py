@@ -394,5 +394,55 @@ class KidsAgeRulesTests(unittest.TestCase):
         exec(compile(ast.Module(body=nodes, type_ignores=[]), "main.py", "exec"), namespace)
         return namespace["kids_activity_answer_error"]
 
+
+class KidsDuplicateGuardTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        source = Path("main.py").read_text(encoding="utf-8")
+        tree = ast.parse(source)
+        wanted = {"kids_activity_short_id", "kids_activity_is_duplicate"}
+        nodes = [node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name in wanted]
+        namespace = {"re": __import__("re")}
+        exec(compile(ast.Module(body=nodes, type_ignores=[]), "main.py", "exec"), namespace)
+        cls.is_duplicate = staticmethod(namespace["kids_activity_is_duplicate"])
+
+    def test_same_title_is_rejected_even_if_body_changes(self):
+        self.assertTrue(self.is_duplicate(
+            "🕵️ «Дело о ключе» (14 лет)\\nНайди улику.",
+            "🕵️ «Дело о ключе» (14 лет)\\nСоставь шифр.",
+        ))
+
+    def test_same_body_is_rejected_when_title_changes(self):
+        self.assertTrue(self.is_duplicate(
+            "🎨 «Новый челлендж» (14 лет)\\nПридумай постер из трёх цветов.",
+            "🎯 «Совсем другое название» (14 лет)\\nПридумай постер из трёх цветов.",
+        ))
+
+    def test_different_title_and_body_are_allowed(self):
+        self.assertFalse(self.is_duplicate(
+            "🎨 «Постер» (14 лет)\\nПридумай постер из трёх цветов.",
+            "🧠 «Шифр» (14 лет)\\nЗашифруй короткое слово сдвигом букв.",
+        ))
+
+    def test_empty_activity_is_not_mistaken_for_duplicate(self):
+        self.assertFalse(self.is_duplicate("", "🎨 «Постер» (14 лет)\\nПридумай постер."))
+
+    def test_kids_navigation_has_required_controls_and_callbacks(self):
+        source = Path("main.py").read_text(encoding="utf-8")
+        self.assertIn('text="🔄 Ещё вариант"', source)
+        self.assertIn('text="👶 Сменить возраст", callback_data="kids:choose_age"', source)
+        self.assertIn('text="🏠 В главное меню", callback_data="menu:main"', source)
+        self.assertIn('@dispatcher.callback_query(F.data == "kids:choose_age")', source)
+        self.assertIn('@dispatcher.callback_query(F.data.startswith("kids:again:"))', source)
+        self.assertIn('@dispatcher.callback_query(F.data == "kids:cancel_age")', source)
+
+    def test_validation_failure_no_longer_uses_one_hardcoded_three_colors_card(self):
+        source = Path("main.py").read_text(encoding="utf-8")
+        start = source.index("async def kids_activity_for_age(")
+        end = source.index("\\n\\nasync def kids_joint_activity(", start)
+        handler = source[start:end]
+        self.assertIn("kids_activity_fallback(age, excluded_ids=excluded)", handler)
+        self.assertNotIn('f"🎨 «Три цвета» ({format_child_age(age)})', handler)
+
 if __name__ == "__main__":
     unittest.main()
