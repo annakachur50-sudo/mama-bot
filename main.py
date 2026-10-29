@@ -1321,9 +1321,11 @@ def radiance_menu_keyboard(user_id: int | None = None) -> InlineKeyboardMarkup:
 
 RADIANCE_LOCKED_CARDS = {
     "wardrobe": (
-        "👗 <b>Стильный образ на сегодня</b>\n\n"
-        "Персональный AI-стилист поможет подобрать сочетания под разные случаи, "
-        "отталкиваясь от твоей вещи и цветовой палитры."
+        "<b>✨ Персональный AI-стилист гардероба</b>\n\n"
+        "• Подбор 2 готовых образов под твою внешность и природный колорит\n"
+        "• Сборка стильного комплекта вокруг твоей вещи из шкафа\n"
+        "• Формулы сочетаний, цветовая палитра и акценты\n\n"
+        "💳 <b>Стоимость: 99 ₽</b> (разовый подбор)"
     ),
     "care": (
         "💄 <b>Уход и косметика</b>\n\n"
@@ -1345,6 +1347,11 @@ RADIANCE_INTEREST_LABELS = {
 
 
 def radiance_locked_keyboard(feature: str) -> InlineKeyboardMarkup:
+    if feature == "wardrobe":
+        return InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="✨ Оплатить 99 ₽", callback_data="buy:stylist:preview")],
+            [InlineKeyboardButton(text="↩️ Назад к Моему сиянию", callback_data="menu_radiance")],
+        ])
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="✨ Хочу доступ", callback_data=f"radiance:interest:{feature}")],
         [InlineKeyboardButton(text="↩️ Назад к Моему сиянию", callback_data="menu_radiance")],
@@ -2089,6 +2096,14 @@ async def show_radiance_locked_card(callback: CallbackQuery) -> None:
             reply_markup=radiance_locked_keyboard(feature),
             parse_mode=ParseMode.HTML,
         )
+
+
+@dispatcher.callback_query(F.data == "buy:stylist:preview")
+async def stylist_payment_preview(callback: CallbackQuery) -> None:
+    await callback.answer(
+        "Функция оплаты проходит модерацию платёжной системы. Скоро будет доступна!",
+        show_alert=True,
+    )
 
 
 @dispatcher.callback_query(F.data.startswith("radiance:interest:"))
