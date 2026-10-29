@@ -12,6 +12,7 @@ on:
       - improve/kids-radiance-inline-nav-20261023
       - fix/kids-riddle-spoiler-20261023-v2
       - audit/kids-activities-all-ages-20261030
+      - fix/wardrobe-home-palette-header-20261030
   pull_request:
     branches:
       - main

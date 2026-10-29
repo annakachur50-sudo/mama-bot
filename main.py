@@ -945,6 +945,7 @@ def analytics_button_info(callback_data: str) -> tuple[str, str]:
         "wardrobe:base:any": ("radiance", "wardrobe_base_any"),
         "wardrobe:back:occasion": ("radiance", "wardrobe_back_occasion"),
         "wardrobe:back:layer": ("radiance", "wardrobe_back_layer"),
+        "wardrobe:back:occasion:home": ("radiance", "wardrobe_back_home_to_occasion"),
         "radiance:retry": ("radiance", "retry_photo"),
         "radiance:cancel": ("radiance", "cancel"),
         "radiance:locked:wardrobe": ("radiance", "locked_wardrobe"),
@@ -1261,7 +1262,15 @@ def wardrobe_layer_keyboard() -> InlineKeyboardMarkup:
     ])
 
 
-def wardrobe_base_keyboard() -> InlineKeyboardMarkup:
+def wardrobe_base_keyboard(is_home: bool = False) -> InlineKeyboardMarkup:
+    if is_home:
+        return InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🧸 Домашний костюм", callback_data="wardrobe:base:jeans")],
+            [InlineKeyboardButton(text="👗 Домашнее платье / Лонгслив", callback_data="wardrobe:base:dress")],
+            [InlineKeyboardButton(text="🧶 Уютный трикотаж", callback_data="wardrobe:base:sport")],
+            [InlineKeyboardButton(text="✨ На твой вкус", callback_data="wardrobe:base:any")],
+            [InlineKeyboardButton(text="↩️ К выбору повода", callback_data="wardrobe:back:occasion:home")],
+        ])
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="👖 Джинсы / Брюки", callback_data="wardrobe:base:jeans")],
         [InlineKeyboardButton(text="👗 Платье / Юбка", callback_data="wardrobe:base:dress")],
@@ -1284,8 +1293,66 @@ def wardrobe_result_keyboard() -> InlineKeyboardMarkup:
     ])
 
 
-def generate_wardrobe_outfits_sync(user_request: str, palette_context: str | None = None) -> str:
-    system_instruction = WARDROBE_STYLIST_PROMPT
+HOME_WARDROBE_INSTRUCTIONS = """
+Ты — персональный AI-стилист домашнего гардероба. Составь РОВНО 2 конкретных, уютных и удобных
+комплекта исключительно для дома. Учитывай выбранную домашнюю вещь, комфорт и практичность.
+Если передана конкретная вещь пользователя, сохрани её цвет, тип и характер в обоих комплектах.
+Не утверждай, что у пользователя есть другие вещи; предлагай только варианты сочетаний.
+Если сохранённая цветовая палитра передана в контексте, обязательно согласуй с ней цвета одежды
+и акцентов; если палитры нет, используй универсальные гармоничные природные сочетания.
+
+Собери образы исключительно для дома: удобные домашние костюмы, платья, лонгсливы,
+тапочки/носочки, уютный домашний слой (кардиган/халат/рубашка).
+Исключить уличную обувь, пальто, куртки и сумки. Не предлагай уличные аксессуары.
+
+СТРОГО СОБЛЮДАЙ ПРАВИЛА:
+1. Не здоровайся, не пиши вступлений и заключений.
+2. Выведи ровно два комплекта — Комплект 1 и Комплект 2.
+3. Используй только HTML-теги <b> и <i>. Не используй Markdown.
+4. Первая строка ответа должна начинаться с <b>Комплект 1: ...</b>.
+5. Для каждого комплекта укажи формулу через плюс, палитру с цветными эмодзи-кружками и названиями 2–3 оттенков, одежду, домашнюю обувь/носочки, уютный слой и один акцент.
+6. Не выводи строку с сумкой или строку с уличным верхним слоем. Не упоминай пальто, куртки и уличную обувь.
+7. Между комплектами оставляй ровно одну пустую строку.
+
+<b>Комплект 1: [Название образа с эмодзи]</b>
+
+🔘 <b>Формула:</b> [Домашняя одежда 1] + [Домашняя одежда 2] + [Домашняя обувь / носочки] + [Уютный домашний слой]
+🎨 <b>Палитра:</b> [Эмодзи-кружки цветов] [Названия 2–3 ключевых оттенков через точку]
+
+• <b>Одежда:</b> [Кратко: домашний низ + верх или домашнее платье]
+• <b>Домашняя обувь / носочки:</b> [Тапочки или мягкие носочки]
+• <b>Уютный слой:</b> [Кардиган, халат или мягкая рубашка — только если уместно]
+• 💡 <b>Акцент:</b> [Одна уютная деталь]
+
+<b>Комплект 2: [Название образа с эмодзи]</b>
+
+🔘 <b>Формула:</b> [Домашняя одежда 1] + [Домашняя одежда 2] + [Домашняя обувь / носочки] + [Уютный домашний слой]
+🎨 <b>Палитра:</b> [Эмодзи-кружки цветов] [Названия 2–3 ключевых оттенков через точку]
+
+• <b>Одежда:</b> [Кратко: домашний низ + верх или домашнее платье]
+• <b>Домашняя обувь / носочки:</b> [Тапочки или мягкие носочки]
+• <b>Уютный слой:</b> [Кардиган, халат или мягкая рубашка — только если уместно]
+• 💡 <b>Акцент:</b> [Одна уютная деталь]
+
+Отвечай по-русски. Карточка должна быть компактной и читабельной на экране смартфона.
+"""
+
+def wardrobe_is_home_occasion(occasion: str) -> bool:
+    normalized = re.sub(r"\s+", " ", str(occasion or "").casefold()).strip()
+    return any(marker in normalized for marker in ("дома", "домашн", "уютный день"))
+
+def wardrobe_system_instruction(is_home: bool = False) -> str:
+    if is_home:
+        # The home prompt is intentionally self-contained and replaces streetwear requirements.
+        return HOME_WARDROBE_INSTRUCTIONS
+    return WARDROBE_STYLIST_PROMPT
+
+def generate_wardrobe_outfits_sync(
+    user_request: str,
+    palette_context: str | None = None,
+    is_home: bool = False,
+) -> str:
+    system_instruction = wardrobe_system_instruction(is_home)
     if palette_context:
         system_instruction += (
             "\n\nПЕРСОНАЛЬНАЯ ЦВЕТОВАЯ ПАЛИТРА ПОЛЬЗОВАТЕЛЯ:\n"
@@ -4027,7 +4094,22 @@ async def choose_wardrobe_occasion(callback: CallbackQuery, state: FSMContext) -
         await callback.answer("Не поняла выбор. Попробуй ещё раз.", show_alert=True)
         return
     await callback.answer()
-    await state.update_data(occasion=occasions[occasion_key])
+    is_home = wardrobe_is_home_occasion(occasions[occasion_key])
+    # Replace rather than merge so a new scenario cannot inherit stale street parameters.
+    await state.set_data({
+        "occasion": occasions[occasion_key],
+        "base_item_is_custom": False,
+    })
+    if is_home:
+        await state.update_data(layer="уютный домашний слой: кардиган, халат или мягкая рубашка по желанию")
+        await state.set_state(WardrobeStates.waiting_for_base_item)
+        await callback.message.edit_text(
+            "<b>Шаг 2 из 2: Что возьмём за основу домашнего образа? 🧸</b>\n\n"
+            "Выбери уютную категорию или напиши конкретную вещь из шкафа 👇",
+            reply_markup=wardrobe_base_keyboard(is_home=True),
+            parse_mode=ParseMode.HTML,
+        )
+        return
     await state.set_state(WardrobeStates.waiting_for_layer)
     await callback.message.edit_text(
         "Шаг 2 из 3: В чём идёшь / какой верхний слой? 🧥",
@@ -4038,6 +4120,19 @@ async def choose_wardrobe_occasion(callback: CallbackQuery, state: FSMContext) -
 @dispatcher.callback_query(F.data == "wardrobe:back:occasion", WardrobeStates.waiting_for_layer)
 async def wardrobe_back_to_occasion(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
+    await state.set_data({})
+    await state.set_state(WardrobeStates.waiting_for_occasion)
+    if callback.message is not None:
+        await callback.message.edit_text(
+            "Шаг 1 из 3: Куда собираешься? 🌸",
+            reply_markup=wardrobe_occasion_keyboard(),
+        )
+
+
+@dispatcher.callback_query(F.data == "wardrobe:back:occasion:home", WardrobeStates.waiting_for_base_item)
+async def wardrobe_home_back_to_occasion(callback: CallbackQuery, state: FSMContext) -> None:
+    await callback.answer()
+    await state.set_data({})
     await state.set_state(WardrobeStates.waiting_for_occasion)
     if callback.message is not None:
         await callback.message.edit_text(
@@ -4085,20 +4180,36 @@ async def wardrobe_back_to_layer(callback: CallbackQuery, state: FSMContext) -> 
 
 
 def wardrobe_palette_header(palette_context: str | None) -> str:
-    """Build a compact, HTML-safe confirmation of the palette used for wardrobe styling."""
-    if not palette_context:
-        return (
-            "🎨 <b>Подобрано в базовой гармоничной палитре</b> ✨\n"
-            "<i>(Пройди разбор палитры по фото, чтобы образы строились под твою внешность)</i>\n\n"
-        )
+    """Return only the short palette status; never quote saved analysis or conversation text."""
+    if palette_context and palette_context.strip():
+        return "🎨 <b>Подобрано по твоей индивидуальной палитре</b> ✨\n\n"
+    return "🎨 <b>Подобрано в базовой гармоничной гамме</b> ✨\n\n"
 
-    summary = re.sub(r"<[^>]*>", " ", palette_context)
-    summary = re.sub(r"[*_`]+", "", summary)
-    summary = re.sub(r"\s+", " ", summary).strip()
-    if len(summary) > 220:
-        summary = summary[:217].rsplit(" ", 1)[0].rstrip(" ,;:") + "…"
-    safe_summary = html.escape(summary, quote=False)
-    return f"🎨 <b>Подобрано под твою палитру:</b> <i>{safe_summary}</i> ✨\n\n"
+
+def wardrobe_home_result_html(text: str) -> str:
+    """Keep home outfit cards free of bag and streetwear rows."""
+    formatted = wardrobe_result_html(text)
+    kept = []
+    for line in formatted.splitlines():
+        plain = re.sub(r"<[^>]*>", "", line).casefold()
+        if re.search(r"<b>\s*(?:домашняя\s+)?обувь(?:\s+и\s+сумка)?\s*:</b>", line, flags=re.IGNORECASE):
+            kept.append("• <b>Домашняя обувь / носочки:</b> тапочки или мягкие носочки")
+            continue
+        if "формула:" in plain:
+            line = re.sub(
+                r"(?i)\b(сумка|рюкзак|пальто|куртка|тренч|косуха|джинсовка|ботинки|кроссовки|кеды)\b",
+                "уютный домашний элемент",
+                line,
+            )
+            line = re.sub(r"(?i)верхний\s+слой", "уютный домашний слой", line)
+            line = re.sub(r"(?i)(?:уличная\s+)?обувь", "домашняя обувь / носочки", line)
+            kept.append(line)
+            continue
+        if re.search(r"сумк|рюкзак|пальто|куртк|тренч|косух|джинсовк|ботинк|кроссовк|кед\b|уличн.{0,12}верхн", plain):
+            continue
+        kept.append(line)
+    return "\n".join(kept).strip()
+
 
 async def generate_wardrobe_result(
     message: Message,
@@ -4108,9 +4219,12 @@ async def generate_wardrobe_result(
 ) -> None:
     data = await state.get_data()
     occasion = str(data.get("occasion", "")).strip()
+    is_home = wardrobe_is_home_occasion(occasion)
     layer = str(data.get("layer", "")).strip()
+    if is_home and not layer:
+        layer = "уютный домашний слой: кардиган, халат или мягкая рубашка по желанию"
     base_item = base_item.strip()
-    if not occasion or not layer or not base_item:
+    if not occasion or (not layer and not is_home) or not base_item:
         await message.answer(
             "Потеряла один из выборов 🙈 Давай начнём сначала.",
             reply_markup=wardrobe_result_keyboard(),
@@ -4131,26 +4245,49 @@ async def generate_wardrobe_result(
         if is_custom_item
         else "Это выбранная базовая категория; собери два гармоничных варианта вокруг неё."
     )
-    user_request = (
-        f"Куда собирается пользователь: {occasion}.\n"
-        f"Выбранный верхний слой: {layer}.\n"
-        f"Основа образа или вещь, которую нужно использовать: {base_item}.\n"
-        f"Инструкция по основе: {item_instruction}\n\n"
-        + (
-            f"Сохранённая цветовая палитра пользователя из анализа селфи:\n{palette_context}\n\n"
-            "Обязательно согласуй палитру комплектов и акцентов с сохранёнными оттенками.\n\n"
-            if palette_context
-            else "Сохранённая цветовая палитра не найдена. Используй универсальные гармоничные природные сочетания.\n\n"
-        )
-        + "Собери ровно 2 готовых, стильных и удобных комплекта с учётом этих параметров. "
-        "Соблюдай формат из системного промпта: формула через +, палитра с цветными кружочками, "
-        "короткие детали одежды, обуви и верхнего слоя, один акцент. Не добавляй приветствия или вводные фразы."
+    palette_instruction = (
+        f"Сохранённая цветовая палитра пользователя из анализа селфи:\n{palette_context}\n\n"
+        "Обязательно согласуй палитру комплектов и акцентов с сохранёнными оттенками.\n\n"
+        if palette_context
+        else "Сохранённая цветовая палитра не найдена. Используй универсальные гармоничные природные сочетания.\n\n"
     )
+    if is_home:
+        user_request = (
+            "Сценарий: дома / уютный день. Собери образы исключительно для дома: удобные домашние костюмы, "
+            "платья, лонгсливы, тапочки/носочки, уютный домашний слой (кардиган/халат/рубашка). "
+            "Исключить уличную обувь, пальто, куртки и сумки. Не запрашивай и не используй уличные параметры.\n"
+            f"Уютный домашний слой: {layer}.\n"
+            f"Основа образа или вещь, которую нужно использовать: {base_item}.\n"
+            f"Инструкция по основе: {item_instruction}\n\n"
+            + palette_instruction
+            + "Собери ровно 2 готовых домашних комплекта. Сохрани формулу через +, палитру с цветными кружочками, "
+            "короткие детали и один уютный акцент. Не добавляй приветствия или вводные фразы."
+        )
+    else:
+        user_request = (
+            f"Куда собирается пользователь: {occasion}.\n"
+            f"Выбранный верхний слой: {layer}.\n"
+            f"Основа образа или вещь, которую нужно использовать: {base_item}.\n"
+            f"Инструкция по основе: {item_instruction}\n\n"
+            + palette_instruction
+            + "Собери ровно 2 готовых, стильных и удобных комплекта с учётом этих параметров. "
+            "Соблюдай формат из системного промпта: формула через +, палитра с цветными кружочками, "
+            "короткие детали одежды, обуви и верхнего слоя, один акцент. Не добавляй приветствия или вводные фразы."
+        )
 
     try:
         await bot.send_chat_action(chat_id=message.chat.id, action="typing")
-        result = await asyncio.to_thread(generate_wardrobe_outfits_sync, user_request, palette_context)
-        formatted_result = wardrobe_result_html(result)
+        result = await asyncio.to_thread(
+            generate_wardrobe_outfits_sync,
+            user_request,
+            palette_context,
+            is_home,
+        )
+        formatted_result = (
+            wardrobe_home_result_html(result)
+            if is_home
+            else wardrobe_result_html(result)
+        )
         header = wardrobe_palette_header(palette_context)
         await message.answer(
             header + formatted_result,
@@ -4179,12 +4316,23 @@ async def choose_wardrobe_base(callback: CallbackQuery, state: FSMContext) -> No
         await callback.answer()
         return
     base_key = (callback.data or "").rsplit(":", 1)[-1]
-    base_options = {
-        "jeans": "джинсы или брюки",
-        "dress": "платье или юбка",
-        "sport": "уютный трикотаж или костюм",
-        "any": "собери с нуля на свой вкус",
-    }
+    data = await state.get_data()
+    is_home = wardrobe_is_home_occasion(str(data.get("occasion", "")))
+    base_options = (
+        {
+            "jeans": "удобный домашний костюм",
+            "dress": "домашнее платье или лонгслив",
+            "sport": "уютный домашний трикотаж",
+            "any": "собери домашний образ с нуля на свой вкус",
+        }
+        if is_home
+        else {
+            "jeans": "джинсы или брюки",
+            "dress": "платье или юбка",
+            "sport": "уютный трикотаж или костюм",
+            "any": "собери с нуля на свой вкус",
+        }
+    )
     if base_key not in base_options:
         await callback.answer("Не поняла выбор. Попробуй ещё раз.", show_alert=True)
         return
@@ -4214,9 +4362,12 @@ async def wardrobe_text_on_layer(message: Message) -> None:
 async def process_wardrobe_base_text(message: Message, state: FSMContext) -> None:
     base_item = (message.text or "").strip()
     if not base_item:
+        data = await state.get_data()
         await message.answer(
             "Напиши вещь, которую хочешь взять за основу, или выбери вариант кнопкой 👚",
-            reply_markup=wardrobe_base_keyboard(),
+            reply_markup=wardrobe_base_keyboard(
+                is_home=wardrobe_is_home_occasion(str(data.get("occasion", "")))
+            ),
         )
         return
     await state.update_data(base_item_is_custom=True)
