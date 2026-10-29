@@ -1583,30 +1583,33 @@ def kids_activity_fallback(
         pool_key = "baby" if months < 18 else "toddler" if months < 60 else "preschool" if months < 120 else "older"
         candidates = list(KIDS_ACTIVITY_POOLS[pool_key])
 
+    def format_candidate(candidate: str) -> str:
+        cleaned = re.sub(r"</?b>", "", candidate)
+        lines = cleaned.splitlines()
+        first_line = lines[0].strip() if lines else ""
+        title_match = re.search(r"«([^»]{1,100})»", first_line)
+        if title_match:
+            emoji = first_line.split("«", 1)[0].strip() or "🎯"
+            lines[0] = f"{emoji} «{title_match.group(1)}» ({format_child_age(age)})"
+        else:
+            # Older teen fallbacks were stored as prose rather than titled cards.
+            emoji_match = re.match(r"^([^\w\s]{1,4})", first_line)
+            emoji = emoji_match.group(1) if emoji_match else "🎯"
+            title = re.sub(r"^[^\wА-Яа-яЁё]+", "", first_line).strip().rstrip(".")
+            title = re.sub(r"^(предложи подростку|предложи ребёнку|предложи ребенку|предложи|загадай подростку|устрой)\s+", "", title, flags=re.IGNORECASE)
+            title = title[:70] or "Новый челлендж"
+            lines[0] = f"{emoji} «{title}» ({format_child_age(age)})"
+        return "\n".join(lines)
+
+    formatted_candidates = [format_candidate(candidate) for candidate in candidates]
     excluded = excluded_ids or set()
     available = [
-        candidate for candidate in candidates
+        candidate for candidate in formatted_candidates
         if kids_activity_short_id(candidate) not in excluded
     ]
     # All age pools contain multiple alternatives. If every title was excluded,
     # retain a safe option rather than failing generation completely.
-    selected = random.choice(available or candidates)
-    cleaned = re.sub(r"</?b>", "", selected)
-    lines = cleaned.splitlines()
-    first_line = lines[0].strip() if lines else ""
-    title_match = re.search(r"«([^»]{1,100})»", first_line)
-    if title_match:
-        emoji = first_line.split("«", 1)[0].strip() or "🎯"
-        lines[0] = f"{emoji} «{title_match.group(1)}» ({format_child_age(age)})"
-    else:
-        # Older teen fallbacks were stored as prose rather than titled cards.
-        emoji_match = re.match(r"^([^\w\s]{1,4})", first_line)
-        emoji = emoji_match.group(1) if emoji_match else "🎯"
-        title = re.sub(r"^[^\wА-Яа-яЁё]+", "", first_line).strip().rstrip(".")
-        title = re.sub(r"^(предложи подростку|предложи ребёнку|предложи ребенку|предложи|загадай подростку|устрой)\s+", "", title, flags=re.IGNORECASE)
-        title = title[:70] or "Новый челлендж"
-        lines[0] = f"{emoji} «{title}» ({format_child_age(age)})"
-    return "\n".join(lines)
+    return random.choice(available or formatted_candidates)
 
 
 def format_kids_activity_html(text: str, age_caption: str) -> str:
