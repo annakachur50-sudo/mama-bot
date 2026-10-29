@@ -1343,6 +1343,7 @@ def wardrobe_is_home_occasion(occasion: str) -> bool:
 
 def wardrobe_system_instruction(is_home: bool = False) -> str:
     if is_home:
+        # The home prompt is intentionally self-contained and replaces streetwear requirements.
         return HOME_WARDROBE_INSTRUCTIONS
     return WARDROBE_STYLIST_PROMPT
 
