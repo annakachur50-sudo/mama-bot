@@ -909,6 +909,8 @@ def analytics_button_info(callback_data: str) -> tuple[str, str]:
         return "kids", "switch_child"
     if callback_data.startswith("kids:again:"):
         return "kids", "another_game"
+    if callback_data == "kids:choose_age":
+        return "kids", "choose_age"
     if callback_data == "kids:joint":
         return "kids", "joint_game"
     if callback_data.startswith("family_age:"):
@@ -1378,9 +1380,10 @@ def kids_result_keyboard(
         same_age_counts[months] = same_age_counts.get(months, 0) + 1
     same_age_seen: dict[int, int] = {}
     rows = [[InlineKeyboardButton(
-        text="🎲 Другая игра",
+        text="🔄 Ещё вариант",
         callback_data="kids:again:all" if joint else f"kids:again:{current_child_number}",
     )]]
+    rows.append([InlineKeyboardButton(text="👶 Сменить возраст", callback_data="kids:choose_age")])
     for age in ordered:
         child_number = int(age["child_number"])
         months = kids_age_months(age)
@@ -1553,8 +1556,9 @@ def kids_picker_keyboard(ages: list[dict]) -> InlineKeyboardMarkup:
                 callback_data=f"kids:child:{age['child_number']}",
             )
         ])
-    joint_label = "🤝 Общая игра для двоих" if len(ages) == 2 else "🤝 Общая игра для всех"
-    buttons.append([InlineKeyboardButton(text=joint_label, callback_data="kids:joint")])
+    if len(ages) > 1:
+        joint_label = "🤝 Общая игра для двоих" if len(ages) == 2 else "🤝 Общая игра для всех"
+        buttons.append([InlineKeyboardButton(text=joint_label, callback_data="kids:joint")])
     buttons.append([InlineKeyboardButton(text="↩️ Назад в меню", callback_data="kids:cancel_age")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
@@ -2220,6 +2224,35 @@ async def send_kids_activity(
         )
     finally:
         kids_generation_in_progress.discard(user_id)
+
+
+@dispatcher.callback_query(F.data == "kids:choose_age")
+async def choose_kids_age(callback: CallbackQuery) -> None:
+    await callback.answer()
+    if callback.message is None:
+        return
+    user_id = callback.from_user.id
+    try:
+        ages = await asyncio.to_thread(load_family_ages, user_id)
+    except FamilyProfileUnavailable:
+        await callback.message.answer(
+            "Не получилось проверить возраст в профиле. Попробуй ещё раз чуть позже 🌿",
+            reply_markup=MENU_KEYBOARD,
+        )
+        return
+    if ages:
+        await callback.message.answer(
+            "Кому подберём занятие? Выбери ребёнка — возраст останется точным 🧸",
+            reply_markup=kids_picker_keyboard(ages),
+        )
+        return
+    pending_kids_age.add(user_id)
+    await callback.message.answer(
+        "Возраст не сохранён. Напиши возраст ребёнка, например «8 месяцев» или «14 лет» 🌿",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="↩️ Отмена / Назад", callback_data="kids:cancel_age")],
+        ]),
+    )
 
 
 @dispatcher.callback_query(F.data.startswith("kids:child:"))
