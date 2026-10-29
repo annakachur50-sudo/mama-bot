@@ -83,16 +83,16 @@ class KidsAgeRulesTests(unittest.TestCase):
     def test_duplicate_detector_rejects_same_title_and_same_body(self):
         duplicate = HELPERS["kids_activity_is_duplicate"]
         self.assertTrue(duplicate(
-            "🕵️ «Криминалистический парадокс» (14 лет)\\nИдея одна и та же.",
-            "🕵️ «Криминалистический парадокс» (14 лет)\\nДругой текст.",
+            "🕵️ «Криминалистический парадокс» (14 лет)\nИдея одна и та же.",
+            "🕵️ «Криминалистический парадокс» (14 лет)\nДругой текст.",
         ))
         self.assertTrue(duplicate(
-            "🎨 «Новая обложка» (14 лет)\\nПредложи сделать постер в трёх цветах.",
-            "🎨 «Другой заголовок» (14 лет)\\nПредложи сделать постер в трёх цветах.",
+            "🎨 «Новая обложка» (14 лет)\nПредложи сделать постер в трёх цветах.",
+            "🎨 «Другой заголовок» (14 лет)\nПредложи сделать постер в трёх цветах.",
         ))
         self.assertFalse(duplicate(
-            "🎨 «Новая обложка» (14 лет)\\nПредложи сделать постер в трёх цветах.",
-            "🎲 «Музыкальный баттл» (14 лет)\\nВыберите трек и объясните свой выбор.",
+            "🎨 «Новая обложка» (14 лет)\nПредложи сделать постер в трёх цветах.",
+            "🎲 «Музыкальный баттл» (14 лет)\nВыберите трек и объясните свой выбор.",
         ))
 
     def test_fallback_rotation_excludes_the_previous_activity_for_each_age_band(self):
@@ -112,12 +112,12 @@ class KidsAgeRulesTests(unittest.TestCase):
 
     def test_live_generation_retries_duplicate_and_fallback_excludes_previous(self):
         start = SOURCE.index("def generate_kids_activity_sync(")
-        end = SOURCE.index("\\n\\nasync def kids_activity_for_age(", start)
+        end = SOURCE.index("\n\nasync def kids_activity_for_age(", start)
         generator = SOURCE[start:end]
         self.assertIn("kids_activity_is_duplicate(activity, previous)", generator)
         self.assertIn("last_error = \"повтор предыдущей идеи\"", generator)
         start = SOURCE.index("async def kids_activity_for_age(")
-        end = SOURCE.index("\\n\\nasync def kids_joint_activity(", start)
+        end = SOURCE.index("\n\nasync def kids_joint_activity(", start)
         single = SOURCE[start:end]
         self.assertIn("kids_activity_fallback(age, excluded_ids=excluded)", single)
         self.assertNotIn('f"🎨 «Три цвета»', single)
