@@ -4019,7 +4019,7 @@ async def generate_wardrobe_result(
 
     try:
         await bot.send_chat_action(chat_id=message.chat.id, action="typing")
-        result = await asyncio.to_thread(generate_wardrobe_outfits_sync, user_request)
+        result = await asyncio.to_thread(generate_wardrobe_outfits_sync, user_request, palette_context)
         await message.answer(
             wardrobe_result_html(result),
             reply_markup=wardrobe_result_keyboard(),
