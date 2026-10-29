@@ -243,7 +243,7 @@ class KidsAgeRulesTests(unittest.TestCase):
         )
         self.assertTrue(result.startswith("<b>🕵️ «Секретный агент» (7 лет)</b>"))
         self.assertIn("\n", result)
-        self.assertNotIn("\\n", result)
+        self.assertNotIn("\n", result)
         self.assertIn("«<b>Найди подсказку &lt;в комнате&gt;</b>»", result)
         self.assertNotIn("<в комнате>", result)
 
@@ -403,15 +403,15 @@ class KidsAgeRulesTests(unittest.TestCase):
         namespace = {"re": __import__("re")}
         exec(compile(ast.Module(body=nodes, type_ignores=[]), "main.py", "exec"), namespace)
         is_duplicate = namespace["kids_activity_is_duplicate"]
-        previous = "🎧 «Музыкальный баттл» (14 лет)\\nПредложи выбрать трек для финала фильма."
+        previous = "🎧 «Музыкальный баттл» (14 лет)\nПредложи выбрать трек для финала фильма."
         self.assertTrue(is_duplicate(
-            "🎧 «Музыкальный баттл» (14 лет)\\nПредложи выбрать другой трек.", previous
+            "🎧 «Музыкальный баттл» (14 лет)\nПредложи выбрать другой трек.", previous
         ))
         self.assertTrue(is_duplicate(
-            "🎨 «Новая идея» (14 лет)\\nПредложи выбрать трек для финала фильма.", previous
+            "🎨 «Новая идея» (14 лет)\nПредложи выбрать трек для финала фильма.", previous
         ))
         self.assertFalse(is_duplicate(
-            "🎨 «Постер фильма» (14 лет)\\nПридумай постер в трёх цветах.", previous
+            "🎨 «Постер фильма» (14 лет)\nПридумай постер в трёх цветах.", previous
         ))
 
 if __name__ == "__main__":
