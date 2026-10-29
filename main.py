@@ -3974,6 +3974,7 @@ async def generate_wardrobe_result(
     message: Message,
     state: FSMContext,
     base_item: str,
+    user_id: int,
 ) -> None:
     data = await state.get_data()
     occasion = str(data.get("occasion", "")).strip()
@@ -3987,7 +3988,6 @@ async def generate_wardrobe_result(
         await state.clear()
         return
 
-    user_id = message.from_user.id if message.from_user is not None else 0
     is_custom_item = bool(data.get("base_item_is_custom", False))
     palette_context = None
     try:
@@ -4059,7 +4059,7 @@ async def choose_wardrobe_base(callback: CallbackQuery, state: FSMContext) -> No
     await callback.answer()
     await state.update_data(base_item_is_custom=False)
     await callback.message.edit_text("✨ Подбираю для тебя образы…")
-    await generate_wardrobe_result(callback.message, state, base_options[base_key])
+    await generate_wardrobe_result(callback.message, state, base_options[base_key], callback.from_user.id)
 
 
 @dispatcher.message(WardrobeStates.waiting_for_occasion, F.text)
@@ -4088,7 +4088,7 @@ async def process_wardrobe_base_text(message: Message, state: FSMContext) -> Non
         )
         return
     await state.update_data(base_item_is_custom=True)
-    await generate_wardrobe_result(message, state, base_item)
+    await generate_wardrobe_result(message, state, base_item, message.from_user.id)
 
 
 @dispatcher.message(F.text)
