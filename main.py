@@ -4191,10 +4191,20 @@ def wardrobe_home_result_html(text: str) -> str:
     kept = []
     for line in formatted.splitlines():
         plain = re.sub(r"<[^>]*>", "", line).casefold()
-        if re.search(r"сумк|рюкзак|пальто|куртк|тренч|косух|джинсовк|уличн.{0,12}верхн", plain):
-            continue
-        if re.search(r"<b>\s*(?:обувь(?:\s+и\s+сумка)?|обувь/сумка)\s*:</b>", line, flags=re.IGNORECASE):
+        if re.search(r"<b>\s*(?:домашняя\s+)?обувь(?:\s+и\s+сумка)?\s*:</b>", line, flags=re.IGNORECASE):
             kept.append("• <b>Домашняя обувь / носочки:</b> тапочки или мягкие носочки")
+            continue
+        if "формула:" in plain:
+            line = re.sub(
+                r"(?i)\b(сумка|рюкзак|пальто|куртка|тренч|косуха|джинсовка|ботинки|кроссовки|кеды)\b",
+                "уютный домашний элемент",
+                line,
+            )
+            line = re.sub(r"(?i)верхний\s+слой", "уютный домашний слой", line)
+            line = re.sub(r"(?i)(?:уличная\s+)?обувь", "домашняя обувь / носочки", line)
+            kept.append(line)
+            continue
+        if re.search(r"сумк|рюкзак|пальто|куртк|тренч|косух|джинсовк|ботинк|кроссовк|кед\b|уличн.{0,12}верхн", plain):
             continue
         kept.append(line)
     return "\n".join(kept).strip()
