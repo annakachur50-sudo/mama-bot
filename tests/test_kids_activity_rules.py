@@ -10,17 +10,21 @@ def load_helpers():
     wanted = {
         "kids_age_months", "kids_age_band", "kids_picker_label",
         "kids_activity_context_key", "kids_activity_short_id", "kids_next_activity_category",
+        "kids_activity_is_duplicate", "kids_activity_fallback", "format_child_age",
     }
     nodes = [node for node in TREE.body if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name in wanted]
-    category_node = next(node for node in TREE.body if isinstance(node, ast.Assign)
-                         and any(isinstance(target, ast.Name) and target.id == "KIDS_ACTIVITY_CATEGORIES"
-                                 for target in node.targets))
+    needed_assignments = {"KIDS_ACTIVITY_CATEGORIES", "KIDS_ACTIVITY_POOLS", "KIDS_TEEN_FALLBACKS"}
+    assignments = [
+        node for node in TREE.body if isinstance(node, ast.Assign)
+        and any(isinstance(target, ast.Name) and target.id in needed_assignments for target in node.targets)
+    ]
     namespace = {
         "kids_last_categories": {},
         "random": __import__("random"),
         "re": __import__("re"),
+        "html": __import__("html"),
     }
-    exec(compile(ast.Module(body=[category_node], type_ignores=[]), "main.py", "exec"), namespace)
+    exec(compile(ast.Module(body=assignments, type_ignores=[]), "main.py", "exec"), namespace)
     exec(compile(ast.Module(body=nodes, type_ignores=[]), "main.py", "exec"), namespace)
     return namespace
 
@@ -75,6 +79,48 @@ class KidsAgeRulesTests(unittest.TestCase):
         self.assertIn("второй", SOURCE)
         self.assertIn("третий", SOURCE)
         self.assertNotIn("Ребёнок №", SOURCE)
+
+    def test_duplicate_detector_rejects_same_title_and_same_body(self):
+        duplicate = HELPERS["kids_activity_is_duplicate"]
+        self.assertTrue(duplicate(
+            "🕵️ «Криминалистический парадокс» (14 лет)\\nИдея одна и та же.",
+            "🕵️ «Криминалистический парадокс» (14 лет)\\nДругой текст.",
+        ))
+        self.assertTrue(duplicate(
+            "🎨 «Новая обложка» (14 лет)\\nПредложи сделать постер в трёх цветах.",
+            "🎨 «Другой заголовок» (14 лет)\\nПредложи сделать постер в трёх цветах.",
+        ))
+        self.assertFalse(duplicate(
+            "🎨 «Новая обложка» (14 лет)\\nПредложи сделать постер в трёх цветах.",
+            "🎲 «Музыкальный баттл» (14 лет)\\nВыберите трек и объясните свой выбор.",
+        ))
+
+    def test_fallback_rotation_excludes_the_previous_activity_for_each_age_band(self):
+        fallback = HELPERS["kids_activity_fallback"]
+        short_id = HELPERS["kids_activity_short_id"]
+        samples = (
+            {"child_number": 1, "age_value": 8, "age_unit": "months"},
+            age(2), age(4), age(8), age(11), age(14), age(16), age(18),
+        )
+        for selected_age in samples:
+            with self.subTest(age=selected_age):
+                first = fallback(selected_age)
+                second = fallback(selected_age, {short_id(first)})
+                self.assertNotEqual(short_id(first), short_id(second))
+                self.assertIn(f"({HELPERS['format_child_age'](selected_age)})", first.splitlines()[0])
+                self.assertIn(f"({HELPERS['format_child_age'](selected_age)})", second.splitlines()[0])
+
+    def test_live_generation_retries_duplicate_and_fallback_excludes_previous(self):
+        start = SOURCE.index("def generate_kids_activity_sync(")
+        end = SOURCE.index("\\n\\nasync def kids_activity_for_age(", start)
+        generator = SOURCE[start:end]
+        self.assertIn("kids_activity_is_duplicate(activity, previous)", generator)
+        self.assertIn("last_error = \"повтор предыдущей идеи\"", generator)
+        start = SOURCE.index("async def kids_activity_for_age(")
+        end = SOURCE.index("\\n\\nasync def kids_joint_activity(", start)
+        single = SOURCE[start:end]
+        self.assertIn("kids_activity_fallback(age, excluded_ids=excluded)", single)
+        self.assertNotIn('f"🎨 «Три цвета»', single)
 
     def test_radiance_status_precedes_vision_call_and_handles_result(self):
         handler_start = SOURCE.index("async def handle_admin_photo(")
