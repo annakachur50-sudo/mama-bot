@@ -1293,7 +1293,7 @@ def wardrobe_result_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(
             text="👗 Собрать ещё образ",
-            callback_data="radiance:wardrobe:start",
+            callback_data="radiance:wardrobe:repeat",
         )],
         [InlineKeyboardButton(
             text="✨ В меню сияния",
@@ -4381,7 +4381,24 @@ async def generate_wardrobe_result(
             reply_markup=wardrobe_result_keyboard(),
         )
     finally:
-        await state.clear()
+        if is_home and home_temp in HOME_TEMP_INSTRUCTIONS:
+            await state.update_data(base_item=base_item, home_temp=home_temp)
+            await state.set_state(WardrobeStates.waiting_for_base_item)
+        else:
+            await state.clear()
+
+
+@dispatcher.callback_query(F.data == "radiance:wardrobe:repeat")
+async def repeat_wardrobe_home(callback: CallbackQuery, state: FSMContext) -> None:
+    data = await state.get_data()
+    if not wardrobe_is_home_occasion(str(data.get("occasion", ""))) or data.get("home_temp") not in HOME_TEMP_INSTRUCTIONS or not data.get("base_item"):
+        await callback.answer("Начни новый подбор образа 🌸", show_alert=True)
+        await start_wardrobe_flow(callback, state)
+        return
+    await callback.answer()
+    if callback.message is not None:
+        await callback.message.edit_text("✨ Подбираю ещё один вариант для твоей температуры дома…")
+        await generate_wardrobe_result(callback.message, state, str(data["base_item"]), callback.from_user.id)
 
 
 @dispatcher.callback_query(F.data.startswith("wardrobe:base:"), WardrobeStates.waiting_for_base_item)
@@ -4411,7 +4428,7 @@ async def choose_wardrobe_base(callback: CallbackQuery, state: FSMContext) -> No
         await callback.answer("Не поняла выбор. Попробуй ещё раз.", show_alert=True)
         return
     await callback.answer()
-    await state.update_data(base_item_is_custom=False)
+    await state.update_data(base_item_is_custom=False, base_item=base_options[base_key])
     await callback.message.edit_text("✨ Подбираю для тебя образы…")
     await generate_wardrobe_result(callback.message, state, base_options[base_key], callback.from_user.id)
 
@@ -4432,6 +4449,14 @@ async def wardrobe_text_on_layer(message: Message) -> None:
     )
 
 
+@dispatcher.message(WardrobeStates.waiting_for_home_temp, F.text)
+async def wardrobe_text_on_home_temp(message: Message) -> None:
+    await message.answer(
+        "Выбери, пожалуйста, один из двух температурных режимов кнопкой 🌡️",
+        reply_markup=wardrobe_home_temp_keyboard(),
+    )
+
+
 @dispatcher.message(WardrobeStates.waiting_for_base_item, F.text)
 async def process_wardrobe_base_text(message: Message, state: FSMContext) -> None:
     base_item = (message.text or "").strip()
@@ -4444,7 +4469,7 @@ async def process_wardrobe_base_text(message: Message, state: FSMContext) -> Non
             ),
         )
         return
-    await state.update_data(base_item_is_custom=True)
+    await state.update_data(base_item_is_custom=True, base_item=base_item)
     await generate_wardrobe_result(message, state, base_item, message.from_user.id)
 
 
