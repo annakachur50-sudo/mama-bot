@@ -1289,11 +1289,11 @@ def wardrobe_base_keyboard(is_home: bool = False) -> InlineKeyboardMarkup:
     ])
 
 
-def wardrobe_result_keyboard() -> InlineKeyboardMarkup:
+def wardrobe_result_keyboard(is_home: bool = False) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(
             text="👗 Собрать ещё образ",
-            callback_data="radiance:wardrobe:repeat",
+            callback_data="radiance:wardrobe:repeat" if is_home else "radiance:wardrobe:start",
         )],
         [InlineKeyboardButton(
             text="✨ В меню сияния",
@@ -4365,7 +4365,7 @@ async def generate_wardrobe_result(
         header = wardrobe_palette_header(palette_context)
         await message.answer(
             header + formatted_result,
-            reply_markup=wardrobe_result_keyboard(),
+            reply_markup=wardrobe_result_keyboard(is_home=is_home),
             parse_mode=ParseMode.HTML,
         )
     except asyncio.CancelledError:
@@ -4378,7 +4378,7 @@ async def generate_wardrobe_result(
         await message.answer(
             "Не получилось собрать образы прямо сейчас 🙈 "
             "Попробуй ещё раз чуть позже.",
-            reply_markup=wardrobe_result_keyboard(),
+            reply_markup=wardrobe_result_keyboard(is_home=is_home),
         )
     finally:
         if is_home and home_temp in HOME_TEMP_INSTRUCTIONS:
