@@ -117,6 +117,28 @@ class WardrobeHomeAndPaletteTests(unittest.TestCase):
         self.assertIn("Формула", formatted)
         self.assertIn("Комплект 2", formatted)
 
+    def test_warm_home_cards_remove_layers_socks_and_jewelry_and_use_barefoot_format(self):
+        sample = (
+            "<b>Комплект 1: Лёгкий</b>\n"
+            "🔘 <b>Формула:</b> Шорты + Хлопковый топ + Кардиган + Носочки\n"
+            "• <b>Одежда:</b> Шорты + хлопковый топ\n"
+            "• <b>Уютный слой:</b> Кардиган\n"
+            "• <b>Домашняя обувь / носочки:</b> Носочки\n"
+            "• 💡 <b>Акцент:</b> Жемчужные серёжки\n\n"
+            "<b>Комплект 2: Воздушный</b>\n"
+            "• <b>Одежда:</b> Юбка + хлопковая футболка\n"
+            "• 💡 <b>Деталь:</b> Цепочка"
+        )
+        formatted = HELPERS["wardrobe_home_result_html"](sample, "warm")
+        self.assertNotIn("кардиган", formatted.casefold())
+        self.assertNotIn("носоч", formatted.casefold())
+        self.assertNotIn("жемчуж", formatted.casefold())
+        self.assertNotIn("цепоч", formatted.casefold())
+        self.assertNotIn("Уютный слой", formatted)
+        self.assertEqual(formatted.count("<b>Обувь:</b>"), 2)
+        self.assertIn("Босиком или лёгкие открытые шлёпанцы (по желанию)", formatted)
+        self.assertIn("крабик или мягкая резинка для волос", formatted)
+
     def test_other_scenarios_keep_the_existing_three_step_flow_and_card_format(self):
         self.assertIn('await state.set_state(WardrobeStates.waiting_for_layer)', SOURCE)
         self.assertIn('"Шаг 2 из 3: В чём идёшь / какой верхний слой? 🧥"', SOURCE)
