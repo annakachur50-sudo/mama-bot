@@ -18,7 +18,7 @@ def load_wardrobe_helpers():
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
         and node.name in wanted_functions
     ]
-    wanted_assignments = {"HOME_WARDROBE_INSTRUCTIONS", "WARDROBE_STYLIST_PROMPT"}
+    wanted_assignments = {"HOME_WARDROBE_INSTRUCTIONS", "WARDROBE_STYLIST_PROMPT", "HOME_TEMP_INSTRUCTIONS"}
     assignments = [
         node for node in TREE.body
         if isinstance(node, ast.Assign)
@@ -107,9 +107,9 @@ class WardrobeHomeFlowTests(unittest.TestCase):
     def test_back_and_restart_clear_stale_wardrobe_parameters(self):
         self.assertIn('await state.clear()\n    await state.set_state(WardrobeStates.waiting_for_occasion)', SOURCE)
         self.assertIn('await state.set_data({\n        "occasion": occasions[occasion_key],\n        "base_item_is_custom": False,\n    })', SOURCE)
-        self.assertIn('async def wardrobe_home_back_to_occasion', SOURCE)
+        self.assertIn('async def wardrobe_home_temp_back_to_occasion', SOURCE)
         home_back_start = SOURCE.index("async def wardrobe_home_back_to_occasion")
-        home_back_end = SOURCE.index('@dispatcher.callback_query(F.data.startswith("wardrobe:layer:")', home_back_start)
+        home_back_end = SOURCE.index('@dispatcher.callback_query(F.data.startswith("wardrobe:home_temp:")', home_back_start)
         self.assertIn('await state.set_data({})', SOURCE[home_back_start:home_back_end])
         self.assertIn('finally:\n        await state.clear()', SOURCE)
 
