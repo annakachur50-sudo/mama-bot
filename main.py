@@ -2323,7 +2323,7 @@ async def stylist_payment_preview(callback: CallbackQuery, state: FSMContext) ->
             await state.set_state(WardrobeStates.waiting_for_occasion)
             if callback.message is not None:
                 await callback.message.answer(
-                    "Доступ к персональному гардеробу уже активен ✨\\n\\nШаг 1 из 3: Куда собираешься? 🌸",
+                    "Доступ к персональному гардеробу уже активен ✨\n\nШаг 1 из 3: Куда собираешься? 🌸",
                     reply_markup=wardrobe_occasion_keyboard(),
                 )
             return
