@@ -25,6 +25,16 @@ from aiogram.types import (
     KeyboardButton,
     Message,
     ReplyKeyboardMarkup,
+    PreCheckoutQuery,
+)
+from payments import (
+    PaymentStorageUnavailable,
+    build_invoice_parameters,
+    create_pending_order,
+    find_order_by_payload,
+    has_wardrobe_access,
+    record_successful_payment,
+    validate_pre_checkout,
 )
 from google import genai
 from google.genai import errors as genai_errors
@@ -32,6 +42,7 @@ from google.genai import types
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+PAYMENT_PROVIDER_TOKEN = os.getenv("PAYMENT_PROVIDER_TOKEN")
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite")
 TELEGRAM_MESSAGE_LIMIT = 4096
 TELEGRAM_CHUNK_SIZE = TELEGRAM_MESSAGE_LIMIT - 256
@@ -408,6 +419,9 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
 )
 logger = logging.getLogger("telegram-gemini-bot")
+
+if not PAYMENT_PROVIDER_TOKEN:
+    logger.warning("PAYMENT_PROVIDER_TOKEN is not configured; wardrobe checkout is disabled.")
 
 if not TELEGRAM_BOT_TOKEN:
     raise RuntimeError("Missing required secret: TELEGRAM_BOT_TOKEN")
@@ -1417,11 +1431,13 @@ def generate_wardrobe_outfits_sync(
     return result
 
 
-def radiance_menu_keyboard(user_id: int | None = None) -> InlineKeyboardMarkup:
-    wardrobe_is_unlocked = user_id is not None and user_id in ADMIN_USER_IDS
+def radiance_menu_keyboard(
+    user_id: int | None = None,
+    wardrobe_access: bool = False,
+) -> InlineKeyboardMarkup:
     wardrobe_button = InlineKeyboardButton(
-        text="👗 Стильный образ на сегодня" if wardrobe_is_unlocked else "👗 Стильный образ на сегодня 🔒",
-        callback_data="radiance:wardrobe:start" if wardrobe_is_unlocked else "radiance:locked:wardrobe",
+        text="👗 Персональный подбор гардероба" if wardrobe_access else "👗 Персональный подбор гардероба · 49 ₽",
+        callback_data="radiance:wardrobe:start",
     )
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🌸 Подобрать мои оттенки (Бесплатно)", callback_data="radiance:undertones")],
@@ -1437,7 +1453,7 @@ RADIANCE_LOCKED_CARDS = {
         "• Подбор 2 готовых образов под твою внешность и природный колорит\n"
         "• Сборка стильного комплекта вокруг твоей вещи из шкафа\n"
         "• Формулы сочетаний, цветовая палитра и акценты\n\n"
-        "💳 <b>Стоимость: 99 ₽</b> (разовый подбор)"
+        "💳 <b>Стоимость: 49 ₽</b> (разовый персональный подбор)"
     ),
     "care": (
         "💄 <b>Уход и косметика</b>\n\n"
@@ -1461,7 +1477,7 @@ RADIANCE_INTEREST_LABELS = {
 def radiance_locked_keyboard(feature: str) -> InlineKeyboardMarkup:
     if feature == "wardrobe":
         return InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="✨ Оплатить 99 ₽", callback_data="buy:stylist:preview")],
+            [InlineKeyboardButton(text="✨ Оплатить 49 ₽", callback_data="buy:stylist:preview")],
             [InlineKeyboardButton(text="↩️ Назад к Моему сиянию", callback_data="menu_radiance")],
         ])
     return InlineKeyboardMarkup(inline_keyboard=[
@@ -2040,7 +2056,12 @@ async def start_radiance_flow(message: Message, user_id: int) -> None:
     pending_kids_age.discard(user_id)
     support_sessions.pop(user_id, None)
     banner_id = random.choice(GLOW_BANNER_IDS)
-    markup = radiance_menu_keyboard(user_id)
+    try:
+        wardrobe_access = await asyncio.to_thread(has_wardrobe_access, user_id)
+    except Exception as error:
+        logger.warning("Wardrobe access lookup unavailable (%s)", type(error).__name__)
+        wardrobe_access = False
+    markup = radiance_menu_keyboard(user_id, wardrobe_access=wardrobe_access)
     try:
         await bot.send_photo(
             message.chat.id,
@@ -2297,9 +2318,111 @@ async def show_radiance_locked_card(callback: CallbackQuery) -> None:
 
 @dispatcher.callback_query(F.data == "buy:stylist:preview")
 async def stylist_payment_preview(callback: CallbackQuery) -> None:
-    await callback.answer(
-        "Функция оплаты проходит модерацию платёжной системы. Скоро будет доступна!",
-        show_alert=True,
+    if callback.message is None:
+        await callback.answer()
+        return
+    if not PAYMENT_PROVIDER_TOKEN:
+        await callback.answer(
+            "Оплата временно недоступна. Попробуй немного позже 🌿",
+            show_alert=True,
+        )
+        return
+    try:
+        if await asyncio.to_thread(has_wardrobe_access, callback.from_user.id):
+            await callback.answer("У тебя уже есть доступ к персональному подбору ✨")
+            await callback.message.answer(
+                "Твой персональный стилист уже готов к работе!",
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="✨ Перейти к подбору образа", callback_data="radiance:wardrobe:start")],
+                    [InlineKeyboardButton(text="🏠 В главное меню", callback_data="menu:main")],
+                ]),
+            )
+            return
+        order = await asyncio.to_thread(create_pending_order, callback.from_user.id)
+        if order is None:
+            await callback.answer("У тебя уже есть доступ к подбору ✨", show_alert=True)
+            return
+        invoice = build_invoice_parameters(PAYMENT_PROVIDER_TOKEN, order["payload"])
+        if invoice is None:
+            await callback.answer(
+                "Оплата временно недоступна. Попробуй немного позже 🌿",
+                show_alert=True,
+            )
+            return
+        await callback.answer()
+        await bot.send_invoice(chat_id=callback.message.chat.id, **invoice)
+    except Exception as error:
+        logger.warning("Wardrobe invoice creation failed (%s)", type(error).__name__)
+        await callback.answer(
+            "Не получилось открыть оплату. Попробуй ещё раз чуть позже 🌿",
+            show_alert=True,
+        )
+
+
+@dispatcher.pre_checkout_query()
+async def process_wardrobe_pre_checkout(query: PreCheckoutQuery) -> None:
+    try:
+        order = await asyncio.to_thread(find_order_by_payload, query.invoice_payload)
+        is_valid, error_message = validate_pre_checkout(
+            order,
+            query.from_user.id,
+            query.total_amount,
+            query.currency,
+        )
+    except Exception as error:
+        logger.warning("Wardrobe pre-checkout validation failed (%s)", type(error).__name__)
+        is_valid = False
+        error_message = "Не удалось проверить заказ. Попробуй оформить его ещё раз."
+    await query.answer(ok=is_valid, error_message=None if is_valid else error_message)
+
+
+@dispatcher.message(F.successful_payment)
+async def process_wardrobe_successful_payment(message: Message) -> None:
+    payment = message.successful_payment
+    if payment is None or message.from_user is None:
+        return
+    try:
+        granted = await asyncio.to_thread(
+            record_successful_payment,
+            payment.invoice_payload,
+            message.from_user.id,
+            payment.total_amount,
+            payment.currency,
+            payment.telegram_payment_charge_id,
+            payment.provider_payment_charge_id,
+        )
+        if not granted:
+            # Telegram may redeliver an update. Confirm only the exact already-paid order;
+            # the repository never grants a second entitlement.
+            order = await asyncio.to_thread(find_order_by_payload, payment.invoice_payload)
+            has_access = await asyncio.to_thread(has_wardrobe_access, message.from_user.id)
+            granted = bool(
+                order
+                and int(order["telegram_user_id"]) == message.from_user.id
+                and order["status"] == "paid"
+                and order.get("telegram_payment_charge_id") == payment.telegram_payment_charge_id
+                and has_access
+            )
+    except Exception as error:
+        logger.warning("Wardrobe successful payment processing failed (%s)", type(error).__name__)
+        await message.answer(
+            "Платёж получен, но сейчас не удалось сохранить доступ. "
+            "Пожалуйста, напиши в поддержку — мы проверим оплату вручную."
+        )
+        return
+    if not granted:
+        logger.warning("Wardrobe payment did not match a pending order for user %s", message.from_user.id)
+        await message.answer(
+            "Не удалось автоматически подтвердить заказ. Пожалуйста, напиши в поддержку — мы проверим оплату."
+        )
+        return
+    await message.answer(
+        "🎉 Оплата прошла успешно!\n\n"
+        "Твой персональный стилист готов к работе. Нажми кнопку ниже, чтобы перейти к подбору!",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="✨ Перейти к подбору образа", callback_data="radiance:wardrobe:start")],
+            [InlineKeyboardButton(text="🏠 В главное меню", callback_data="menu:main")],
+        ]),
     )
 
 
@@ -4092,35 +4215,45 @@ async def handle_reset_me(message: Message) -> None:
 
 
 
-@dispatcher.callback_query(F.data == "radiance:wardrobe:start")
-async def start_wardrobe_flow(
-    callback: CallbackQuery,
-    state: FSMContext,
-) -> None:
-    if callback.from_user.id not in ADMIN_USER_IDS:
-        await callback.answer()
-        if callback.message is not None:
-            await callback.message.answer(
-                RADIANCE_LOCKED_CARDS["wardrobe"],
-                reply_markup=radiance_locked_keyboard("wardrobe"),
-                parse_mode=ParseMode.HTML,
-            )
-        return
-    await callback.answer()
-    if callback.message is None:
-        return
-
-    user_id = callback.from_user.id
+async def begin_paid_wardrobe_flow(message: Message, state: FSMContext, user_id: int) -> None:
     radiance_states.pop(user_id, None)
     pending_kids_age.discard(user_id)
     support_sessions.pop(user_id, None)
     await state.clear()
     await state.set_state(WardrobeStates.waiting_for_occasion)
-
-    await callback.message.answer(
+    await message.answer(
         "Шаг 1 из 3: Куда собираешься? 🌸",
         reply_markup=wardrobe_occasion_keyboard(),
     )
+
+
+@dispatcher.callback_query(F.data == "radiance:wardrobe:start")
+async def start_wardrobe_flow(
+    callback: CallbackQuery,
+    state: FSMContext,
+) -> None:
+    if callback.message is None:
+        await callback.answer()
+        return
+    try:
+        has_access = await asyncio.to_thread(has_wardrobe_access, callback.from_user.id)
+    except Exception as error:
+        logger.warning("Wardrobe access check unavailable (%s)", type(error).__name__)
+        await callback.answer(
+            "Не получилось проверить доступ. Попробуй немного позже 🌿",
+            show_alert=True,
+        )
+        return
+    if not has_access:
+        await callback.answer()
+        await callback.message.answer(
+            RADIANCE_LOCKED_CARDS["wardrobe"],
+            reply_markup=radiance_locked_keyboard("wardrobe"),
+            parse_mode=ParseMode.HTML,
+        )
+        return
+    await callback.answer()
+    await begin_paid_wardrobe_flow(callback.message, state, callback.from_user.id)
 
 
 @dispatcher.callback_query(F.data == "radiance:wardrobe:cancel")
