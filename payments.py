@@ -81,7 +81,7 @@ def mark_order_failed_sync(order_id: str) -> None:
         connection.execute("""
             UPDATE public.stylist_payment_orders
             SET status = 'payment_creation_failed'
-            WHERE order_id = %s AND status = 'pending'
+            WHERE order_id = %s::uuid AND status = 'pending'
         """, (order_id,))
 
 
@@ -217,7 +217,7 @@ def grant_access_from_payment_sync(payment: dict[str, Any]) -> tuple[int, bool]:
             SET payment_id = COALESCE(payment_id, %s),
                 status = 'succeeded',
                 paid_at = COALESCE(paid_at, now())
-            WHERE order_id = %s
+            WHERE order_id = %s::uuid
         """, (payment["id"], order_id))
         inserted = connection.execute("""
             INSERT INTO public.stylist_access (telegram_user_id, payment_id)
