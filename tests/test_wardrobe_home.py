@@ -20,11 +20,11 @@ def load_wardrobe_helpers():
         node for node in TREE.body
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name in wanted
     ]
-    constants = {"WARDROBE_STYLIST_PROMPT", "HOME_WARDROBE_INSTRUCTIONS"}
+    constants = {"WARDROBE_STYLIST_PROMPT", "HOME_WARDROBE_INSTRUCTIONS", "HOME_TEMP_INSTRUCTIONS"}
     assignments = [
         node for node in TREE.body
-        if isinstance(node, ast.Assign)
-        and any(isinstance(target, ast.Name) and target.id in constants for target in node.targets)
+        if isinstance(node, (ast.Assign, ast.AnnAssign))
+        and any(isinstance(target, ast.Name) and target.id in constants for target in ([node.target] if isinstance(node, ast.AnnAssign) else node.targets))
     ]
     namespace = {"re": re, "html": html}
     exec(compile(ast.Module(body=assignments, type_ignores=[]), "main.py", "exec"), namespace)
@@ -68,8 +68,8 @@ class WardrobeHomeAndPaletteTests(unittest.TestCase):
         end = SOURCE.index('@dispatcher.callback_query(F.data == "wardrobe:back:occasion"', start)
         handler = SOURCE[start:end]
         home_branch = handler[handler.index("if is_home:"):handler.index("return", handler.index("if is_home:"))]
-        self.assertIn("WardrobeStates.waiting_for_base_item", home_branch)
-        self.assertIn("wardrobe_base_keyboard(is_home=True)", home_branch)
+        self.assertIn("WardrobeStates.waiting_for_home_temp", home_branch)
+        self.assertIn("Какая у тебя температура дома?", home_branch)
         self.assertNotIn("wardrobe_layer_keyboard()", home_branch)
         self.assertIn("await state.set_state(WardrobeStates.waiting_for_layer)", handler)
 
@@ -92,7 +92,7 @@ class WardrobeHomeAndPaletteTests(unittest.TestCase):
         generator = SOURCE[generator_start:generator_end]
         self.assertIn("if palette_context:", generator)
         self.assertIn("palette_context", generator)
-        self.assertIn("wardrobe_system_instruction(is_home)", generator)
+        self.assertIn("wardrobe_system_instruction(is_home, home_temp)", generator)
 
     def test_home_card_replaces_outdoor_shoes_and_removes_bag_and_outerwear_rows(self):
         sample = (

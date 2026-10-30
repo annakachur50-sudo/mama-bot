@@ -223,6 +223,7 @@ class WardrobeStates(StatesGroup):
     waiting_for_occasion = State()
     waiting_for_layer = State()
     waiting_for_base_item = State()
+    waiting_for_home_temp = State()
 
 
 radiance_states: dict[int, str] = {}
@@ -1262,6 +1263,14 @@ def wardrobe_layer_keyboard() -> InlineKeyboardMarkup:
     ])
 
 
+def wardrobe_home_temp_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="☀️ Дома тепло / жарко", callback_data="wardrobe:home_temp:warm")],
+        [InlineKeyboardButton(text="❄️ Дома свежо / прохладно", callback_data="wardrobe:home_temp:cool")],
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="wardrobe:back:home_temp")],
+    ])
+
+
 def wardrobe_base_keyboard(is_home: bool = False) -> InlineKeyboardMarkup:
     if is_home:
         return InlineKeyboardMarkup(inline_keyboard=[
@@ -1269,7 +1278,7 @@ def wardrobe_base_keyboard(is_home: bool = False) -> InlineKeyboardMarkup:
             [InlineKeyboardButton(text="👗 Домашнее платье / Лонгслив", callback_data="wardrobe:base:dress")],
             [InlineKeyboardButton(text="🧶 Уютный трикотаж", callback_data="wardrobe:base:sport")],
             [InlineKeyboardButton(text="✨ На твой вкус", callback_data="wardrobe:base:any")],
-            [InlineKeyboardButton(text="↩️ К выбору повода", callback_data="wardrobe:back:occasion:home")],
+            [InlineKeyboardButton(text="⬅️ Назад", callback_data="wardrobe:back:home_temp")],
         ])
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="👖 Джинсы / Брюки", callback_data="wardrobe:base:jeans")],
@@ -1280,11 +1289,11 @@ def wardrobe_base_keyboard(is_home: bool = False) -> InlineKeyboardMarkup:
     ])
 
 
-def wardrobe_result_keyboard() -> InlineKeyboardMarkup:
+def wardrobe_result_keyboard(is_home: bool = False) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(
             text="👗 Собрать ещё образ",
-            callback_data="radiance:wardrobe:start",
+            callback_data="radiance:wardrobe:repeat" if is_home else "radiance:wardrobe:start",
         )],
         [InlineKeyboardButton(
             text="✨ В меню сияния",
@@ -1341,18 +1350,40 @@ def wardrobe_is_home_occasion(occasion: str) -> bool:
     normalized = re.sub(r"\s+", " ", str(occasion or "").casefold()).strip()
     return any(marker in normalized for marker in ("дома", "домашн", "уютный день"))
 
-def wardrobe_system_instruction(is_home: bool = False) -> str:
+HOME_TEMP_INSTRUCTIONS = {
+    "warm": (
+        "В помещении жарко/топят батареи. Использовать только лёгкие, дышащие ткани "
+        "(тонкий хлопок, муслин, вискоза, кулирка). Формулы: хлопковый топ/футболка + "
+        "шорты/лёгкие кюлоты/свободные тонкие брюки, лёгкое домашнее платье-рубашка. "
+        "Без шерсти и плотных свитеров. Обувь: босиком, открытые тапочки или тонкие следки/носочки. "
+        "Не предлагай тёплые многослойные комплекты, шерсть, плотный трикотаж и закрытые утеплённые тапочки."
+    ),
+    "cool": (
+        "В помещении прохладно. Использовать уютную многослойность: мягкий трикотажный костюм, "
+        "лонгслив + свободные брюки, мягкий кардиган или накидка, уютные тёплые носочки "
+        "или закрытые домашние тапочки. Не предлагай шорты, тонкие открытые комплекты "
+        "или босые ноги как основной вариант."
+    ),
+}
+
+
+def wardrobe_system_instruction(is_home: bool = False, home_temp: str | None = None) -> str:
     if is_home:
-        # The home prompt is intentionally self-contained and replaces streetwear requirements.
-        return HOME_WARDROBE_INSTRUCTIONS
+        instruction = HOME_WARDROBE_INSTRUCTIONS
+        temperature_instruction = HOME_TEMP_INSTRUCTIONS.get(home_temp or "")
+        if temperature_instruction:
+            instruction += "\n\nОБЯЗАТЕЛЬНЫЙ ТЕМПЕРАТУРНЫЙ РЕЖИМ ДОМА:\n" + temperature_instruction
+            instruction += "\nСтрого соблюдай этот режим в обоих комплектах; не предлагай вещи, противоречащие ему."
+        return instruction
     return WARDROBE_STYLIST_PROMPT
 
 def generate_wardrobe_outfits_sync(
     user_request: str,
     palette_context: str | None = None,
     is_home: bool = False,
+    home_temp: str | None = None,
 ) -> str:
-    system_instruction = wardrobe_system_instruction(is_home)
+    system_instruction = wardrobe_system_instruction(is_home, home_temp)
     if palette_context:
         system_instruction += (
             "\n\nПЕРСОНАЛЬНАЯ ЦВЕТОВАЯ ПАЛИТРА ПОЛЬЗОВАТЕЛЯ:\n"
@@ -4102,11 +4133,10 @@ async def choose_wardrobe_occasion(callback: CallbackQuery, state: FSMContext) -
     })
     if is_home:
         await state.update_data(layer="уютный домашний слой: кардиган, халат или мягкая рубашка по желанию")
-        await state.set_state(WardrobeStates.waiting_for_base_item)
+        await state.set_state(WardrobeStates.waiting_for_home_temp)
         await callback.message.edit_text(
-            "<b>Шаг 2 из 2: Что возьмём за основу домашнего образа? 🧸</b>\n\n"
-            "Выбери уютную категорию или напиши конкретную вещь из шкафа 👇",
-            reply_markup=wardrobe_base_keyboard(is_home=True),
+            "<b>Какая у тебя температура дома?</b>",
+            reply_markup=wardrobe_home_temp_keyboard(),
             parse_mode=ParseMode.HTML,
         )
         return
@@ -4129,15 +4159,48 @@ async def wardrobe_back_to_occasion(callback: CallbackQuery, state: FSMContext) 
         )
 
 
-@dispatcher.callback_query(F.data == "wardrobe:back:occasion:home", WardrobeStates.waiting_for_base_item)
-async def wardrobe_home_back_to_occasion(callback: CallbackQuery, state: FSMContext) -> None:
+@dispatcher.callback_query(F.data == "wardrobe:back:home_temp", WardrobeStates.waiting_for_home_temp)
+async def wardrobe_home_temp_back_to_occasion(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
-    await state.set_data({})
+    data = await state.get_data()
+    await state.set_data({key: value for key, value in data.items() if key not in {"home_temp", "layer", "base_item_is_custom"}})
     await state.set_state(WardrobeStates.waiting_for_occasion)
     if callback.message is not None:
         await callback.message.edit_text(
             "Шаг 1 из 3: Куда собираешься? 🌸",
             reply_markup=wardrobe_occasion_keyboard(),
+        )
+
+
+@dispatcher.callback_query(F.data.startswith("wardrobe:home_temp:"), WardrobeStates.waiting_for_home_temp)
+async def choose_wardrobe_home_temp(callback: CallbackQuery, state: FSMContext) -> None:
+    if callback.message is None:
+        await callback.answer()
+        return
+    home_temp = (callback.data or "").rsplit(":", 1)[-1]
+    if home_temp not in HOME_TEMP_INSTRUCTIONS:
+        await callback.answer("Не поняла выбор. Попробуй ещё раз.", show_alert=True)
+        return
+    await callback.answer()
+    await state.update_data(home_temp=home_temp, layer="уютный домашний слой по температуре и желанию", base_item_is_custom=False)
+    await state.set_state(WardrobeStates.waiting_for_base_item)
+    await callback.message.edit_text(
+        "<b>Что возьмём за основу домашнего образа? 🧸</b>\n\n"
+        "Выбери уютную категорию или напиши конкретную вещь из шкафа 👇",
+        reply_markup=wardrobe_base_keyboard(is_home=True),
+        parse_mode=ParseMode.HTML,
+    )
+
+
+@dispatcher.callback_query(F.data == "wardrobe:back:home_temp", WardrobeStates.waiting_for_base_item)
+async def wardrobe_home_back_to_temp(callback: CallbackQuery, state: FSMContext) -> None:
+    await callback.answer()
+    await state.set_state(WardrobeStates.waiting_for_home_temp)
+    if callback.message is not None:
+        await callback.message.edit_text(
+            "<b>Какая у тебя температура дома?</b>",
+            reply_markup=wardrobe_home_temp_keyboard(),
+            parse_mode=ParseMode.HTML,
         )
 
 
@@ -4221,8 +4284,17 @@ async def generate_wardrobe_result(
     occasion = str(data.get("occasion", "")).strip()
     is_home = wardrobe_is_home_occasion(occasion)
     layer = str(data.get("layer", "")).strip()
+    home_temp = str(data.get("home_temp", "")).strip() if is_home else None
+    if is_home and home_temp not in HOME_TEMP_INSTRUCTIONS:
+        await message.answer(
+            "Сначала выбери температуру дома — так я подберу действительно комфортный образ 🌡️",
+            reply_markup=wardrobe_home_temp_keyboard(),
+            parse_mode=ParseMode.HTML,
+        )
+        await state.set_state(WardrobeStates.waiting_for_home_temp)
+        return
     if is_home and not layer:
-        layer = "уютный домашний слой: кардиган, халат или мягкая рубашка по желанию"
+        layer = "уютный домашний слой по температуре и желанию"
     base_item = base_item.strip()
     if not occasion or (not layer and not is_home) or not base_item:
         await message.answer(
@@ -4260,6 +4332,7 @@ async def generate_wardrobe_result(
             f"Основа образа или вещь, которую нужно использовать: {base_item}.\n"
             f"Инструкция по основе: {item_instruction}\n\n"
             + palette_instruction
+            + f"Температурный режим дома: {HOME_TEMP_INSTRUCTIONS[home_temp]}\\n\\n"
             + "Собери ровно 2 готовых домашних комплекта. Сохрани формулу через +, палитру с цветными кружочками, "
             "короткие детали и один уютный акцент. Не добавляй приветствия или вводные фразы."
         )
@@ -4282,6 +4355,7 @@ async def generate_wardrobe_result(
             user_request,
             palette_context,
             is_home,
+            home_temp,
         )
         formatted_result = (
             wardrobe_home_result_html(result)
@@ -4291,7 +4365,7 @@ async def generate_wardrobe_result(
         header = wardrobe_palette_header(palette_context)
         await message.answer(
             header + formatted_result,
-            reply_markup=wardrobe_result_keyboard(),
+            reply_markup=wardrobe_result_keyboard(is_home=is_home),
             parse_mode=ParseMode.HTML,
         )
     except asyncio.CancelledError:
@@ -4304,10 +4378,27 @@ async def generate_wardrobe_result(
         await message.answer(
             "Не получилось собрать образы прямо сейчас 🙈 "
             "Попробуй ещё раз чуть позже.",
-            reply_markup=wardrobe_result_keyboard(),
+            reply_markup=wardrobe_result_keyboard(is_home=is_home),
         )
     finally:
-        await state.clear()
+        if is_home and home_temp in HOME_TEMP_INSTRUCTIONS:
+            await state.update_data(base_item=base_item, home_temp=home_temp)
+            await state.set_state(WardrobeStates.waiting_for_base_item)
+        else:
+            await state.clear()
+
+
+@dispatcher.callback_query(F.data == "radiance:wardrobe:repeat")
+async def repeat_wardrobe_home(callback: CallbackQuery, state: FSMContext) -> None:
+    data = await state.get_data()
+    if not wardrobe_is_home_occasion(str(data.get("occasion", ""))) or data.get("home_temp") not in HOME_TEMP_INSTRUCTIONS or not data.get("base_item"):
+        await callback.answer("Начни новый подбор образа 🌸", show_alert=True)
+        await start_wardrobe_flow(callback, state)
+        return
+    await callback.answer()
+    if callback.message is not None:
+        await callback.message.edit_text("✨ Подбираю ещё один вариант для твоей температуры дома…")
+        await generate_wardrobe_result(callback.message, state, str(data["base_item"]), callback.from_user.id)
 
 
 @dispatcher.callback_query(F.data.startswith("wardrobe:base:"), WardrobeStates.waiting_for_base_item)
@@ -4337,7 +4428,7 @@ async def choose_wardrobe_base(callback: CallbackQuery, state: FSMContext) -> No
         await callback.answer("Не поняла выбор. Попробуй ещё раз.", show_alert=True)
         return
     await callback.answer()
-    await state.update_data(base_item_is_custom=False)
+    await state.update_data(base_item_is_custom=False, base_item=base_options[base_key])
     await callback.message.edit_text("✨ Подбираю для тебя образы…")
     await generate_wardrobe_result(callback.message, state, base_options[base_key], callback.from_user.id)
 
@@ -4358,6 +4449,14 @@ async def wardrobe_text_on_layer(message: Message) -> None:
     )
 
 
+@dispatcher.message(WardrobeStates.waiting_for_home_temp, F.text)
+async def wardrobe_text_on_home_temp(message: Message) -> None:
+    await message.answer(
+        "Выбери, пожалуйста, один из двух температурных режимов кнопкой 🌡️",
+        reply_markup=wardrobe_home_temp_keyboard(),
+    )
+
+
 @dispatcher.message(WardrobeStates.waiting_for_base_item, F.text)
 async def process_wardrobe_base_text(message: Message, state: FSMContext) -> None:
     base_item = (message.text or "").strip()
@@ -4370,7 +4469,7 @@ async def process_wardrobe_base_text(message: Message, state: FSMContext) -> Non
             ),
         )
         return
-    await state.update_data(base_item_is_custom=True)
+    await state.update_data(base_item_is_custom=True, base_item=base_item)
     await generate_wardrobe_result(message, state, base_item, message.from_user.id)
 
 
