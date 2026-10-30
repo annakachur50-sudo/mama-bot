@@ -72,7 +72,7 @@ def save_payment_id_sync(order_id: str, payment_id: str) -> None:
         connection.execute("""
             UPDATE public.stylist_payment_orders
             SET payment_id = %s
-            WHERE order_id = %s AND status = 'pending'
+            WHERE order_id = %s::uuid AND status = 'pending'
         """, (payment_id, order_id))
 
 
@@ -187,12 +187,14 @@ def grant_access_from_payment_sync(payment: dict[str, Any]) -> tuple[int, bool]:
         order = connection.execute("""
             SELECT telegram_user_id, amount, currency, status, payment_id
             FROM public.stylist_payment_orders
-            WHERE order_id = %s
+            WHERE order_id = %s::uuid
             FOR UPDATE
         """, (order_id,)).fetchone()
         if order is None:
             raise PaymentValidationError("Payment order was not found")
         order_user_id, order_amount, order_currency, order_status, stored_payment_id = order
+        if order_status not in {"pending", "succeeded"}:
+            raise PaymentValidationError("Payment order is not payable")
         if int(order_user_id) != telegram_user_id:
             raise PaymentValidationError("Order belongs to another Telegram user")
         if Decimal(str(order_amount)).quantize(Decimal("0.01")) != PAYMENT_AMOUNT:
