@@ -111,7 +111,7 @@ class WardrobeHomeFlowTests(unittest.TestCase):
         home_back_start = SOURCE.index("async def wardrobe_home_temp_back_to_occasion")
         home_back_end = SOURCE.index('@dispatcher.callback_query(F.data.startswith("wardrobe:home_temp:")', home_back_start)
         self.assertIn('"home_temp", "layer", "base_item_is_custom"', SOURCE[home_back_start:home_back_end])
-        self.assertIn('finally:\n        await state.clear()', SOURCE)
+        self.assertIn("if is_home and home_temp in HOME_TEMP_INSTRUCTIONS", SOURCE)
 
 
 if __name__ == "__main__":
