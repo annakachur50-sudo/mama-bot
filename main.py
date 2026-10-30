@@ -2341,15 +2341,15 @@ async def stylist_payment_preview(callback: CallbackQuery, state: FSMContext) ->
             await callback.message.answer("Оплата пока не настроена. Попробуй немного позже 🌿")
         return
     except Exception as error:
-        logger.exception("Could not create YooKassa payment (%s)", type(error).__name__)
-        if "order_id" in locals():
-            try:
-                await asyncio.to_thread(mark_order_failed_sync, order_id)
-            except Exception:
-                logger.exception("Could not mark failed stylist payment order")
+        # A network/DB timeout can happen after YooKassa has already created the
+        # payment. Keep the order pending so a delayed succeeded webhook can still
+        # confirm it; never turn an uncertain payment into a rejected order.
+        logger.exception("Could not complete YooKassa checkout (%s)", type(error).__name__)
         if callback.message is not None:
             await callback.message.answer(
-                "Не получилось создать ссылку на оплату. Деньги не списаны — попробуй ещё раз чуть позже."
+                "Не удалось получить ссылку на оплату. Если платёж уже открылся, "
+                "не оплачивай повторно — дождись подтверждения. Если ссылка не появилась, "
+                "попробуй ещё раз позже."
             )
         return
 
