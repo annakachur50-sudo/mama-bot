@@ -118,13 +118,16 @@ def ensure_payment_schema(connection_factory: Callable = _connect) -> None:
         # psycopg connections close on context exit; sqlite test connections stay open.
 
 
-def _fetch_order(connection, payload: str):
-    cursor = _execute(connection, """
+def _fetch_order(connection, payload: str, for_update: bool = False):
+    query = """
         SELECT order_id, payload, telegram_user_id, amount, currency, status,
                telegram_payment_charge_id, provider_payment_charge_id, paid_at
         FROM public.wardrobe_orders
         WHERE payload = ?
-    """, (payload,))
+    """
+    if for_update and not _is_sqlite(connection):
+        query += " FOR UPDATE"
+    cursor = _execute(connection, query, (payload,))
     return _row_dict(cursor, cursor.fetchone())
 
 
@@ -164,8 +167,20 @@ def create_pending_order(telegram_user_id: int, connection_factory: Callable = _
                 INSERT INTO public.wardrobe_orders
                     (order_id, payload, telegram_user_id, amount, currency, status)
                 VALUES (?, ?, ?, ?, ?, 'pending')
+                ON CONFLICT DO NOTHING
             """, (order_id, payload, telegram_user_id, PAYMENT_AMOUNT, PAYMENT_CURRENCY))
-            return _fetch_order(connection, payload)
+            created = _fetch_order(connection, payload)
+            if created:
+                return created
+            # Another callback may have inserted the user's pending order concurrently.
+            cursor = _execute(connection, """
+                SELECT order_id, payload, telegram_user_id, amount, currency, status,
+                       telegram_payment_charge_id, provider_payment_charge_id, paid_at
+                FROM public.wardrobe_orders
+                WHERE telegram_user_id = ? AND status = 'pending'
+                ORDER BY created_at DESC LIMIT 1
+            """, (telegram_user_id,))
+            return _row_dict(cursor, cursor.fetchone())
     finally:
         if not _is_sqlite(connection):
             connection.close()
@@ -200,18 +215,20 @@ def record_successful_payment(
     connection = connection_factory()
     try:
         with connection:
-            order = _fetch_order(connection, payload)
+            order = _fetch_order(connection, payload, for_update=True)
             valid, _ = validate_pre_checkout(order, telegram_user_id, total_amount, currency)
             if not valid:
                 return False
             paid_at = datetime.now(timezone.utc).isoformat()
-            _execute(connection, """
+            updated = _execute(connection, """
                 UPDATE public.wardrobe_orders
                 SET status = 'paid', paid_at = ?, telegram_payment_charge_id = ?,
                     provider_payment_charge_id = ?
                 WHERE order_id = ? AND status = 'pending'
             """, (paid_at, telegram_payment_charge_id, provider_payment_charge_id,
                   order["order_id"]))
+            if updated.rowcount != 1:
+                return False
             # The primary key makes entitlement grant idempotent across retries/restarts.
             _execute(connection, """
                 INSERT INTO public.wardrobe_access (telegram_user_id, order_id)
