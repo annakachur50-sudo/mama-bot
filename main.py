@@ -2326,6 +2326,11 @@ async def stylist_payment_preview(callback: CallbackQuery, state: FSMContext) ->
         await asyncio.to_thread(save_payment_id_sync, order_id, payment["id"])
     except PaymentConfigurationError:
         logger.error("YooKassa payment configuration is incomplete")
+        if "order_id" in locals():
+            try:
+                await asyncio.to_thread(mark_order_failed_sync, order_id)
+            except Exception:
+                logger.exception("Could not mark unconfigured stylist payment order")
         if callback.message is not None:
             await callback.message.answer("Оплата пока не настроена. Попробуй немного позже 🌿")
         return
