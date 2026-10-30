@@ -30,6 +30,13 @@ from google import genai
 from google.genai import errors as genai_errors
 from google.genai import types
 
+from payments import (
+    PaymentConfigurationError, PaymentValidationError, create_pending_order_sync,
+    create_yookassa_payment, fetch_yookassa_payment, grant_access_from_payment_sync,
+    has_stylist_access_sync, init_payment_tables_sync, mark_order_failed_sync,
+    save_payment_id_sync,
+)
+
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite")
@@ -1417,8 +1424,9 @@ def generate_wardrobe_outfits_sync(
     return result
 
 
-def radiance_menu_keyboard(user_id: int | None = None) -> InlineKeyboardMarkup:
-    wardrobe_is_unlocked = user_id is not None and user_id in ADMIN_USER_IDS
+def radiance_menu_keyboard(
+    user_id: int | None = None, wardrobe_is_unlocked: bool = False,
+) -> InlineKeyboardMarkup:
     wardrobe_button = InlineKeyboardButton(
         text="👗 Стильный образ на сегодня" if wardrobe_is_unlocked else "👗 Стильный образ на сегодня 🔒",
         callback_data="radiance:wardrobe:start" if wardrobe_is_unlocked else "radiance:locked:wardrobe",
@@ -1437,7 +1445,7 @@ RADIANCE_LOCKED_CARDS = {
         "• Подбор 2 готовых образов под твою внешность и природный колорит\n"
         "• Сборка стильного комплекта вокруг твоей вещи из шкафа\n"
         "• Формулы сочетаний, цветовая палитра и акценты\n\n"
-        "💳 <b>Стоимость: 99 ₽</b> (разовый подбор)"
+        "💳 <b>Стоимость: 49 ₽</b> (разовый доступ к персональному гардеробу)"
     ),
     "care": (
         "💄 <b>Уход и косметика</b>\n\n"
@@ -1461,7 +1469,7 @@ RADIANCE_INTEREST_LABELS = {
 def radiance_locked_keyboard(feature: str) -> InlineKeyboardMarkup:
     if feature == "wardrobe":
         return InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="✨ Оплатить 99 ₽", callback_data="buy:stylist:preview")],
+            [InlineKeyboardButton(text="✨ Оплатить 49 ₽", callback_data="buy:stylist:preview")],
             [InlineKeyboardButton(text="↩️ Назад к Моему сиянию", callback_data="menu_radiance")],
         ])
     return InlineKeyboardMarkup(inline_keyboard=[
@@ -2040,7 +2048,12 @@ async def start_radiance_flow(message: Message, user_id: int) -> None:
     pending_kids_age.discard(user_id)
     support_sessions.pop(user_id, None)
     banner_id = random.choice(GLOW_BANNER_IDS)
-    markup = radiance_menu_keyboard(user_id)
+    try:
+        wardrobe_unlocked = await asyncio.to_thread(has_stylist_access_sync, user_id)
+    except Exception as error:
+        logger.warning("Could not check stylist access (%s)", type(error).__name__)
+        wardrobe_unlocked = False
+    markup = radiance_menu_keyboard(user_id, wardrobe_is_unlocked=wardrobe_unlocked)
     try:
         await bot.send_photo(
             message.chat.id,
@@ -2276,7 +2289,12 @@ async def cancel_radiance_selfie(callback: CallbackQuery) -> None:
     if callback.message is not None:
         await callback.message.answer(
             "Хорошо, разбор фото отменён 🌸",
-            reply_markup=radiance_menu_keyboard(callback.from_user.id),
+            reply_markup=radiance_menu_keyboard(
+                callback.from_user.id,
+                wardrobe_is_unlocked=await asyncio.to_thread(
+                    has_stylist_access_sync, callback.from_user.id
+                ),
+            ),
         )
 
 
@@ -2296,11 +2314,91 @@ async def show_radiance_locked_card(callback: CallbackQuery) -> None:
 
 
 @dispatcher.callback_query(F.data == "buy:stylist:preview")
-async def stylist_payment_preview(callback: CallbackQuery) -> None:
-    await callback.answer(
-        "Функция оплаты проходит модерацию платёжной системы. Скоро будет доступна!",
-        show_alert=True,
-    )
+async def stylist_payment_preview(callback: CallbackQuery, state: FSMContext) -> None:
+    await callback.answer()
+    user_id = callback.from_user.id
+    try:
+        if await asyncio.to_thread(has_stylist_access_sync, user_id):
+            await state.clear()
+            await state.set_state(WardrobeStates.waiting_for_occasion)
+            if callback.message is not None:
+                await callback.message.answer(
+                    "Доступ к персональному гардеробу уже активен ✨\n\nШаг 1 из 3: Куда собираешься? 🌸",
+                    reply_markup=wardrobe_occasion_keyboard(),
+                )
+            return
+        order_id = await asyncio.to_thread(create_pending_order_sync, user_id)
+        payment = await create_yookassa_payment(order_id, user_id)
+        await asyncio.to_thread(save_payment_id_sync, order_id, payment["id"])
+    except PaymentConfigurationError:
+        logger.error("YooKassa payment configuration is incomplete")
+        if "order_id" in locals():
+            try:
+                await asyncio.to_thread(mark_order_failed_sync, order_id)
+            except Exception:
+                logger.exception("Could not mark unconfigured stylist payment order")
+        if callback.message is not None:
+            await callback.message.answer("Оплата пока не настроена. Попробуй немного позже 🌿")
+        return
+    except Exception as error:
+        # A network/DB timeout can happen after YooKassa has already created the
+        # payment. Keep the order pending so a delayed succeeded webhook can still
+        # confirm it; never turn an uncertain payment into a rejected order.
+        logger.exception("Could not complete YooKassa checkout (%s)", type(error).__name__)
+        if callback.message is not None:
+            await callback.message.answer(
+                "Не удалось получить ссылку на оплату. Если платёж уже открылся, "
+                "не оплачивай повторно — дождись подтверждения. Если ссылка не появилась, "
+                "попробуй ещё раз позже."
+            )
+        return
+
+    if callback.message is not None:
+        await callback.message.answer(
+            "✨ <b>Персональный AI-стилист гардероба</b>\n\n"
+            "Оплата разового доступа — <b>49 ₽</b>. После подтверждения платежа "
+            "гардероб откроется автоматически.\n\n"
+            "Нажми кнопку ниже, чтобы перейти на защищённую страницу ЮKassa 💳",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+                InlineKeyboardButton(text="💳 Перейти к оплате 49 ₽", url=payment["confirmation_url"])
+            ]]),
+            parse_mode=ParseMode.HTML,
+        )
+
+
+async def yookassa_webhook(request: web.Request) -> web.Response:
+    try:
+        notification = await request.json()
+        if notification.get("event") != "payment.succeeded":
+            return web.json_response({"ok": True})
+        notified_payment = notification.get("object") or {}
+        payment_id = notified_payment.get("id")
+        if not payment_id:
+            return web.json_response({"error": "missing payment id"}, status=400)
+
+        # Confirm the notification with an authenticated GET request to YooKassa.
+        verified_payment = await fetch_yookassa_payment(str(payment_id))
+        if verified_payment.get("id") != payment_id:
+            raise PaymentValidationError("Webhook payment id mismatch")
+        user_id, access_granted = await asyncio.to_thread(
+            grant_access_from_payment_sync, verified_payment
+        )
+        if access_granted:
+            try:
+                await bot.send_message(
+                    user_id,
+                    "🎉 Оплата прошла успешно! Персональный гардероб теперь открыт без ограничений. "
+                    "Зайди в «Моё сияние» и нажми «Стильный образ на сегодня» 👗",
+                )
+            except Exception as error:
+                logger.warning("Could not notify user about stylist access (%s)", type(error).__name__)
+        return web.json_response({"ok": True})
+    except PaymentValidationError as error:
+        logger.warning("Rejected YooKassa webhook (%s)", str(error))
+        return web.json_response({"error": "payment validation failed"}, status=400)
+    except Exception as error:
+        logger.exception("YooKassa webhook processing failed (%s)", type(error).__name__)
+        return web.json_response({"error": "temporary processing failure"}, status=500)
 
 
 @dispatcher.callback_query(F.data.startswith("radiance:interest:"))
@@ -4097,7 +4195,12 @@ async def start_wardrobe_flow(
     callback: CallbackQuery,
     state: FSMContext,
 ) -> None:
-    if callback.from_user.id not in ADMIN_USER_IDS:
+    try:
+        has_access = await asyncio.to_thread(has_stylist_access_sync, callback.from_user.id)
+    except Exception as error:
+        logger.warning("Could not check stylist access (%s)", type(error).__name__)
+        has_access = False
+    if not has_access:
         await callback.answer()
         if callback.message is not None:
             await callback.message.answer(
@@ -4133,7 +4236,12 @@ async def cancel_wardrobe_flow(
     if callback.message is not None:
         await callback.message.edit_text(
             "Хорошо, вернёмся к выбору ✨",
-            reply_markup=radiance_menu_keyboard(callback.from_user.id),
+            reply_markup=radiance_menu_keyboard(
+                callback.from_user.id,
+                wardrobe_is_unlocked=await asyncio.to_thread(
+                    has_stylist_access_sync, callback.from_user.id
+                ),
+            ),
         )
 
 
@@ -4347,6 +4455,19 @@ async def generate_wardrobe_result(
     base_item: str,
     user_id: int,
 ) -> None:
+    try:
+        has_access = await asyncio.to_thread(has_stylist_access_sync, user_id)
+    except Exception as error:
+        logger.warning("Could not verify wardrobe access (%s)", type(error).__name__)
+        has_access = False
+    if not has_access:
+        await state.clear()
+        await message.answer(
+            RADIANCE_LOCKED_CARDS["wardrobe"],
+            reply_markup=radiance_locked_keyboard("wardrobe"),
+            parse_mode=ParseMode.HTML,
+        )
+        return
     data = await state.get_data()
     occasion = str(data.get("occasion", "")).strip()
     is_home = wardrobe_is_home_occasion(occasion)
@@ -4718,6 +4839,12 @@ async def main() -> None:
             return web.Response(text="OK")
         app.router.add_get("/", health_check)
         app.router.add_get("/health", health_check)
+        app.router.add_post("/yookassa/webhook", yookassa_webhook)
+        try:
+            await asyncio.to_thread(init_payment_tables_sync)
+            logger.info("YooKassa payment tables are ready")
+        except Exception as error:
+            logger.warning("Could not initialize payment tables (%s)", type(error).__name__)
 
         runner = web.AppRunner(app)
         await runner.setup()
