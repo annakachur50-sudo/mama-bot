@@ -46,7 +46,7 @@ class HomeWardrobeTemperatureTests(unittest.TestCase):
 
     def test_warm_temperature_instruction_restricts_fabrics_and_layers(self):
         prompt = HELPERS["wardrobe_system_instruction"](True, "warm")
-        for phrase in ("тонкий хлопок", "муслин", "вискоза", "кулирка", "Без шерсти и плотных свитеров", "открытые тапочки"):
+        for phrase in ("однослойный образ", "хлопковая футболка", "никакого второго слоя", "не добавляй строку", "босиком", "открытые шлёпанцы", "никаких носков", "не предлагай украшения", "крабиком", "мягкой/шёлковой резинкой"):
             self.assertIn(phrase, prompt)
 
     def test_cool_temperature_instruction_requires_cozy_layers(self):
@@ -57,6 +57,9 @@ class HomeWardrobeTemperatureTests(unittest.TestCase):
     def test_selected_temperature_is_saved_and_passed_to_every_generation(self):
         self.assertIn("home_temp=home_temp", SOURCE)
         self.assertIn("HOME_TEMP_INSTRUCTIONS[home_temp]", SOURCE)
+        self.assertIn('layer = "без второго слоя" if home_temp == "warm"', SOURCE)
+        self.assertIn('home_temp == "warm"', SOURCE)
+        self.assertIn("wardrobe_home_result_html(result, home_temp)", SOURCE)
         self.assertIn("generate_wardrobe_outfits_sync", SOURCE)
         self.assertIn("home_temp,", SOURCE)
         self.assertIn('callback_data="radiance:wardrobe:repeat"', SOURCE)
