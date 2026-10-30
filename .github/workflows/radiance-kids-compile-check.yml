@@ -13,6 +13,7 @@ on:
       - fix/kids-riddle-spoiler-20261023-v2
       - audit/kids-activities-all-ages-20261030
       - fix/wardrobe-home-palette-header-20261030
+      - feature/wardrobe-telegram-payments-49
   pull_request:
     branches:
       - main
@@ -30,6 +31,8 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: Install project dependencies
+        run: python -m pip install -r requirements.txt
       - name: Compile main.py
         run: python -m py_compile main.py
       - name: Run age-adaptation tests
