@@ -4264,13 +4264,24 @@ def wardrobe_home_result_html(text: str, home_temp: str | None = None) -> str:
     formatted = wardrobe_result_html(text)
     kept = []
     warm = home_temp == "warm"
+    warm_footwear_added = False
     for line in formatted.splitlines():
         plain = re.sub(r"<[^>]*>", "", line).casefold()
         if warm:
+            if re.search(r"<b>\s*комплект\s+\d+", line, flags=re.IGNORECASE):
+                warm_footwear_added = False
             if re.search(r"<b>\s*(?:уютный\s+слой|второй\s+слой|верхний\s+слой)\s*:</b>", line, flags=re.IGNORECASE):
                 continue
             if re.search(r"<b>\s*(?:домашняя\s+)?обувь(?:\s+и\s+сумка)?\s*:</b>", line, flags=re.IGNORECASE) or re.search(r"<b>\s*обувь\s*:</b>", line, flags=re.IGNORECASE):
-                kept.append("• <b>Обувь:</b> Босиком или лёгкие открытые шлёпанцы (по желанию)")
+                if not warm_footwear_added:
+                    kept.append("• <b>Обувь:</b> Босиком или лёгкие открытые шлёпанцы (по желанию)")
+                    warm_footwear_added = True
+                continue
+            if re.search(r"<b>\s*одежда\s*:</b>", line, flags=re.IGNORECASE):
+                kept.append(line)
+                if not warm_footwear_added:
+                    kept.append("• <b>Обувь:</b> Босиком или лёгкие открытые шлёпанцы (по желанию)")
+                    warm_footwear_added = True
                 continue
             if "формула:" in plain:
                 line = re.sub(
