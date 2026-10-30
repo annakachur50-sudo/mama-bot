@@ -92,7 +92,7 @@ class WardrobeHomeAndPaletteTests(unittest.TestCase):
         generator = SOURCE[generator_start:generator_end]
         self.assertIn("if palette_context:", generator)
         self.assertIn("palette_context", generator)
-        self.assertIn("wardrobe_system_instruction(is_home)", generator)
+        self.assertIn("wardrobe_system_instruction(is_home, home_temp)", generator)
 
     def test_home_card_replaces_outdoor_shoes_and_removes_bag_and_outerwear_rows(self):
         sample = (
