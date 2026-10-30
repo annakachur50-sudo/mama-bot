@@ -10,8 +10,6 @@ import uuid
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
-import aiohttp
-import psycopg
 
 PAYMENT_AMOUNT = Decimal("49.00")
 PAYMENT_CURRENCY = "RUB"
@@ -27,6 +25,8 @@ class PaymentValidationError(ValueError):
 
 
 def _db_connect():
+    import psycopg
+
     dsn = os.getenv("SUPABASE_DB_URL")
     if not dsn:
         raise PaymentConfigurationError("SUPABASE_DB_URL is not configured")
@@ -122,6 +122,8 @@ def validate_succeeded_payment(
 
 
 async def create_yookassa_payment(order_id: str, telegram_user_id: int) -> dict[str, Any]:
+    import aiohttp
+
     shop_id = os.getenv("YOOKASSA_SHOP_ID")
     secret_key = os.getenv("YOOKASSA_SECRET_KEY")
     return_url = os.getenv("YOOKASSA_RETURN_URL")
@@ -159,6 +161,8 @@ async def create_yookassa_payment(order_id: str, telegram_user_id: int) -> dict[
 
 
 async def fetch_yookassa_payment(payment_id: str) -> dict[str, Any]:
+    import aiohttp
+
     shop_id = os.getenv("YOOKASSA_SHOP_ID")
     secret_key = os.getenv("YOOKASSA_SECRET_KEY")
     if not shop_id or not secret_key:
