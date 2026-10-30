@@ -21,7 +21,7 @@ def load_wardrobe_helpers():
     wanted_assignments = {"HOME_WARDROBE_INSTRUCTIONS", "WARDROBE_STYLIST_PROMPT", "HOME_TEMP_INSTRUCTIONS"}
     assignments = [
         node for node in TREE.body
-        if isinstance(node, ast.Assign)
+        if isinstance(node, (ast.Assign, ast.AnnAssign))
         and any(isinstance(target, ast.Name) and target.id in wanted_assignments for target in node.targets)
     ]
     namespace = {"re": re}
