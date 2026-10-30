@@ -23,7 +23,7 @@ def load_wardrobe_helpers():
     constants = {"WARDROBE_STYLIST_PROMPT", "HOME_WARDROBE_INSTRUCTIONS", "HOME_TEMP_INSTRUCTIONS"}
     assignments = [
         node for node in TREE.body
-        if isinstance(node, ast.Assign)
+        if isinstance(node, (ast.Assign, ast.AnnAssign))
         and any(isinstance(target, ast.Name) and target.id in constants for target in node.targets)
     ]
     namespace = {"re": re, "html": html}
