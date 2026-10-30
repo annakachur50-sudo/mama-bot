@@ -22,7 +22,7 @@ def load_wardrobe_helpers():
     assignments = [
         node for node in TREE.body
         if isinstance(node, (ast.Assign, ast.AnnAssign))
-        and any(isinstance(target, ast.Name) and target.id in wanted_assignments for target in node.targets)
+        and any(isinstance(target, ast.Name) and target.id in wanted_assignments for target in ([node.target] if isinstance(node, ast.AnnAssign) else node.targets))
     ]
     namespace = {"re": re}
     exec(compile(ast.Module(body=assignments, type_ignores=[]), "main.py", "exec"), namespace)
