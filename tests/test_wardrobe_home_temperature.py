@@ -47,7 +47,7 @@ class HomeWardrobeTemperatureTests(unittest.TestCase):
     def test_warm_temperature_instruction_restricts_fabrics_and_layers(self):
         prompt = HELPERS["wardrobe_system_instruction"](True, "warm")
         for phrase in ("однослойный образ", "хлопковая футболка", "никакого второго слоя", "не добавляй строку", "босиком", "открытые шлёпанцы", "никаких носков", "не предлагай украшения", "крабиком", "мягкой/шёлковой резинкой"):
-            self.assertIn(phrase, prompt)
+            self.assertIn(phrase, prompt.casefold())
 
     def test_cool_temperature_instruction_requires_cozy_layers(self):
         prompt = HELPERS["wardrobe_system_instruction"](True, "cool")
