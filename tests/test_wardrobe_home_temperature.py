@@ -80,6 +80,30 @@ class HomeWardrobeTemperatureTests(unittest.TestCase):
         self.assertIn('"home_temp", "layer", "base_item_is_custom"', handler)
         self.assertIn("WardrobeStates.waiting_for_occasion", handler)
 
+    def test_wardrobe_result_return_button_opens_radiance_menu_and_clears_fsm(self):
+        keyboard_start = SOURCE.index("def wardrobe_result_keyboard(")
+        keyboard_end = SOURCE.index("HOME_WARDROBE_INSTRUCTIONS", keyboard_start)
+        keyboard = SOURCE[keyboard_start:keyboard_end]
+        self.assertIn('callback_data="radiance:wardrobe:menu"', keyboard)
+        self.assertNotIn('callback_data="radiance:wardrobe:repeat"', keyboard.split("В меню сияния", 1)[-1])
+
+        handler_start = SOURCE.index('async def return_from_wardrobe_to_radiance_menu(')
+        handler_end = SOURCE.index('@dispatcher.callback_query', handler_start)
+        handler = SOURCE[handler_start:handler_end]
+        self.assertIn("await state.clear()", handler)
+        self.assertIn("await start_radiance_flow(callback.message, user_id)", handler)
+        self.assertNotIn("generate_wardrobe_result", handler)
+        self.assertNotIn("repeat_wardrobe_home", handler)
+
+    def test_general_radiance_menu_transition_also_clears_wardrobe_fsm(self):
+        start = SOURCE.index("async def process_radiance_kids_menu(")
+        end = SOURCE.index('@dispatcher.callback_query(F.data == "radiance:undertones")', start)
+        handler = SOURCE[start:end]
+        self.assertIn("state: FSMContext", handler)
+        self.assertIn("await state.clear()", handler)
+        self.assertIn("await start_radiance_flow(callback.message, user_id)", handler)
+
+
     def test_other_scenarios_keep_their_existing_layer_step(self):
         self.assertIn("await state.set_state(WardrobeStates.waiting_for_layer)", SOURCE)
         self.assertIn("reply_markup=wardrobe_layer_keyboard()", SOURCE)

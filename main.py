@@ -1297,7 +1297,7 @@ def wardrobe_result_keyboard(is_home: bool = False) -> InlineKeyboardMarkup:
         )],
         [InlineKeyboardButton(
             text="✨ В меню сияния",
-            callback_data="menu_radiance",
+            callback_data="radiance:wardrobe:menu",
         )],
     ])
 
@@ -2223,17 +2223,34 @@ async def start_kids_flow(message: Message, user_id: int) -> None:
 
 
 @dispatcher.callback_query(F.data.in_({"menu_radiance", "menu_kids"}))
-async def process_radiance_kids_menu(callback: CallbackQuery) -> None:
+async def process_radiance_kids_menu(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
     if callback.message is None:
         return
     user_id = callback.from_user.id
+    await state.clear()
     radiance_states.pop(user_id, None)
     pending_kids_age.discard(user_id)
     if callback.data == "menu_radiance":
         await start_radiance_flow(callback.message, user_id)
     else:
         await start_kids_flow(callback.message, user_id)
+
+
+@dispatcher.callback_query(F.data == "radiance:wardrobe:menu")
+async def return_from_wardrobe_to_radiance_menu(
+    callback: CallbackQuery,
+    state: FSMContext,
+) -> None:
+    """Return from a generated outfit card to the Radiance menu, never regenerate."""
+    await callback.answer()
+    if callback.message is None:
+        return
+    user_id = callback.from_user.id
+    await state.clear()
+    radiance_states.pop(user_id, None)
+    pending_kids_age.discard(user_id)
+    await start_radiance_flow(callback.message, user_id)
 
 
 @dispatcher.callback_query(F.data == "radiance:undertones")
