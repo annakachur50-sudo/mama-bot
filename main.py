@@ -2344,9 +2344,9 @@ async def stylist_payment_preview(callback: CallbackQuery, state: FSMContext) ->
 
     if callback.message is not None:
         await callback.message.answer(
-            "✨ <b>Персональный AI-стилист гардероба</b>\\n\\n"
+            "✨ <b>Персональный AI-стилист гардероба</b>\n\n"
             "Оплата разового доступа — <b>49 ₽</b>. После подтверждения платежа "
-            "гардероб откроется автоматически.\\n\\n"
+            "гардероб откроется автоматически.\n\n"
             "Нажми кнопку ниже, чтобы перейти на защищённую страницу ЮKassa 💳",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
                 InlineKeyboardButton(text="💳 Перейти к оплате 49 ₽", url=payment["confirmation_url"])
@@ -2373,11 +2373,14 @@ async def yookassa_webhook(request: web.Request) -> web.Response:
             grant_access_from_payment_sync, verified_payment
         )
         if access_granted:
-            await bot.send_message(
-                user_id,
-                "🎉 Оплата прошла успешно! Персональный гардероб теперь открыт без ограничений. "
-                "Зайди в «Моё сияние» и нажми «Стильный образ на сегодня» 👗",
-            )
+            try:
+                await bot.send_message(
+                    user_id,
+                    "🎉 Оплата прошла успешно! Персональный гардероб теперь открыт без ограничений. "
+                    "Зайди в «Моё сияние» и нажми «Стильный образ на сегодня» 👗",
+                )
+            except Exception as error:
+                logger.warning("Could not notify user about stylist access (%s)", type(error).__name__)
         return web.json_response({"ok": True})
     except PaymentValidationError as error:
         logger.warning("Rejected YooKassa webhook (%s)", str(error))
@@ -3637,7 +3640,7 @@ async def send_final_response(
     reply_lower = reply.lower()
     if not support_mode and any(name in reply_lower for name in product_names) and shop_url not in reply:
         reply = reply.rstrip() + (
-            "\\n\\n🌿 Посмотреть эти средства можно в "
+            "\n\n🌿 Посмотреть эти средства можно в "
             f"[официальном эко-магазине]({shop_url})."
         )
     # Разделитель принимается и в укороченном виде, но не показывается в Telegram.
@@ -4520,9 +4523,9 @@ async def generate_wardrobe_result(
             home_request
             + layer_request
             + f"Основа образа или вещь, которую нужно использовать: {base_item}.\\n"
-            + f"Инструкция по основе: {item_instruction}\\n\\n"
+            + f"Инструкция по основе: {item_instruction}\n\n"
             + palette_instruction
-            + f"Температурный режим дома: {HOME_TEMP_INSTRUCTIONS[home_temp]}\\n\\n"
+            + f"Температурный режим дома: {HOME_TEMP_INSTRUCTIONS[home_temp]}\n\n"
             + "Собери ровно 2 готовых домашних комплекта. Сохрани палитру с цветными кружочками, "
             "короткие практичные детали и компактную структуру карточки. Не добавляй приветствия или вводные фразы."
         )
