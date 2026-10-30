@@ -57,8 +57,8 @@ class WardrobeHomeFlowTests(unittest.TestCase):
         self.assertTrue(HELPERS["wardrobe_is_home_occasion"]("Домашний уютный день"))
         self.assertFalse(HELPERS["wardrobe_is_home_occasion"]("прогулка"))
         self.assertIn('if is_home:', SOURCE)
-        self.assertIn('await state.set_state(WardrobeStates.waiting_for_base_item)', SOURCE)
-        self.assertIn('reply_markup=wardrobe_base_keyboard(is_home=True)', SOURCE)
+        self.assertIn('await state.set_state(WardrobeStates.waiting_for_home_temp)', SOURCE)
+        self.assertIn('reply_markup=wardrobe_home_temp_keyboard()', SOURCE)
         self.assertIn('await state.set_state(WardrobeStates.waiting_for_layer)', SOURCE)
 
     def test_home_prompt_has_required_clothes_and_excludes_street_items(self):
@@ -108,9 +108,9 @@ class WardrobeHomeFlowTests(unittest.TestCase):
         self.assertIn('await state.clear()\n    await state.set_state(WardrobeStates.waiting_for_occasion)', SOURCE)
         self.assertIn('await state.set_data({\n        "occasion": occasions[occasion_key],\n        "base_item_is_custom": False,\n    })', SOURCE)
         self.assertIn('async def wardrobe_home_temp_back_to_occasion', SOURCE)
-        home_back_start = SOURCE.index("async def wardrobe_home_back_to_occasion")
+        home_back_start = SOURCE.index("async def wardrobe_home_temp_back_to_occasion")
         home_back_end = SOURCE.index('@dispatcher.callback_query(F.data.startswith("wardrobe:home_temp:")', home_back_start)
-        self.assertIn('await state.set_data({})', SOURCE[home_back_start:home_back_end])
+        self.assertIn('"home_temp", "layer", "base_item_is_custom"', SOURCE[home_back_start:home_back_end])
         self.assertIn('finally:\n        await state.clear()', SOURCE)
 
 
