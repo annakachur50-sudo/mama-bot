@@ -3,6 +3,9 @@ import sqlite3
 import tempfile
 import unittest
 
+from aiogram import Dispatcher
+from aiogram.types import LabeledPrice, PreCheckoutQuery
+
 from payments import (
     PAYMENT_AMOUNT,
     PAYMENT_CURRENCY,
@@ -41,6 +44,17 @@ class PaymentTests(unittest.TestCase):
 
     def test_missing_token_disables_invoice(self):
         self.assertIsNone(build_invoice_parameters(None, "wardrobe:test"))
+
+    def test_aiogram_v3_payment_types_and_dispatcher_hook_are_available(self):
+        self.assertTrue(hasattr(Dispatcher, "pre_checkout_query"))
+        self.assertTrue(LabeledPrice)
+        self.assertTrue(PreCheckoutQuery)
+
+    def test_repeated_checkout_reuses_pending_order(self):
+        first = create_pending_order(7, self.factory)
+        second = create_pending_order(7, self.factory)
+        self.assertEqual(first["order_id"], second["order_id"])
+        self.assertEqual(first["payload"], second["payload"])
 
     def test_valid_pre_checkout_is_accepted(self):
         order = {"telegram_user_id": 7, "amount": 4900, "currency": "RUB",
