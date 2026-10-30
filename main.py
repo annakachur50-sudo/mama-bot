@@ -2319,7 +2319,13 @@ async def stylist_payment_preview(callback: CallbackQuery, state: FSMContext) ->
     user_id = callback.from_user.id
     try:
         if await asyncio.to_thread(has_stylist_access_sync, user_id):
-            await start_wardrobe_flow(callback, state)
+            await state.clear()
+            await state.set_state(WardrobeStates.waiting_for_occasion)
+            if callback.message is not None:
+                await callback.message.answer(
+                    "Доступ к персональному гардеробу уже активен ✨\\n\\nШаг 1 из 3: Куда собираешься? 🌸",
+                    reply_markup=wardrobe_occasion_keyboard(),
+                )
             return
         order_id = await asyncio.to_thread(create_pending_order_sync, user_id)
         payment = await create_yookassa_payment(order_id, user_id)
