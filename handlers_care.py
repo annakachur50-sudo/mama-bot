@@ -263,6 +263,12 @@ def _quiz_prompt(answers: dict[str, str]) -> str:
     )
 
 
+
+@care_router.callback_query(F.data == "care:open")
+async def open_care_from_menu(callback: CallbackQuery) -> None:
+    await start_care_checkout(callback)
+
+
 @care_router.callback_query(F.data.startswith("care:mode:"))
 async def choose_care_mode(callback: CallbackQuery, state: FSMContext) -> None:
     if not callback.data or callback.message is None:
@@ -445,11 +451,11 @@ async def process_care_photo(message: Message, state: FSMContext) -> bool:
         await message.answer("Сейчас выбран другой режим. Открой подбор ухода ещё раз 🌸")
         await state.clear()
         return True
-    if not order.get("result_status") == "completed":
-        # Consent timestamp is required for every order before accepting an image.
-        # A new explicit consent is requested before every retry.
-        if not order_id:
-            return True
+    if not order.get("photo_consent_at"):
+        await message.answer("Сначала подтверди согласие на обработку фото кнопкой выше 🌸")
+        await state.set_state(CareStates.waiting_for_consent)
+        await message.answer("Фото передаётся в Gemini API для анализа. Согласна продолжить?", reply_markup=care_consent_keyboard(order_id))
+        return True
     if not message.photo:
         await message.answer("Пришли, пожалуйста, фотографию как изображение 🌸")
         return True
