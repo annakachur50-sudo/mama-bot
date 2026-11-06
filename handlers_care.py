@@ -84,10 +84,10 @@ def care_consent_keyboard(order_id: str) -> InlineKeyboardMarkup:
 
 def care_photo_category_keyboard(order_id: str) -> InlineKeyboardMarkup:
     options = [
-        ("🌿 Натуральные эко-линейки и травы", "natural"),
-        ("✨ Корейский уход и современные активы", "korean"),
-        ("🧴 Аптека и базовый комфорт", "pharmacy"),
-        ("💛 Не принципиально / Микс", "mix"),
+        ("🌿 Натуральные эко-линейки и травы", "n"),
+        ("✨ Корейский уход и современные активы", "k"),
+        ("🧴 Аптека и базовый комфорт", "p"),
+        ("💛 Не принципиально / Микс", "m"),
     ]
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text=label, callback_data=f"care:photo_category:{key}:{order_id}")]
@@ -454,10 +454,10 @@ async def choose_care_photo_category(callback: CallbackQuery, state: FSMContext)
         return
     _, _, category, order_id = bits
     categories = {
-        "natural": "Натуральные эко-линейки и растительные компоненты",
-        "korean": "Корейский уход и современные активы",
-        "pharmacy": "Аптечная дерматокосметика и базовый комфорт",
-        "mix": "Не принципиально, микс подходов",
+        "n": "Натуральные эко-линейки и растительные компоненты",
+        "k": "Корейский уход и современные активы",
+        "p": "Аптечная дерматокосметика и базовый комфорт",
+        "m": "Не принципиально, микс подходов",
     }
     if category not in categories:
         await callback.answer("Такого варианта нет", show_alert=True)
