@@ -2315,6 +2315,10 @@ async def cancel_radiance_selfie(callback: CallbackQuery) -> None:
                     has_care_access_sync, callback.from_user.id
                 ),
             ),
+                care_is_unlocked=await asyncio.to_thread(
+                    has_care_access_sync, callback.from_user.id
+                ),
+            ),
         )
 
 
