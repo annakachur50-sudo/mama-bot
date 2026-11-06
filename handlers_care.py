@@ -408,6 +408,7 @@ async def answer_care_quiz(callback: CallbackQuery, state: FSMContext) -> None:
         order = await asyncio.to_thread(get_care_order_sync, order_id, user_id)
         answers = (order or {}).get("answers", {})
         await send_care_result(callback.message, order_id, user_id, _quiz_prompt(answers))
+        await state.clear()
 
 
 @care_router.callback_query(F.data.startswith("care:repeat:"))
@@ -436,6 +437,7 @@ async def repeat_care_result(callback: CallbackQuery, state: FSMContext) -> None
             callback.message, order_id, user_id,
             _quiz_prompt(order.get("answers") or {}),
         )
+        await state.clear()
 
 
 async def process_care_photo(message: Message, state: FSMContext) -> bool:
