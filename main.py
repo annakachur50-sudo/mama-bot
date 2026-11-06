@@ -435,7 +435,7 @@ client = genai.Client(
 )
 bot = Bot(token=TELEGRAM_BOT_TOKEN)
 dispatcher = Dispatcher()
-configure_care_handlers(bot, client, GEMINI_MODEL)
+configure_care_handlers(bot, client, os.getenv("CARE_GEMINI_MODEL", "gemini-2.5-flash"))
 dispatcher.include_router(care_router)
 
 class AnalyticsCallbackMiddleware(BaseMiddleware):
@@ -2412,7 +2412,7 @@ async def yookassa_webhook(request: web.Request) -> web.Response:
                 try:
                     await bot.send_message(
                         user_id,
-                        "🎉 Оплата 99 ₽ прошла успешно! Персональный подбор ухода открыт 🌸\\n\\n"
+                        "🎉 Оплата 99 ₽ прошла успешно! Персональный подбор ухода открыт 🌸\n\n"
                         "Как тебе удобнее подобрать уход?",
                         reply_markup=care_mode_keyboard(care_order_id),
                     )
