@@ -54,6 +54,7 @@ ECO_ALLOWED_TERMS = (
     "Greenway", "Cactus", "Happy Dew", "Anny Rey", "Nice Code", "Sharme Minerals",
     "Siberian Wellness", "Experalta Biomelle", "Chronolong", "Experalta Platinum",
     "бакучиол", "10% ниацинамид", "Siberian Code", "Endemix",
+    "Levrana", "Леврана", "Green Mama", "Грин Мама",
 )
 ECO_FORBIDDEN_BRANDS = (
     "Greenway Hemp", "Hemp", "Anua", "Manyo", "Round Lab", "Medicube",
@@ -442,6 +443,10 @@ def _product_matrix_prompt(cosmetics_category: str) -> str:
             "Greenway Hemp строго запрещён: не упоминай его ни в каком контексте. "
             "Siberian Wellness: Experalta Biomelle, Chronolong, Experalta Platinum "
             "(бакучиол, 10% ниацинамид), Siberian Code, Endemix. "
+            "Независимые натуральные бренды: Levrana (Леврана) — органические тоники на гидролатах "
+            "календулы и лаванды, сыворотки с брусникой и черникой, кремы на дикорастущих экстрактах; "
+            "Green Mama (Грин Мама) — травяной уход, тоники и кремы на отварах подорожника, "
+            "мать-и-мачехи, череды, полевого хвоща и брусники. "
             "Любые другие бренды, линейки и категории вне этого списка запрещены. Если подходящего средства в этой матрице нет, "
             "опиши категорию средства без стороннего бренда. Не выдумывай продукты, составы и свойства. "
             "Верни JSON с answer и recommended_brands. В recommended_brands разрешены только "
