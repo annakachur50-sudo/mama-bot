@@ -47,6 +47,43 @@ class CareSourceSyntaxTests(unittest.TestCase):
         self.assertIn("без markdown-маркеров списков", source)
         self.assertIn("Запрещено использовать списки со звёздочками", source)
 
+    def test_care_intro_is_cosmetologist_not_old_stylist_placeholder(self):
+        root = Path(__file__).resolve().parents[1]
+        source = (root / "main.py").read_text(encoding="utf-8")
+        self.assertIn("Твой персональный AI-косметолог", source)
+        self.assertIn("Каждая мама заслуживает сиять", source)
+        self.assertNotIn("Твой личный AI-стилист и бьюти-помощник", source)
+
+    def test_photo_mode_acknowledges_callback_before_database_checks(self):
+        root = Path(__file__).resolve().parents[1]
+        source = (root / "handlers_care.py").read_text(encoding="utf-8")
+        start = source.index("async def choose_care_mode")
+        end = source.index("@care_router.callback_query", start + 1)
+        handler = source[start:end]
+        self.assertLess(handler.index("await callback.answer()"), handler.index("has_care_access_sync"))
+
+    def test_photo_instruction_keeps_photo_state_and_is_not_deleted(self):
+        root = Path(__file__).resolve().parents[1]
+        source = (root / "handlers_care.py").read_text(encoding="utf-8")
+        start = source.index("async def choose_care_photo_category")
+        end = source.index("@care_router.callback_query", start + 1)
+        handler = source[start:end]
+        self.assertIn("await state.set_state(CareStates.waiting_for_photo)", handler)
+        self.assertIn("Пришли мне одно чёткое селфи", handler)
+        self.assertLess(handler.index("await _delete_callback_message(callback)"),
+                        handler.index("Пришли мне одно чёткое селфи"))
+
+    def test_photo_handler_shows_typing_and_sends_jpeg_bytes(self):
+        root = Path(__file__).resolve().parents[1]
+        source = (root / "handlers_care.py").read_text(encoding="utf-8")
+        start = source.index("async def process_care_photo")
+        end = source.index("async def process_care_text", start)
+        handler = source[start:end]
+        self.assertIn('action="typing"', handler)
+        self.assertIn("await send_care_result(message", handler)
+        self.assertIn("CareStates.waiting_for_photo.state", handler)
+        self.assertIn('types.Part.from_bytes(data=image_bytes, mime_type="image/jpeg")', source)
+
     def test_shared_gemini_http_timeout_and_care_model_fallback(self):
         root = Path(__file__).resolve().parents[1]
         source = (root / "main.py").read_text(encoding="utf-8")
