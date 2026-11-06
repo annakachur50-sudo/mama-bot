@@ -302,6 +302,17 @@ def save_care_payment_id_sync(order_id: str, payment_id: str) -> None:
         """, (payment_id, order_id, payment_id))
 
 
+def mark_care_order_cancelled_sync(payment_id: str) -> bool:
+    with _db_connect() as connection:
+        row = connection.execute("""
+            UPDATE public.care_orders
+            SET status = 'cancelled'
+            WHERE payment_id = %s AND status = 'pending'
+            RETURNING order_id
+        """, (payment_id,)).fetchone()
+    return row is not None
+
+
 def has_care_access_sync(telegram_user_id: int) -> bool:
     with _db_connect() as connection:
         row = connection.execute("""
