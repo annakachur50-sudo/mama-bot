@@ -175,7 +175,7 @@ def _parse_care_response(raw: str) -> tuple[str, list[str]]:
         ):
             matching_lines = [line for line in answer.splitlines() if brand.casefold() in line.casefold()]
             negative = re.compile(
-                r"не\\s+(подходит|рекомендую|советую|используй|выбирай)|"
+                r"не\s+(подходит|рекомендую|советую|используй|выбирай)|"
                 r"избегай|исключи|откажись|нежелательн",
                 re.IGNORECASE,
             )
@@ -199,7 +199,8 @@ async def _delete_callback_message(callback: CallbackQuery) -> None:
 def _format_result(value: str) -> str:
     safe = html.escape(value.strip(), quote=False)
     safe = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", safe, flags=re.DOTALL)
-    return safe.replace("**", "")
+    safe = safe.replace("**", "")
+    return re.sub(r"(?<!\\*)\\*(?!\\*)", "", safe)
 
 
 def _split_text(value: str, limit: int = 3600) -> list[str]:
