@@ -12,19 +12,50 @@ from handlers_care import (
 
 
 class CareProductMatrixTests(unittest.TestCase):
-    def test_prompts_contain_only_the_agreed_catalog(self):
-        for prompt in (_photo_prompt("эко"), _quiz_prompt({"skin_type": "сухая"})):
-            for allowed in (
-                "Greenway Cactus", "Experalta Biomelle", "Chronolong",
-                "Experalta Platinum", "Anua", "Manyo Pure Cleansing Oil",
-                "Round Lab", "Medicube", "La Roche-Posay", "CeraVe",
-                "Art&Fact", "Icon Skin",
-            ):
-                with self.subTest(brand=allowed):
-                    self.assertIn(allowed, prompt)
-            self.assertIn("Greenway Hemp запрещён", prompt)
-            self.assertIn("не выдумывай продукты", prompt.lower())
-            self.assertIn("json", prompt.lower())
+    def test_prompts_isolate_the_selected_product_matrix(self):
+        eco = _photo_prompt("Натуральные эко-линейки и растительные компоненты")
+        for allowed in (
+            "Greenway", "Cactus", "Happy Dew", "Anny Rey", "Nice Code",
+            "Sharme Minerals", "Siberian Wellness", "Experalta Biomelle",
+            "Chronolong", "Experalta Platinum", "бакучиол", "10% ниацинамид",
+            "Siberian Code", "Endemix",
+        ):
+            self.assertIn(allowed, eco)
+        for forbidden in (
+            "Greenway Hemp", "Anua", "Manyo", "Round Lab", "Medicube",
+            "La Roche-Posay", "CeraVe", "Art&Fact", "Icon Skin",
+        ):
+            self.assertNotIn(forbidden, eco)
+        korean = _photo_prompt("Корейский уход и современные активы")
+        self.assertIn("Anua", korean)
+        self.assertNotIn("Greenway Cactus", korean)
+        self.assertNotIn("La Roche-Posay", korean)
+
+    def test_markdown_wrapped_json_is_parsed(self):
+        raw = """```json
+{"answer":"Greenway Cactus подходит для увлажнения.","recommended_brands":["Greenway"]}
+```"""
+        answer, brands = _parse_care_response(raw, "эко")
+        self.assertIn("Greenway Cactus", answer)
+        self.assertEqual(brands, ["Greenway"])
+
+    def test_eco_response_rejects_non_eco_brands_and_buttons(self):
+        raw = (
+            '{"answer":"Greenway Cactus для увлажнения. Anua для очищения.",'
+            '"recommended_brands":["Greenway"]}'
+        )
+        answer, brands = _parse_care_response(raw, "эко")
+        self.assertIn("Не удалось безопасно", answer)
+        self.assertEqual(brands, [])
+        keyboard = care_result_keyboard("eco-order", brands)
+        self.assertFalse(any(button.url for row in keyboard.inline_keyboard for button in row))
+
+    def test_missing_or_empty_brand_list_is_safe(self):
+        for raw in ('{"answer":"Только базовый уход"}',
+                    '{"answer":"Только базовый уход","recommended_brands":[]}'):
+            answer, brands = _parse_care_response(raw)
+            self.assertEqual(answer, "Только базовый уход")
+            self.assertEqual(brands, [])
 
     def test_structured_response_filters_unapproved_brands_and_hides_hemp(self):
         raw = (
