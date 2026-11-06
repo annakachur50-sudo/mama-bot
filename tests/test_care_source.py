@@ -30,6 +30,23 @@ class CareSourceSyntaxTests(unittest.TestCase):
         self.assertIn("await callback.message.delete()", source)
         self.assertIn("await send_care_result(callback.message", source)
 
+    def test_photo_consent_is_persisted_per_user_and_reused(self):
+        root = Path(__file__).resolve().parents[1]
+        handlers = (root / "handlers_care.py").read_text(encoding="utf-8")
+        payments = (root / "payments.py").read_text(encoding="utf-8")
+        self.assertIn("has_care_photo_consent_sync", handlers)
+        self.assertIn("CareStates.waiting_for_photo_category", handlers)
+        self.assertIn("has_care_photo_consent BOOLEAN NOT NULL DEFAULT FALSE", payments)
+        self.assertIn("SET has_care_photo_consent = TRUE", payments)
+
+    def test_photo_prompt_includes_cosmetics_category_and_emoji_formatting(self):
+        root = Path(__file__).resolve().parents[1]
+        source = (root / "handlers_care.py").read_text(encoding="utf-8")
+        self.assertIn("def _photo_prompt(cosmetics_category: str)", source)
+        self.assertIn("photo_cosmetics_category", source)
+        self.assertIn("без markdown-маркеров списков", source)
+        self.assertIn("Запрещено использовать списки со звёздочками", source)
+
     def test_shared_gemini_http_timeout_and_care_model_fallback(self):
         root = Path(__file__).resolve().parents[1]
         source = (root / "main.py").read_text(encoding="utf-8")
