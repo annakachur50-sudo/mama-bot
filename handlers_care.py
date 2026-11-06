@@ -130,7 +130,7 @@ def _split_text(value: str, limit: int = 3600) -> list[str]:
     return chunks
 
 
-async def start_care_checkout(callback: CallbackQuery) -> None:
+async def start_care_checkout(callback: CallbackQuery, state: FSMContext | None = None) -> None:
     """Entry point called by the existing radiance menu handler."""
     if callback.message is None:
         await callback.answer()
@@ -142,12 +142,20 @@ async def start_care_checkout(callback: CallbackQuery) -> None:
             order_id = await asyncio.to_thread(get_care_access_order_sync, user_id)
             if not order_id:
                 raise RuntimeError("Care access exists without an order")
+            if state is not None:
+                await state.clear()
+                await state.set_state(CareStates.waiting_for_mode)
+                await state.update_data(order_id=order_id)
             await callback.message.answer(
                 "Доступ к персональному уходу уже открыт 🌸\n\nКак тебе удобнее подобрать уход?",
                 reply_markup=care_mode_keyboard(order_id),
             )
             return
         order_id = await asyncio.to_thread(create_care_pending_order_sync, user_id)
+        if state is not None:
+            await state.clear()
+            await state.set_state(CareStates.waiting_for_payment)
+            await state.update_data(order_id=order_id)
         payment = await create_yookassa_payment(order_id, user_id, service_type="care")
         await asyncio.to_thread(save_care_payment_id_sync, order_id, payment["id"])
         await callback.message.answer(
@@ -265,8 +273,8 @@ def _quiz_prompt(answers: dict[str, str]) -> str:
 
 
 @care_router.callback_query(F.data == "care:open")
-async def open_care_from_menu(callback: CallbackQuery) -> None:
-    await start_care_checkout(callback)
+async def open_care_from_menu(callback: CallbackQuery, state: FSMContext) -> None:
+    await start_care_checkout(callback, state)
 
 
 @care_router.callback_query(F.data.startswith("care:mode:"))
