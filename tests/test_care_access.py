@@ -2,7 +2,7 @@ import unittest
 from decimal import Decimal
 from unittest.mock import patch
 
-from payments import grant_care_access_from_payment_sync
+from payments import grant_care_access_from_payment_sync, mark_care_order_cancelled_sync
 
 
 class FakeResult:
@@ -66,6 +66,13 @@ class CareAccessGrantTests(unittest.TestCase):
             result,
             (123456, False, "d290f1ee-6c54-4b01-90e6-d701748f0851"),
         )
+
+    def test_cancelled_order_is_released_for_a_new_attempt(self):
+        connection = FakeConnection(access_inserted=False)
+        with patch("payments._db_connect", return_value=connection):
+            result = mark_care_order_cancelled_sync("care-payment-1")
+        self.assertTrue(result)
+        self.assertIn("status = 'cancelled'", connection.executed[0][0])
 
 
 if __name__ == "__main__":
