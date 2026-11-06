@@ -4,7 +4,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
-from handlers_care import CareStates, choose_care_mode, choose_care_photo_category
+from handlers_care import (CareStates, care_photo_category_keyboard, choose_care_mode, choose_care_photo_category)
 
 
 class CareSourceSyntaxTests(unittest.TestCase):
@@ -33,6 +33,18 @@ class CareSourceSyntaxTests(unittest.TestCase):
         self.assertGreaterEqual(source.count("await _delete_callback_message(callback)"), 5)
         self.assertIn("await callback.message.delete()", source)
         self.assertIn("await send_care_result(callback.message", source)
+
+    def test_photo_category_callback_data_stays_within_telegram_limit(self):
+        keyboard = care_photo_category_keyboard("123e4567-e89b-12d3-a456-426614174000")
+        callback_data = [
+            button.callback_data
+            for row in keyboard.inline_keyboard
+            for button in row
+            if button.callback_data
+        ]
+        self.assertTrue(callback_data)
+        self.assertLessEqual(max(len(value.encode("utf-8")) for value in callback_data), 64)
+        self.assertIn("care:photo_category:p:123e4567-e89b-12d3-a456-426614174000", callback_data)
 
     def test_photo_consent_is_persisted_per_user_and_reused(self):
         root = Path(__file__).resolve().parents[1]
@@ -127,7 +139,7 @@ class CarePhotoFlowRuntimeTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_care_photo_category_callback_sends_persistent_selfie_invitation(self):
         callback = SimpleNamespace(
-            data="care:photo_category:natural:order-123",
+            data="care:photo_category:n:order-123",
             from_user=SimpleNamespace(id=777),
             message=SimpleNamespace(
                 answer=AsyncMock(),
