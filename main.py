@@ -38,7 +38,7 @@ from payments import (
 )
 from handlers_care import (
     care_router, care_mode_keyboard, configure_care_handlers,
-    process_care_photo, start_care_checkout,
+    process_care_photo, process_care_text, start_care_checkout,
 )
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -2619,6 +2619,8 @@ async def handle_admin_photo(message: Message, state: FSMContext) -> None:
     if message.from_user is None or not message.photo:
         return
     user_id = message.from_user.id
+    if await process_care_text(message, state):
+        return
     event_key = (user_id, message.message_id)
     if event_key in feedback_sent_events or event_key in feedback_inflight:
         return
@@ -3482,13 +3484,15 @@ async def process_chaos_callback(callback: CallbackQuery) -> None:
 
 
 @dispatcher.callback_query(F.data.startswith("support:") | (F.data == "menu:main"))
-async def process_support_action(callback: CallbackQuery) -> None:
+async def process_support_action(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
     if callback.message is None:
         return
     data = callback.data or ""
     user_id = callback.from_user.id
     if data in {"support:home", "menu:main"}:
+        if data == "menu:main":
+            await state.clear()
         support_sessions.pop(user_id, None)
         await replace_callback_message(callback)
         await callback.message.answer(
@@ -4725,7 +4729,7 @@ async def process_wardrobe_base_text(message: Message, state: FSMContext) -> Non
 
 
 @dispatcher.message(F.text)
-async def handle_text(message: Message) -> None:
+async def handle_text(message: Message, state: FSMContext) -> None:
     prompt = (message.text or "").strip()
     if not prompt:
         return
@@ -4743,6 +4747,9 @@ async def handle_text(message: Message) -> None:
 
     # Any reply-menu selection cancels an unfinished selfie state.
     if prompt in MENU_BUTTONS:
+        current_state = await state.get_state()
+        if current_state and current_state.startswith("CareStates:"):
+            await state.clear()
         radiance_states.pop(user_id, None)
         if prompt != MENU_BUTTONS[5]:
             pending_kids_age.discard(user_id)
