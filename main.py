@@ -34,7 +34,11 @@ from payments import (
     PaymentConfigurationError, PaymentValidationError, create_pending_order_sync,
     create_yookassa_payment, fetch_yookassa_payment, grant_access_from_payment_sync,
     has_stylist_access_sync, init_payment_tables_sync, mark_order_failed_sync,
-    save_payment_id_sync,
+    save_payment_id_sync, has_care_access_sync, grant_care_access_from_payment_sync,
+)
+from handlers_care import (
+    care_router, care_mode_keyboard, configure_care_handlers,
+    process_care_photo, start_care_checkout,
 )
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -431,6 +435,8 @@ client = genai.Client(
 )
 bot = Bot(token=TELEGRAM_BOT_TOKEN)
 dispatcher = Dispatcher()
+configure_care_handlers(bot, client, GEMINI_MODEL)
+dispatcher.include_router(care_router)
 
 class AnalyticsCallbackMiddleware(BaseMiddleware):
     async def __call__(self, handler, event, data):
@@ -1426,6 +1432,7 @@ def generate_wardrobe_outfits_sync(
 
 def radiance_menu_keyboard(
     user_id: int | None = None, wardrobe_is_unlocked: bool = False,
+    care_is_unlocked: bool = False,
 ) -> InlineKeyboardMarkup:
     wardrobe_button = InlineKeyboardButton(
         text="👗 Стильный образ на сегодня" if wardrobe_is_unlocked else "👗 Стильный образ на сегодня 🔒",
@@ -1434,7 +1441,10 @@ def radiance_menu_keyboard(
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🌸 Подобрать мои оттенки (Бесплатно)", callback_data="radiance:undertones")],
         [wardrobe_button],
-        [InlineKeyboardButton(text="💄 Подобрать уход и косметику 🔒", callback_data="radiance:locked:care")],
+        [InlineKeyboardButton(
+            text="💄 Подобрать уход и косметику" if care_is_unlocked else "💄 Подобрать уход и косметику 🔒",
+            callback_data="care:open" if care_is_unlocked else "radiance:locked:care",
+        )],
         [InlineKeyboardButton(text="🛍️ Мне это подойдёт? 🔒", callback_data="radiance:locked:suitable")],
     ])
 
@@ -2053,7 +2063,14 @@ async def start_radiance_flow(message: Message, user_id: int) -> None:
     except Exception as error:
         logger.warning("Could not check stylist access (%s)", type(error).__name__)
         wardrobe_unlocked = False
-    markup = radiance_menu_keyboard(user_id, wardrobe_is_unlocked=wardrobe_unlocked)
+    try:
+        care_unlocked = await asyncio.to_thread(has_care_access_sync, user_id)
+    except Exception as error:
+        logger.warning("Could not check care access (%s)", type(error).__name__)
+        care_unlocked = False
+    markup = radiance_menu_keyboard(
+        user_id, wardrobe_is_unlocked=wardrobe_unlocked, care_is_unlocked=care_unlocked
+    )
     try:
         await bot.send_photo(
             message.chat.id,
@@ -2294,6 +2311,9 @@ async def cancel_radiance_selfie(callback: CallbackQuery) -> None:
                 wardrobe_is_unlocked=await asyncio.to_thread(
                     has_stylist_access_sync, callback.from_user.id
                 ),
+                care_is_unlocked=await asyncio.to_thread(
+                    has_care_access_sync, callback.from_user.id
+                ),
             ),
         )
 
@@ -2304,6 +2324,9 @@ async def show_radiance_locked_card(callback: CallbackQuery) -> None:
     if callback.message is None or not callback.data:
         return
     feature = callback.data.rsplit(":", 1)[-1]
+    if feature == "care":
+        await start_care_checkout(callback)
+        return
     card = RADIANCE_LOCKED_CARDS.get(feature)
     if card is not None:
         await callback.message.answer(
@@ -2380,18 +2403,36 @@ async def yookassa_webhook(request: web.Request) -> web.Response:
         verified_payment = await fetch_yookassa_payment(str(payment_id))
         if verified_payment.get("id") != payment_id:
             raise PaymentValidationError("Webhook payment id mismatch")
-        user_id, access_granted = await asyncio.to_thread(
-            grant_access_from_payment_sync, verified_payment
-        )
-        if access_granted:
-            try:
-                await bot.send_message(
-                    user_id,
-                    "🎉 Оплата прошла успешно! Персональный гардероб теперь открыт без ограничений. "
-                    "Зайди в «Моё сияние» и нажми «Стильный образ на сегодня» 👗",
-                )
-            except Exception as error:
-                logger.warning("Could not notify user about stylist access (%s)", type(error).__name__)
+        service_type = (verified_payment.get("metadata") or {}).get("service_type", "stylist")
+        if service_type == "care":
+            user_id, access_granted, care_order_id = await asyncio.to_thread(
+                grant_care_access_from_payment_sync, verified_payment
+            )
+            if access_granted:
+                try:
+                    await bot.send_message(
+                        user_id,
+                        "🎉 Оплата 99 ₽ прошла успешно! Персональный подбор ухода открыт 🌸\\n\\n"
+                        "Как тебе удобнее подобрать уход?",
+                        reply_markup=care_mode_keyboard(care_order_id),
+                    )
+                except Exception as error:
+                    logger.warning("Could not notify user about care access (%s)", type(error).__name__)
+        elif service_type == "stylist":
+            user_id, access_granted = await asyncio.to_thread(
+                grant_access_from_payment_sync, verified_payment
+            )
+            if access_granted:
+                try:
+                    await bot.send_message(
+                        user_id,
+                        "🎉 Оплата прошла успешно! Персональный гардероб теперь открыт без ограничений. "
+                        "Зайди в «Моё сияние» и нажми «Стильный образ на сегодня» 👗",
+                    )
+                except Exception as error:
+                    logger.warning("Could not notify user about stylist access (%s)", type(error).__name__)
+        else:
+            raise PaymentValidationError("Unknown YooKassa service type")
         return web.json_response({"ok": True})
     except PaymentValidationError as error:
         logger.warning("Rejected YooKassa webhook (%s)", str(error))
@@ -2571,7 +2612,9 @@ async def cancel_kids_age(callback: CallbackQuery) -> None:
 
 
 @dispatcher.message(F.photo)
-async def handle_admin_photo(message: Message) -> None:
+async def handle_admin_photo(message: Message, state: FSMContext) -> None:
+    if await process_care_photo(message, state):
+        return
     if message.from_user is None or not message.photo:
         return
     user_id = message.from_user.id
