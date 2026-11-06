@@ -53,7 +53,7 @@ ALLOWED_BRANDS = REFERRAL_BRANDS
 ECO_ALLOWED_TERMS = (
     "Greenway", "Cactus", "Happy Dew", "Anny Rey", "Nice Code", "Sharme Minerals",
     "Siberian Wellness", "Experalta Biomelle", "Chronolong", "Experalta Platinum",
-    "бакучиол", "10% ниацинамид", "Siberian Code", "Endemix",
+    "бакучиол", "10% ниацинамид", "Siberian Code",
     "Levrana", "Леврана", "Green Mama", "Грин Мама",
 )
 ECO_FORBIDDEN_BRANDS = (
@@ -237,12 +237,12 @@ KOREAN_ALLOWED_BRANDS = (
 PHARMACY_ALLOWED_BRANDS = ("La Roche-Posay", "CeraVe", "Bioderma", "Avene", "Avène")
 NON_KOREAN_BRANDS = (
     "Greenway", "Cactus", "Happy Dew", "Anny Rey", "Nice Code", "Sharme Minerals",
-    "Siberian Wellness", "Experalta", "Chronolong", "Siberian Code", "Endemix",
+    "Siberian Wellness", "Experalta", "Chronolong", "Siberian Code",
     "La Roche-Posay", "CeraVe", "Bioderma", "Avene", "Avène", "Art&Fact", "Icon Skin",
 )
 NON_PHARMACY_BRANDS = (
     "Greenway", "Cactus", "Happy Dew", "Anny Rey", "Nice Code", "Sharme Minerals",
-    "Siberian Wellness", "Experalta", "Chronolong", "Siberian Code", "Endemix",
+    "Siberian Wellness", "Experalta", "Chronolong", "Siberian Code",
     "Anua", "Manyo", "Round Lab", "SKIN1004", "Beauty of Joseon", "Medicube",
     "Jigott", "COSRX", "Art&Fact", "Icon Skin",
 )
@@ -441,8 +441,9 @@ def _product_matrix_prompt(cosmetics_category: str) -> str:
             "ИЗОЛИРОВАННАЯ ЭКО-МАТРИЦА. Используй исключительно эти линейки и бренды: "
             "Greenway: Cactus, Happy Dew, Anny Rey, Nice Code, Sharme Minerals. "
             "Greenway Hemp строго запрещён: не упоминай его ни в каком контексте. "
-            "Siberian Wellness: Experalta Biomelle, Chronolong, Experalta Platinum "
-            "(бакучиол, 10% ниацинамид), Siberian Code, Endemix. "
+            "Siberian Wellness: Siberian Code (Сибирский код) — базовый уход, восстановление защитного барьера "
+            "и антиоксидантная защита; Experalta Biomelle — восстановление и поддержка барьера; "
+            "Experalta Platinum (бакучиол, 10% ниацинамид) — уход с активами; Chronolong — уход для тонуса. "
             "Независимые натуральные бренды: Levrana (Леврана) — органические тоники на гидролатах "
             "календулы и лаванды, сыворотки с брусникой и черникой, кремы на дикорастущих экстрактах; "
             "Green Mama (Грин Мама) — травяной уход, тоники и кремы на отварах подорожника, "
@@ -471,13 +472,18 @@ def _product_matrix_prompt(cosmetics_category: str) -> str:
     return (
         "ИЗОЛИРОВАННАЯ МАТРИЦА МИКС. Только в этом сценарии разрешено комбинировать "
         "категории. Доступны Greenway: Cactus, Happy Dew, Anny Rey, Nice Code, Sharme Minerals; "
-        "Siberian Wellness: Experalta Biomelle, Chronolong, Experalta Platinum, Siberian Code, "
-        "Endemix; корейские бренды: Anua, Manyo, Round Lab, SKIN1004, Beauty of Joseon, "
+        "Siberian Wellness: Siberian Code (Сибирский код), Experalta Biomelle, Chronolong, "
+        "Experalta Platinum; корейские бренды: Anua, Manyo, Round Lab, SKIN1004, Beauty of Joseon, "
         "Medicube, Jigott, COSRX; аптечные бренды: La Roche-Posay, CeraVe, Bioderma, Avène; "
         "также Art&Fact и Icon Skin. Greenway Hemp запрещён. Используй только подтверждённые "
         "подходящие позиции, не выдумывай продукты и составы. recommended_brands может содержать "
         "только Greenway и/или Siberian Wellness."
     )
+
+
+
+def _care_layout_rules() -> str:
+    return "ОБЯЗАТЕЛЬНЫЕ ПРАВИЛА ВЁРСТКИ ОТВЕТА (НЕ НАРУШАТЬ):\n1. Запрещён сплошной текст одной простынёй. Каждый этап ритуала — отдельная строка; между каждым этапом и смысловым блоком оставляй пустую строку (двойной перевод строки).\n2. Утренний и вечерний ритуалы оформляй строго так: отдельный заголовок «☀️ **Утренний ритуал:**» / «🌙 **Вечерний ритуал:**», затем каждый этап с новой строки по шаблону «Эмодзи **Название шага:** Средство и актив *(конкретный пример продукта в скобках)*.» Между этапами — пустая строка. Не объединяй шаги в один абзац.\n3. В каждом уместном этапе указывай 1–2 конкретных примера только из выбранной матрицы. Если подтверждённого продукта нет, укажи тип средства без выдуманного названия.\n4. Блок «🌿 Подходящие компоненты» — строго список из 2–3 отдельных пунктов, каждый с новой строки и эмодзи, по шаблону «🌿 **Название компонента** — зачем он коже.» или «💧 **Название компонента** — как работает.»\n5. «🤍 Маленький совет» и «⚠️ Предостережения» — самостоятельные короткие абзацы, каждый отделён пустой строкой. Не смешивай их с ритуалами или списком компонентов.\n6. Сохраняй переносы строк и пустые строки внутри JSON-строки answer через символы \\\\n. Внутри answer используй ** только для выделения названий блоков и шагов; не используй Markdown-нумерацию или длинные сплошные абзацы."
 
 
 def _photo_prompt(cosmetics_category: str) -> str:
@@ -490,6 +496,7 @@ def _photo_prompt(cosmetics_category: str) -> str:
         "Учитывай предпочтение пользователя: " + cosmetics_category + ". "
         "Структура answer: что учитываем; ☀️ утренний ритуал; 🌙 вечерний ритуал; подходящие компоненты; "
         "предостережения по чувствительности и переносимости; 🤍 маленький совет. "
+        + _care_layout_rules() + "\\n\\n"
         "В подходящих этапах приводи 1–2 конкретных примера из разрешённой матрицы. "
         + _product_matrix_prompt(cosmetics_category)
     )
@@ -508,7 +515,8 @@ def _quiz_prompt(answers: dict[str, str]) -> str:
         "или непереносимости предложи мягкий минималистичный уход. Не ставь диагнозы, не назначай препараты, "
         "не обещай лечение или гарантированный эффект. Ответ на русском, на «ты», дружелюбно и без медицинского "
         "жаргона. Начни с «🌸 ТВОЙ ПЕРСОНАЛЬНЫЙ УХОД». Структура answer: что учитываем; ☀️ утренний ритуал; "
-        "🌙 вечерний ритуал; подходящие компоненты; предостережения; 🤍 маленький совет. "
+        "🌙 вечерний ритуал; подходящие компоненты; ⚠️ предостережения; 🤍 маленький совет. "
+        + _care_layout_rules() + "\\n\\n"
         "В каждом уместном этапе приводи 1–2 точных примера из матрицы, не заполняй ненужные этапы. "
         "Не используй одновременно несколько сильных активов без необходимости. "
         + _product_matrix_prompt(answers.get("brand_pref", ""))
