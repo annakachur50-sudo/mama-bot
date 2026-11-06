@@ -2619,8 +2619,6 @@ async def handle_admin_photo(message: Message, state: FSMContext) -> None:
     if message.from_user is None or not message.photo:
         return
     user_id = message.from_user.id
-    if await process_care_text(message, state):
-        return
     event_key = (user_id, message.message_id)
     if event_key in feedback_sent_events or event_key in feedback_inflight:
         return
@@ -4738,6 +4736,8 @@ async def handle_text(message: Message, state: FSMContext) -> None:
         return
 
     user_id = message.from_user.id
+    if await process_care_text(message, state):
+        return
     event_key = (user_id, message.message_id)
     if event_key in feedback_sent_events or event_key in feedback_inflight:
         return
