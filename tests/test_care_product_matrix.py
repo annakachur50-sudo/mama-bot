@@ -1,6 +1,7 @@
 import unittest
 
 from handlers_care import (
+    ECO_ALLOWED_TERMS,
     REF_LINK_GREENWAY,
     REF_LINK_SW,
     _format_result,
@@ -18,7 +19,10 @@ class CareProductMatrixTests(unittest.TestCase):
             "Greenway", "Cactus", "Happy Dew", "Anny Rey", "Nice Code",
             "Sharme Minerals", "Siberian Wellness", "Experalta Biomelle",
             "Chronolong", "Experalta Platinum", "бакучиол", "10% ниацинамид",
-            "Siberian Code", "Endemix",
+            "Siberian Code", "Endemix", "Levrana", "Леврана",
+            "Green Mama", "Грин Мама", "гидролатах", "календулы", "лаванды",
+            "брусникой", "черникой", "дикорастущих экстрактах",
+            "подорожника", "мать-и-мачехи", "череды", "полевого хвоща",
         ):
             self.assertIn(allowed, eco)
         for forbidden in (
@@ -73,6 +77,34 @@ class CareProductMatrixTests(unittest.TestCase):
             answer, brands = _parse_care_response(raw, category)
             self.assertIn(expected, answer)
             self.assertEqual(brands, [])
+
+    def test_eco_allowed_brand_aliases_are_registered(self):
+        for brand in ("Levrana", "Леврана", "Green Mama", "Грин Мама"):
+            self.assertIn(brand, ECO_ALLOWED_TERMS)
+
+    def test_independent_eco_brands_do_not_suppress_referral_buttons(self):
+        raw = (
+            '{"answer":"Levrana (Леврана) — органический тоник на гидролате лаванды. '
+            'Green Mama (Грин Мама) — травяной крем. Greenway Cactus подходит для увлажнения. '
+            'Siberian Wellness Experalta Biomelle подойдёт для вечернего ухода.",'
+            '"recommended_brands":["Greenway","Siberian Wellness","Levrana","Green Mama"]}'
+        )
+        answer, brands = _parse_care_response(raw, "Натуральные эко-линейки и травы")
+        self.assertIn("Levrana", answer)
+        self.assertIn("Green Mama", answer)
+        self.assertEqual(brands, ["Greenway", "Siberian Wellness"])
+        keyboard = care_result_keyboard("eco-independent", brands)
+        urls = [button.url for row in keyboard.inline_keyboard for button in row if button.url]
+        self.assertEqual(urls, [REF_LINK_GREENWAY, REF_LINK_SW])
+
+    def test_independent_eco_brands_alone_do_not_create_referral_buttons(self):
+        raw = (
+            '{"answer":"Леврана предлагает тоник на гидролате календулы. '
+            'Грин Мама — травяной крем на отварах растений.",'
+            '"recommended_brands":["Levrana","Green Mama"]}'
+        )
+        _, brands = _parse_care_response(raw, "эко")
+        self.assertEqual(brands, [])
 
     def test_markdown_wrapped_json_is_parsed(self):
         raw = """```json
