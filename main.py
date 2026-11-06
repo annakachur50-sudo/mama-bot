@@ -34,7 +34,8 @@ from payments import (
     PaymentConfigurationError, PaymentValidationError, create_pending_order_sync,
     create_yookassa_payment, fetch_yookassa_payment, grant_access_from_payment_sync,
     has_stylist_access_sync, init_payment_tables_sync, mark_order_failed_sync,
-    save_payment_id_sync, has_care_access_sync, grant_care_access_from_payment_sync,\n    mark_care_order_cancelled_sync,
+    save_payment_id_sync, has_care_access_sync, grant_care_access_from_payment_sync,
+    mark_care_order_cancelled_sync,
 )
 from handlers_care import (
     care_router, care_mode_keyboard, configure_care_handlers,
