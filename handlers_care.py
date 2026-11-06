@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import html
 import io
+import json
 import logging
 import re
 from typing import Any
@@ -40,6 +41,17 @@ care_router = Router(name="care")
 _bot = None
 _client = None
 _model = "gemini-3.5-flash-lite"
+
+REF_LINK_GREENWAY = "https://greenwayglobal.com/shop?gw=etJ4vRkF8D"
+REF_LINK_SW = (
+    "https://ru.siberianhealth.com/ru/shop/user/registration/"
+    "PRIVILEGED_CLIENT/?referral=2539466720"
+)
+REFERRAL_BRANDS = {"Greenway", "Siberian Wellness"}
+ALLOWED_BRANDS = {
+    "Greenway", "Siberian Wellness", "Anua", "Manyo", "Round Lab",
+    "Medicube", "La Roche-Posay", "CeraVe", "Art&Fact", "Icon Skin",
+}
 
 
 class CareStates(StatesGroup):
@@ -125,11 +137,51 @@ def care_quiz_keyboard(question: str, order_id: str) -> InlineKeyboardMarkup:
     ] + [[InlineKeyboardButton(text="🏠 В главное меню", callback_data="menu:main")]])
 
 
-def care_result_keyboard(order_id: str) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🔄 Повторить подбор", callback_data=f"care:repeat:{order_id}")],
-        [InlineKeyboardButton(text="🏠 В главное меню", callback_data="menu:main")],
+def care_result_keyboard(order_id: str, recommended_brands: list[str] | None = None) -> InlineKeyboardMarkup:
+    recommended = set(recommended_brands or [])
+    referral_row = []
+    if "Greenway" in recommended:
+        referral_row.append(InlineKeyboardButton(text="🌿 Заказать уход Greenway", url=REF_LINK_GREENWAY))
+    if "Siberian Wellness" in recommended:
+        referral_row.append(InlineKeyboardButton(text="💎 Продукты Siberian Wellness", url=REF_LINK_SW))
+    rows = [referral_row] if referral_row else []
+    rows.append([
+        InlineKeyboardButton(text="🔄 Повторить подбор", callback_data=f"care:repeat:{order_id}"),
+        InlineKeyboardButton(text="🏠 В главное меню", callback_data="menu:main"),
     ])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def _parse_care_response(raw: str) -> tuple[str, list[str]]:
+    """Malformed JSON may still show text, but never creates referral buttons."""
+    try:
+        payload = json.loads(raw)
+    except (TypeError, json.JSONDecodeError):
+        return raw.strip(), []
+    if not isinstance(payload, dict) or not isinstance(payload.get("answer"), str):
+        return raw.strip(), []
+    answer = payload["answer"].strip()
+    brands = payload.get("recommended_brands")
+    if not isinstance(brands, list):
+        return answer, []
+    valid = []
+    for brand in brands:
+        if (
+            isinstance(brand, str)
+            and brand in REFERRAL_BRANDS
+            and brand in ALLOWED_BRANDS
+            and re.search(r"(?im)^.*" + re.escape(brand) + r".*$", answer)
+            and brand not in valid
+        ):
+            matching_lines = [line for line in answer.splitlines() if brand.casefold() in line.casefold()]
+            negative = re.compile(
+                r"не\\s+(подходит|рекомендую|советую|используй|выбирай)|"
+                r"избегай|исключи|откажись|нежелательн",
+                re.IGNORECASE,
+            )
+            if matching_lines and not all(negative.search(line) for line in matching_lines):
+                valid.append(brand)
+    return answer, valid
 
 async def _delete_callback_message(callback: CallbackQuery) -> None:
     """Remove a consumed inline-keyboard message without interrupting the flow."""
@@ -243,16 +295,25 @@ async def send_care_result(message: Message, order_id: str, user_id: int, prompt
             # guard slightly longer so the SDK can return its actual API error.
             timeout=125,
         )
-        result = (response.text or "").strip()
-        if not result:
+        raw_result = (response.text or "").strip()
+        if not raw_result:
             raise RuntimeError("Gemini returned an empty care result")
+        result, recommended_brands = _parse_care_response(raw_result)
+        if not result:
+            raise RuntimeError("Gemini returned a care response without answer text")
         await asyncio.to_thread(save_care_result_sync, order_id, user_id, result)
         formatted = _format_result(result)
+        if recommended_brands:
+            formatted += (
+                "\\n\\nНекоторые ссылки могут быть реферальными. "
+                "Это не влияет на стоимость товаров для тебя."
+            )
         chunks = _split_text(formatted)
         for index, chunk in enumerate(chunks):
             await message.answer(
                 chunk,
-                reply_markup=care_result_keyboard(order_id) if index == len(chunks) - 1 else None,
+                reply_markup=care_result_keyboard(order_id, recommended_brands)
+                if index == len(chunks) - 1 else None,
                 parse_mode="HTML",
             )
         try:
@@ -284,27 +345,49 @@ async def send_care_result(message: Message, order_id: str, user_id: int, prompt
             )
 
 
+def _product_matrix_prompt() -> str:
+    return (
+        "Разрешённая продуктовая матрица — используй только перечисленные бренды и названия. "
+        "Эко и Сибирь: Greenway Cactus (увлажнение и комфорт; Greenway Hemp запрещён и не должен упоминаться); "
+        "Siberian Wellness Experalta Biomelle (барьерный уход), Chronolong (антивозрастное направление), "
+        "Experalta Platinum (пептиды и активный уход). Корея: Anua (тонеры с хауттюйнией), "
+        "Manyo Pure Cleansing Oil, Round Lab 1025 Dokdo и средства с берёзовым соком, Medicube "
+        "(средства с PDRN и пептидами). Аптека: La Roche-Posay Cicaplast B5+, Toleriane, Effaclar; "
+        "CeraVe (средства с керамидами). Доступный масс-маркет: Art&Fact, Icon Skin. "
+        "Люксовые бренды запрещены. Матрица — разрешённый каталог, а не обязательный список: выбирай "
+        "только уместное. Не выдумывай продукты, линейки, составы, свойства, наличие или лечебный эффект. "
+        "Если точное средство не подтверждено матрицей, назови категорию средства без бренда и названия. "
+        "Учитывай чувствительность, аллергию и переносимость. Новые средства вводить постепенно, "
+        "с патч-тестом. Не обещай гарантированный результат, не назначай препараты и не ставь диагнозы. "
+        "Не рекомендуй несколько сильных активов одновременно без необходимости. "
+        "В каждом подходящем этапе утреннего и вечернего ритуала указывай 1–2 конкретных примера из матрицы, "
+        "но не добавляй этапы, которые человеку не нужны. Утром рассмотри очищение, увлажнение/сыворотку, "
+        "крем и SPF по необходимости. Вечером — очищение с учётом макияжа и SPF, один основной актив "
+        "при необходимости и восстановление. "
+        "Верни только валидный JSON без markdown-ограждений: "
+        "{\"answer\": \"полный текст рекомендации на русском\", "
+        "\"recommended_brands\": [\"Greenway\", \"Siberian Wellness\"]}. "
+        "В recommended_brands включай только Greenway и/или Siberian Wellness, если они являются "
+        "положительной рекомендацией в итоговом уходе. Не включай бренд, если он упомянут только "
+        "в отрицании, предупреждении, сравнении или как неподходящий вариант. Если рекомендаций нет — "
+        "верни пустой список. Не включай в список корейские, аптечные и масс-маркет бренды. "
+        "Внутри answer не используй markdown-звёздочки, символы * для выделения или markdown-списки. "
+        "Пиши аккуратно, с заголовками, абзацами и тематическими эмодзи."
+    )
+
+
 def _photo_prompt(cosmetics_category: str) -> str:
     return (
-        "Ты — бережный ИИ-помощник по уходу за кожей. Анализируй только видимые особенности кожи на фото. "
-        "Не ставь диагнозы и не утверждай наличие акне, розацеа, дерматита или иных заболеваний. "
-        "Не делай категоричных выводов по одному фото; освещение, камера, фильтры и макияж могут искажать картину. "
-        "Если качество недостаточное, честно скажи об этом и не придумывай признаки. Не обещай лечение или гарантированный результат. "
-        "Не назначай препараты. Не рекомендуй агрессивные сочетания активов. "
-        "Составь структурированный ответ на русском, на «ты», дружелюбно и без медицинского жаргона. "
-        "Используй заголовок «🌸 ТВОЙ ПЕРСОНАЛЬНЫЙ УХОД», затем разделы: "
-        "💧 Что учитываем; ☀️ Утренний ритуал (очищение, основной уход, увлажнение, SPF); "
-        "🌙 Вечерний ритуал (очищение, основной актив или сыворотка, восстановление и увлажнение); "
-        "✨ Подходящие компоненты (2–3); 🧴 На что обратить внимание при выборе косметики; 🤍 Маленький совет. "
-        "Предпочтительная категория косметики пользователя: " + cosmetics_category + ". "
-        "Подбирай рекомендации предметно внутри выбранного сегмента и приводи 2–3 конкретных примера типов линеек/средств: "
-        "для натурального сегмента — растительные и сибирские эко-серии; для корейского — пептидные и современные активные линейки; "
-        "для аптечного — барьерные кремы и базовые дерматокосметические серии. Не выдумывай названия брендов, конкретных линеек, "
-        "составы или наличие товаров: если не уверен в существовании конкретного продукта, опиши тип линейки без названия. "
-        "Запрещено использовать списки со звёздочками (* пункт). Вместо маркерных точек используй тематические эмодзи "
-        "в начале строк: 💧, 🌿, ☀️, 🌙, ✨, 🧴. Текст должен быть эстетичным, с абзацами и выделением ключевых активов "
-        "жирным шрифтом, без markdown-маркеров списков. "
-        "Укажи вводить новые средства постепенно и сделать патч-тест."
+        "Ты — бережный ИИ-помощник по уходу за кожей. Анализируй только видимые особенности на фото. "
+        "Освещение, камера, фильтры и макияж могут искажать картину. Если качество фото недостаточное, "
+        "честно сообщи об этом и не придумывай признаки. Не диагностируй заболевания, не назначай препараты, "
+        "не обещай лечение или гарантированный эффект. Составь персональный план на русском, на «ты», "
+        "дружелюбно и без медицинского жаргона. Начни с «🌸 ТВОЙ ПЕРСОНАЛЬНЫЙ УХОД». "
+        "Учитывай предпочтение пользователя: " + cosmetics_category + ". "
+        "Структура answer: что учитываем; ☀️ утренний ритуал; 🌙 вечерний ритуал; подходящие компоненты; "
+        "предостережения по чувствительности и переносимости; 🤍 маленький совет. "
+        "В подходящих этапах приводи 1–2 конкретных примера из разрешённой матрицы. "
+        + _product_matrix_prompt()
     )
 
 
@@ -314,20 +397,18 @@ def _quiz_prompt(answers: dict[str, str]) -> str:
         "concern": "Что хочется улучшить",
         "brand_pref": "Предпочтения по уходу",
     }
-    details = "\n".join(f"{labels.get(key, key)}: {value}" for key, value in answers.items())
+    details = "\\n".join(f"{labels.get(key, key)}: {value}" for key, value in answers.items())
     return (
-        "Ты — бережный ИИ-помощник по уходу за кожей. Составь персональный базовый план только на основании ответов. "
-        "Не ставь медицинские диагнозы, не назначай препараты и не обещай лечение заболеваний. "
-        "Не выдумывай аллергию, заболевания, продукты и составы. Если есть чувствительность, предложи мягкий минималистичный уход. "
-        "Сформируй ответ на русском, на «ты», дружелюбно и без медицинского жаргона. "
-        "Заголовок «🌸 ТВОЙ ПЕРСОНАЛЬНЫЙ УХОД», разделы: 💧 Что учитываем; ☀️ Утренний ритуал "
-        "(очищение, основной уход, увлажнение, SPF); 🌙 Вечерний ритуал (очищение, основной актив или сыворотка, "
-        "восстановление и увлажнение); ✨ Подходящие компоненты (2–3); 🧴 На что обратить внимание при выборе косметики; "
-        "🤍 Маленький совет. Предлагай категории средств, не выдумывай конкретные бренды и товары. "
-        "Объясни постепенное введение новых средств и патч-тест. "
-        "Запрещено использовать списки со звёздочками (* пункт). Вместо маркерных точек используй тематические эмодзи "
-        "в начале строк: 💧, 🌿, ☀️, 🌙, ✨, 🧴. Текст должен быть эстетичным, с абзацами и выделением ключевых активов "
-        "жирным шрифтом, без markdown-маркеров списков.\n\nОтветы пользователя:\n" + details
+        "Ты — бережный ИИ-помощник по уходу за кожей. Составь персональный базовый план только на основании "
+        "ответов пользователя. Не выдумывай аллергию, заболевания, продукты и составы. При чувствительности "
+        "или непереносимости предложи мягкий минималистичный уход. Не ставь диагнозы, не назначай препараты, "
+        "не обещай лечение или гарантированный эффект. Ответ на русском, на «ты», дружелюбно и без медицинского "
+        "жаргона. Начни с «🌸 ТВОЙ ПЕРСОНАЛЬНЫЙ УХОД». Структура answer: что учитываем; ☀️ утренний ритуал; "
+        "🌙 вечерний ритуал; подходящие компоненты; предостережения; 🤍 маленький совет. "
+        "В каждом уместном этапе приводи 1–2 точных примера из матрицы, не заполняй ненужные этапы. "
+        "Не используй одновременно несколько сильных активов без необходимости. "
+        + _product_matrix_prompt()
+        + "\\n\\nОтветы пользователя:\\n" + details
     )
 
 
