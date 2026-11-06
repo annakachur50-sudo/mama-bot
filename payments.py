@@ -406,7 +406,7 @@ def update_care_order_answers_sync(order_id: str, telegram_user_id: int, answers
 def get_care_order_sync(order_id: str, telegram_user_id: int) -> dict[str, Any] | None:
     with _db_connect() as connection:
         row = connection.execute("""
-            SELECT mode, answers, result_text, result_status, status
+            SELECT mode, answers, result_text, result_status, status, photo_consent_at
             FROM public.care_orders
             WHERE order_id = %s::uuid AND telegram_user_id = %s
         """, (order_id, telegram_user_id)).fetchone()
@@ -418,6 +418,7 @@ def get_care_order_sync(order_id: str, telegram_user_id: int) -> dict[str, Any] 
         "result_text": row[2],
         "result_status": row[3],
         "status": row[4],
+        "photo_consent_at": row[5],
     }
 
 
