@@ -1,6 +1,10 @@
 import ast
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, patch
+
+from handlers_care import CareStates, choose_care_photo_category
 
 
 class CareSourceSyntaxTests(unittest.TestCase):
@@ -89,6 +93,42 @@ class CareSourceSyntaxTests(unittest.TestCase):
         source = (root / "main.py").read_text(encoding="utf-8")
         self.assertIn('"timeout": 120000', source)
         self.assertIn('os.getenv("CARE_GEMINI_MODEL", GEMINI_MODEL)', source)
+
+
+class CarePhotoFlowRuntimeTests(unittest.IsolatedAsyncioTestCase):
+    async def test_care_photo_category_callback_sends_persistent_selfie_invitation(self):
+        callback = SimpleNamespace(
+            data="care:photo_category:natural:order-123",
+            from_user=SimpleNamespace(id=777),
+            message=SimpleNamespace(
+                answer=AsyncMock(),
+                delete=AsyncMock(),
+            ),
+            answer=AsyncMock(),
+        )
+        state = SimpleNamespace(
+            update_data=AsyncMock(),
+            set_state=AsyncMock(),
+        )
+
+        with patch("handlers_care.asyncio.to_thread", new=AsyncMock(side_effect=[True, True, True])):
+            await choose_care_photo_category(callback, state)
+
+        callback.answer.assert_awaited_once_with()
+        state.set_state.assert_awaited_once_with(CareStates.waiting_for_photo)
+        callback.message.delete.assert_awaited_once_with()
+        callback.message.answer.assert_awaited_once()
+        sent_text = callback.message.answer.await_args.args[0]
+        self.assertIn("Пришли мне одно чёткое селфи", sent_text)
+        self.assertIn("дневному свету", sent_text)
+        self.assertIn("текстуру пор", sent_text)
+        self.assertEqual(callback.message.answer.await_args.kwargs.get("parse_mode"), "HTML")
+
+    async def test_main_registers_photo_handler_for_waiting_for_photo_state(self):
+        root = Path(__file__).resolve().parents[1]
+        source = (root / "main.py").read_text(encoding="utf-8")
+        self.assertIn("@dispatcher.message(CareStates.waiting_for_photo, F.photo)", source)
+        self.assertIn("await process_care_photo(message, state)", source)
 
 
 if __name__ == "__main__":
