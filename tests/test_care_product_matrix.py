@@ -19,7 +19,7 @@ class CareProductMatrixTests(unittest.TestCase):
             "Greenway", "Cactus", "Happy Dew", "Anny Rey", "Nice Code",
             "Sharme Minerals", "Siberian Wellness", "Experalta Biomelle",
             "Chronolong", "Experalta Platinum", "бакучиол", "10% ниацинамид",
-            "Siberian Code", "Endemix", "Levrana", "Леврана",
+            "Siberian Code", "Levrana", "Леврана",
             "Green Mama", "Грин Мама", "гидролатах", "календулы", "лаванды",
             "брусникой", "черникой", "дикорастущих экстрактах",
             "подорожника", "мать-и-мачехи", "череды", "полевого хвоща",
@@ -31,6 +31,8 @@ class CareProductMatrixTests(unittest.TestCase):
         ):
             self.assertNotIn(forbidden, eco)
         self.assertIn("Greenway Hemp строго запрещён", eco)
+        self.assertNotIn("Endemix", eco)
+        self.assertNotIn("Endemix", _photo_prompt("Не принципиально / Микс"))
         for forbidden_category in ("корей", "аптеч", "масс-маркет"):
             self.assertNotIn(forbidden_category, eco.casefold())
         korean = _photo_prompt("Корейский уход и современные активы")
@@ -196,6 +198,28 @@ class CareProductMatrixTests(unittest.TestCase):
 
     def test_result_formatter_removes_markdown_asterisks(self):
         self.assertNotIn("*", _format_result("**Утро**\\n* очищение"))
+
+    def test_layout_rules_are_strict_in_photo_and_quiz_prompts(self):
+        for prompt in (
+            _photo_prompt("Натуральные эко-линейки и травы"),
+            _quiz_prompt({"skin_type": "комбинированная", "brand_pref": "эко"}),
+        ):
+            self.assertIn("Запрещён сплошной текст одной простынёй", prompt)
+            self.assertIn("между каждым этапом и смысловым блоком оставляй пустую строку", prompt)
+            self.assertIn("**Утренний ритуал:**", prompt)
+            self.assertIn("**Вечерний ритуал:**", prompt)
+            self.assertIn("**Название компонента**", prompt)
+            self.assertIn("🤍 Маленький совет", prompt)
+            self.assertIn("⚠️ Предостережения", prompt)
+
+    def test_eco_matrix_uses_current_siberian_wellness_catalog(self):
+        eco = _photo_prompt("Натуральные эко-линейки и травы")
+        for series in ("Siberian Code (Сибирский код)", "Experalta Biomelle",
+                       "Experalta Platinum", "Chronolong"):
+            self.assertIn(series, eco)
+        self.assertIn("восстановление защитного барьера", eco)
+        self.assertIn("антиоксидантная защита", eco)
+        self.assertNotIn("Endemix", eco)
 
     def test_existing_photo_and_quiz_prompts_keep_both_modes(self):
         self.assertIn("видимые особенности", _photo_prompt("корейский").lower())
