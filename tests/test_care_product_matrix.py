@@ -27,6 +27,8 @@ class CareProductMatrixTests(unittest.TestCase):
         ):
             self.assertNotIn(forbidden, eco)
         self.assertIn("Greenway Hemp строго запрещён", eco)
+        for forbidden_category in ("корей", "аптеч", "масс-маркет"):
+            self.assertNotIn(forbidden_category, eco.casefold())
         korean = _photo_prompt("Корейский уход и современные активы")
         self.assertIn("Anua", korean)
         self.assertNotIn("Greenway Cactus", korean)
