@@ -718,7 +718,10 @@ async def answer_care_quiz(callback: CallbackQuery, state: FSMContext) -> None:
         await state.set_state(CareStates.generating_result)
         order = await asyncio.to_thread(get_care_order_sync, order_id, user_id)
         answers = (order or {}).get("answers", {})
-        await send_care_result(callback.message, order_id, user_id, _quiz_prompt(answers))
+        await send_care_result(
+            callback.message, order_id, user_id, _quiz_prompt(answers),
+            cosmetics_category=answers.get("brand_pref"),
+        )
         await state.clear()
 
 
@@ -756,6 +759,7 @@ async def repeat_care_result(callback: CallbackQuery, state: FSMContext) -> None
         await send_care_result(
             callback.message, order_id, user_id,
             _quiz_prompt(order.get("answers") or {}),
+            cosmetics_category=(order.get("answers") or {}).get("brand_pref"),
         )
         await state.clear()
 
