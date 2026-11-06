@@ -193,9 +193,17 @@ def _parse_care_response(raw: str, cosmetics_category: str | None = None) -> tup
     if not answer:
         return "", []
     eco = _is_eco_category(cosmetics_category)
-    if eco and _contains_forbidden_eco_brand(answer):
-        logger.warning("Rejected non-eco brand mention in eco care response")
-        return ("Не удалось безопасно сформировать рекомендации строго в выбранной эко-категории. "
+    korean = _is_korean_category(cosmetics_category)
+    pharmacy = _is_pharmacy_category(cosmetics_category)
+    if (
+        (eco and _contains_forbidden_eco_brand(answer))
+        or (korean and _contains_foreign_category_brand(answer, "korean"))
+        or (pharmacy and _contains_foreign_category_brand(answer, "pharmacy"))
+    ):
+        logger.warning("Rejected cross-category brand mention in care response: category=%s",
+                       cosmetics_category)
+        label = "эко" if eco else "корейской" if korean else "аптечной"
+        return (f"Не удалось безопасно сформировать рекомендации строго в выбранной {label} категории. "
                 "Попробуй повторить подбор чуть позже 🌿"), []
     brands = payload.get("recommended_brands")
     if not isinstance(brands, list):
@@ -220,6 +228,42 @@ def _is_eco_category(category: str | None) -> bool:
 def _contains_forbidden_eco_brand(answer: str) -> bool:
     return any(re.search(r"(?<!\w)" + re.escape(brand) + r"(?!\w)", answer, re.IGNORECASE)
                for brand in ECO_FORBIDDEN_BRANDS)
+
+KOREAN_ALLOWED_BRANDS = (
+    "Anua", "Manyo", "Round Lab", "SKIN1004", "Beauty of Joseon",
+    "Medicube", "Jigott", "COSRX",
+)
+PHARMACY_ALLOWED_BRANDS = ("La Roche-Posay", "CeraVe", "Bioderma", "Avene", "Avène")
+NON_KOREAN_BRANDS = (
+    "Greenway", "Cactus", "Happy Dew", "Anny Rey", "Nice Code", "Sharme Minerals",
+    "Siberian Wellness", "Experalta", "Chronolong", "Siberian Code", "Endemix",
+    "La Roche-Posay", "CeraVe", "Bioderma", "Avene", "Avène", "Art&Fact", "Icon Skin",
+)
+NON_PHARMACY_BRANDS = (
+    "Greenway", "Cactus", "Happy Dew", "Anny Rey", "Nice Code", "Sharme Minerals",
+    "Siberian Wellness", "Experalta", "Chronolong", "Siberian Code", "Endemix",
+    "Anua", "Manyo", "Round Lab", "SKIN1004", "Beauty of Joseon", "Medicube",
+    "Jigott", "COSRX", "Art&Fact", "Icon Skin",
+)
+
+
+def _is_korean_category(category: str | None) -> bool:
+    value = (category or "").casefold()
+    return any(token in value for token in ("корей", "korean", "актив"))
+
+
+def _is_pharmacy_category(category: str | None) -> bool:
+    value = (category or "").casefold()
+    return any(token in value for token in ("аптек", "pharmacy", "базов"))
+
+
+def _contains_foreign_category_brand(answer: str, category: str) -> bool:
+    forbidden = NON_KOREAN_BRANDS if category == "korean" else NON_PHARMACY_BRANDS
+    return any(
+        re.search(r"(?<!\\w)" + re.escape(brand) + r"(?!\\w)", answer, re.IGNORECASE)
+        for brand in forbidden
+    )
+
 
 async def _delete_callback_message(callback: CallbackQuery) -> None:
     """Remove a consumed inline-keyboard message without interrupting the flow."""
@@ -403,24 +447,31 @@ def _product_matrix_prompt(cosmetics_category: str) -> str:
             "Верни JSON с answer и recommended_brands. В recommended_brands разрешены только "
             "Greenway и Siberian Wellness, если они позитивно рекомендованы в answer; иначе []."
         )
-    if any(token in category for token in ("корей", "korean", "актив")):
+    if _is_korean_category(category):
         return (
-            "ИЗОЛИРОВАННАЯ МАТРИЦА КОРЕЙСКОГО УХОДА: Anua, Manyo Pure Cleansing Oil, "
-            "Round Lab 1025 Dokdo, Medicube. Другие каталоги не упоминай. "
-            "recommended_brands всегда [] для этой категории."
+            "ИЗОЛИРОВАННАЯ МАТРИЦА КОРЕЙСКОГО УХОДА. Используй ТОЛЬКО корейские бренды: "
+            "Anua, Manyo, Round Lab, SKIN1004, Beauty of Joseon, Medicube, Jigott, COSRX. "
+            "Не упоминай Greenway, Siberian Wellness, аптечные бренды, масс-маркет и любые "
+            "другие категории. Не выдумывай конкретные продукты и составы; если точная позиция "
+            "не подтверждена, назови только тип средства. recommended_brands всегда []."
         )
-    if any(token in category for token in ("аптек", "pharmacy", "базов")):
+    if _is_pharmacy_category(category):
         return (
-            "ИЗОЛИРОВАННАЯ АПТЕЧНАЯ МАТРИЦА: La Roche-Posay Cicaplast B5+, Toleriane, Effaclar; "
-            "CeraVe. Другие каталоги не упоминай. recommended_brands всегда []."
+            "ИЗОЛИРОВАННАЯ АПТЕЧНАЯ ДЕРМАТОЛОГИЧЕСКАЯ МАТРИЦА. Используй ТОЛЬКО бренды "
+            "La Roche-Posay, CeraVe, Bioderma и Avène. Не упоминай корейские/азиатские бренды, "
+            "эко-линейки, сетевые линейки, масс-маркет и любые другие категории. "
+            "Не выдумывай конкретные продукты и составы; если точная позиция не подтверждена, "
+            "назови только тип средства. recommended_brands всегда []."
         )
     return (
-        "ИЗОЛИРОВАННАЯ МАТРИЦА МИКС: Greenway Cactus, Happy Dew, Anny Rey, Nice Code, "
-        "Sharme Minerals; Siberian Wellness Experalta Biomelle, Chronolong, Experalta Platinum, "
-        "Siberian Code, Endemix; Anua, Manyo Pure Cleansing Oil, Round Lab 1025 Dokdo, Medicube; "
-        "La Roche-Posay, CeraVe, Art&Fact, Icon Skin. Greenway Hemp запрещён. "
-        "Используй только подходящие подтверждённые позиции, не выдумывай продукты. "
-        "recommended_brands может содержать только Greenway и/или Siberian Wellness."
+        "ИЗОЛИРОВАННАЯ МАТРИЦА МИКС. Только в этом сценарии разрешено комбинировать "
+        "категории. Доступны Greenway: Cactus, Happy Dew, Anny Rey, Nice Code, Sharme Minerals; "
+        "Siberian Wellness: Experalta Biomelle, Chronolong, Experalta Platinum, Siberian Code, "
+        "Endemix; корейские бренды: Anua, Manyo, Round Lab, SKIN1004, Beauty of Joseon, "
+        "Medicube, Jigott, COSRX; аптечные бренды: La Roche-Posay, CeraVe, Bioderma, Avène; "
+        "также Art&Fact и Icon Skin. Greenway Hemp запрещён. Используй только подтверждённые "
+        "подходящие позиции, не выдумывай продукты и составы. recommended_brands может содержать "
+        "только Greenway и/или Siberian Wellness."
     )
 
 
