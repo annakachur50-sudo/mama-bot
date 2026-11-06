@@ -14,6 +14,7 @@ import re
 from typing import Any
 
 from aiogram import F, Router
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
@@ -48,10 +49,16 @@ REF_LINK_SW = (
     "PRIVILEGED_CLIENT/?referral=2539466720"
 )
 REFERRAL_BRANDS = {"Greenway", "Siberian Wellness"}
-ALLOWED_BRANDS = {
-    "Greenway", "Siberian Wellness", "Anua", "Manyo", "Round Lab",
-    "Medicube", "La Roche-Posay", "CeraVe", "Art&Fact", "Icon Skin",
-}
+ALLOWED_BRANDS = REFERRAL_BRANDS
+ECO_ALLOWED_TERMS = (
+    "Greenway", "Cactus", "Happy Dew", "Anny Rey", "Nice Code", "Sharme Minerals",
+    "Siberian Wellness", "Experalta Biomelle", "Chronolong", "Experalta Platinum",
+    "бакучиол", "10% ниацинамид", "Siberian Code", "Endemix",
+)
+ECO_FORBIDDEN_BRANDS = (
+    "Greenway Hemp", "Hemp", "Anua", "Manyo", "Round Lab", "Medicube",
+    "La Roche-Posay", "CeraVe", "Art&Fact", "Icon Skin",
+)
 
 
 class CareStates(StatesGroup):
@@ -168,15 +175,36 @@ def _brand_is_positive_recommendation(answer: str, brand: str) -> bool:
     return bool(mentions) and any(not negative.search(sentence) for sentence in mentions)
 
 
-def _parse_care_response(raw: str) -> tuple[str, list[str]]:
-    """Malformed JSON may still show text, but never creates referral buttons."""
+def _parse_care_response(raw: str, cosmetics_category: str | None = None) -> tuple[str, list[str]]:
+    """Parse Gemini JSON safely; malformed structures never produce referral buttons."""
+    text = (raw or "").strip()
+    fenced = re.fullmatch(r"```(?:json)?\s*(.*?)\s*```", text, flags=re.IGNORECASE | re.DOTALL)
+    if fenced:
+        text = fenced.group(1).strip()
     try:
-        payload = json.loads(raw)
+        payload = json.loads(text)
     except (TypeError, json.JSONDecodeError):
-        return raw.strip(), []
+        # Safe fallback: preserve readable text, but never infer structured links.
+        fallback = re.sub(r"^```(?:json)?\s*|\s*```$", "", text, flags=re.IGNORECASE).strip()
+        return fallback, []
     if not isinstance(payload, dict) or not isinstance(payload.get("answer"), str):
-        return raw.strip(), []
+        return text, []
     answer = payload["answer"].strip()
+    if not answer:
+        return "", []
+    eco = _is_eco_category(cosmetics_category)
+    korean = _is_korean_category(cosmetics_category)
+    pharmacy = _is_pharmacy_category(cosmetics_category)
+    if (
+        (eco and _contains_forbidden_eco_brand(answer))
+        or (korean and _contains_foreign_category_brand(answer, "korean"))
+        or (pharmacy and _contains_foreign_category_brand(answer, "pharmacy"))
+    ):
+        logger.warning("Rejected cross-category brand mention in care response: category=%s",
+                       cosmetics_category)
+        label = "эко" if eco else "корейской" if korean else "аптечной"
+        return (f"Не удалось безопасно сформировать рекомендации строго в выбранной {label} категории. "
+                "Попробуй повторить подбор чуть позже 🌿"), []
     brands = payload.get("recommended_brands")
     if not isinstance(brands, list):
         return answer, []
@@ -185,12 +213,57 @@ def _parse_care_response(raw: str) -> tuple[str, list[str]]:
         if (
             isinstance(brand, str)
             and brand in REFERRAL_BRANDS
-            and brand in ALLOWED_BRANDS
             and _brand_is_positive_recommendation(answer, brand)
             and brand not in valid
         ):
             valid.append(brand)
     return answer, valid
+
+
+def _is_eco_category(category: str | None) -> bool:
+    value = (category or "").casefold()
+    return any(token in value for token in ("эко", "натураль", "раститель", "green"))
+
+
+def _contains_forbidden_eco_brand(answer: str) -> bool:
+    return any(re.search(r"(?<!\w)" + re.escape(brand) + r"(?!\w)", answer, re.IGNORECASE)
+               for brand in ECO_FORBIDDEN_BRANDS)
+
+KOREAN_ALLOWED_BRANDS = (
+    "Anua", "Manyo", "Round Lab", "SKIN1004", "Beauty of Joseon",
+    "Medicube", "Jigott", "COSRX",
+)
+PHARMACY_ALLOWED_BRANDS = ("La Roche-Posay", "CeraVe", "Bioderma", "Avene", "Avène")
+NON_KOREAN_BRANDS = (
+    "Greenway", "Cactus", "Happy Dew", "Anny Rey", "Nice Code", "Sharme Minerals",
+    "Siberian Wellness", "Experalta", "Chronolong", "Siberian Code", "Endemix",
+    "La Roche-Posay", "CeraVe", "Bioderma", "Avene", "Avène", "Art&Fact", "Icon Skin",
+)
+NON_PHARMACY_BRANDS = (
+    "Greenway", "Cactus", "Happy Dew", "Anny Rey", "Nice Code", "Sharme Minerals",
+    "Siberian Wellness", "Experalta", "Chronolong", "Siberian Code", "Endemix",
+    "Anua", "Manyo", "Round Lab", "SKIN1004", "Beauty of Joseon", "Medicube",
+    "Jigott", "COSRX", "Art&Fact", "Icon Skin",
+)
+
+
+def _is_korean_category(category: str | None) -> bool:
+    value = (category or "").casefold()
+    return any(token in value for token in ("корей", "korean", "актив"))
+
+
+def _is_pharmacy_category(category: str | None) -> bool:
+    value = (category or "").casefold()
+    return any(token in value for token in ("аптек", "pharmacy", "базов"))
+
+
+def _contains_foreign_category_brand(answer: str, category: str) -> bool:
+    forbidden = NON_KOREAN_BRANDS if category == "korean" else NON_PHARMACY_BRANDS
+    return any(
+        re.search(r"(?<!\\w)" + re.escape(brand) + r"(?!\\w)", answer, re.IGNORECASE)
+        for brand in forbidden
+    )
+
 
 async def _delete_callback_message(callback: CallbackQuery) -> None:
     """Remove a consumed inline-keyboard message without interrupting the flow."""
@@ -198,8 +271,11 @@ async def _delete_callback_message(callback: CallbackQuery) -> None:
         return
     try:
         await callback.message.delete()
+    except TelegramBadRequest as error:
+        # Includes Telegram's "message to delete not found" / "message can't be deleted" responses.
+        logger.debug("Telegram rejected care message deletion: %s", error)
     except Exception as error:
-        # Telegram may reject deletion (for example, for an old/inaccessible message).
+        # Unexpected deletion failures must not interrupt the flow.
         # The next step should still be delivered so the user is never stuck.
         logger.debug("Could not delete care step message: %s", error)
 
@@ -276,7 +352,8 @@ async def start_care_checkout(callback: CallbackQuery, state: FSMContext | None 
 
 
 async def send_care_result(message: Message, order_id: str, user_id: int, prompt: str,
-                           image_bytes: bytes | None = None) -> None:
+                           image_bytes: bytes | None = None,
+                           cosmetics_category: str | None = None) -> None:
     if _client is None:
         await message.answer("Анализ временно недоступен. Попробуй ещё раз чуть позже 🌿")
         return
@@ -308,7 +385,7 @@ async def send_care_result(message: Message, order_id: str, user_id: int, prompt
         raw_result = (response.text or "").strip()
         if not raw_result:
             raise RuntimeError("Gemini returned an empty care result")
-        result, recommended_brands = _parse_care_response(raw_result)
+        result, recommended_brands = _parse_care_response(raw_result, cosmetics_category)
         if not result:
             raise RuntimeError("Gemini returned a care response without answer text")
         await asyncio.to_thread(save_care_result_sync, order_id, user_id, result)
@@ -355,34 +432,46 @@ async def send_care_result(message: Message, order_id: str, user_id: int, prompt
             )
 
 
-def _product_matrix_prompt() -> str:
+def _product_matrix_prompt(cosmetics_category: str) -> str:
+    """Return exactly one isolated product matrix for the user's selected category."""
+    category = (cosmetics_category or "").casefold()
+    if _is_eco_category(category):
+        return (
+            "ИЗОЛИРОВАННАЯ ЭКО-МАТРИЦА. Используй исключительно эти линейки и бренды: "
+            "Greenway: Cactus, Happy Dew, Anny Rey, Nice Code, Sharme Minerals. "
+            "Greenway Hemp строго запрещён: не упоминай его ни в каком контексте. "
+            "Siberian Wellness: Experalta Biomelle, Chronolong, Experalta Platinum "
+            "(бакучиол, 10% ниацинамид), Siberian Code, Endemix. "
+            "Любые другие бренды, линейки и категории вне этого списка запрещены. Если подходящего средства в этой матрице нет, "
+            "опиши категорию средства без стороннего бренда. Не выдумывай продукты, составы и свойства. "
+            "Верни JSON с answer и recommended_brands. В recommended_brands разрешены только "
+            "Greenway и Siberian Wellness, если они позитивно рекомендованы в answer; иначе []."
+        )
+    if _is_korean_category(category):
+        return (
+            "ИЗОЛИРОВАННАЯ МАТРИЦА КОРЕЙСКОГО УХОДА. Используй ТОЛЬКО корейские бренды: "
+            "Anua, Manyo, Round Lab, SKIN1004, Beauty of Joseon, Medicube, Jigott, COSRX. "
+            "Не упоминай другие категории и бренды вне этой матрицы. Не выдумывай конкретные продукты "
+            "и составы; если точная позиция "
+            "не подтверждена, назови только тип средства. recommended_brands всегда []."
+        )
+    if _is_pharmacy_category(category):
+        return (
+            "ИЗОЛИРОВАННАЯ АПТЕЧНАЯ ДЕРМАТОЛОГИЧЕСКАЯ МАТРИЦА. Используй ТОЛЬКО бренды "
+            "La Roche-Posay, CeraVe, Bioderma и Avène. Не упоминай корейские/азиатские бренды, "
+            "эко-линейки, сетевые линейки, масс-маркет и любые другие категории. "
+            "Не выдумывай конкретные продукты и составы; если точная позиция не подтверждена, "
+            "назови только тип средства. recommended_brands всегда []."
+        )
     return (
-        "Разрешённая продуктовая матрица — используй только перечисленные бренды и названия. "
-        "Эко и Сибирь: Greenway Cactus (увлажнение и комфорт; Greenway Hemp запрещён и не должен упоминаться); "
-        "Siberian Wellness Experalta Biomelle (барьерный уход), Chronolong (антивозрастное направление), "
-        "Experalta Platinum (пептиды и активный уход). Корея: Anua (тонеры с хауттюйнией), "
-        "Manyo Pure Cleansing Oil, Round Lab 1025 Dokdo и средства с берёзовым соком, Medicube "
-        "(средства с PDRN и пептидами). Аптека: La Roche-Posay Cicaplast B5+, Toleriane, Effaclar; "
-        "CeraVe (средства с керамидами). Доступный масс-маркет: Art&Fact, Icon Skin. "
-        "Люксовые бренды запрещены. Матрица — разрешённый каталог, а не обязательный список: выбирай "
-        "только уместное. Не выдумывай продукты, линейки, составы, свойства, наличие или лечебный эффект. "
-        "Если точное средство не подтверждено матрицей, назови категорию средства без бренда и названия. "
-        "Учитывай чувствительность, аллергию и переносимость. Новые средства вводить постепенно, "
-        "с патч-тестом. Не обещай гарантированный результат, не назначай препараты и не ставь диагнозы. "
-        "Не рекомендуй несколько сильных активов одновременно без необходимости. "
-        "В каждом подходящем этапе утреннего и вечернего ритуала указывай 1–2 конкретных примера из матрицы, "
-        "но не добавляй этапы, которые человеку не нужны. Утром рассмотри очищение, увлажнение/сыворотку, "
-        "крем и SPF по необходимости. Вечером — очищение с учётом макияжа и SPF, один основной актив "
-        "при необходимости и восстановление. "
-        "Верни только валидный JSON без markdown-ограждений: "
-        "{\"answer\": \"полный текст рекомендации на русском\", "
-        "\"recommended_brands\": [\"Greenway\", \"Siberian Wellness\"]}. "
-        "В recommended_brands включай только Greenway и/или Siberian Wellness, если они являются "
-        "положительной рекомендацией в итоговом уходе. Не включай бренд, если он упомянут только "
-        "в отрицании, предупреждении, сравнении или как неподходящий вариант. Если рекомендаций нет — "
-        "верни пустой список. Не включай в список корейские, аптечные и масс-маркет бренды. "
-        "Внутри answer не используй markdown-звёздочки, символы * для выделения или markdown-списки. "
-        "Пиши аккуратно, с заголовками, абзацами и тематическими эмодзи."
+        "ИЗОЛИРОВАННАЯ МАТРИЦА МИКС. Только в этом сценарии разрешено комбинировать "
+        "категории. Доступны Greenway: Cactus, Happy Dew, Anny Rey, Nice Code, Sharme Minerals; "
+        "Siberian Wellness: Experalta Biomelle, Chronolong, Experalta Platinum, Siberian Code, "
+        "Endemix; корейские бренды: Anua, Manyo, Round Lab, SKIN1004, Beauty of Joseon, "
+        "Medicube, Jigott, COSRX; аптечные бренды: La Roche-Posay, CeraVe, Bioderma, Avène; "
+        "также Art&Fact и Icon Skin. Greenway Hemp запрещён. Используй только подтверждённые "
+        "подходящие позиции, не выдумывай продукты и составы. recommended_brands может содержать "
+        "только Greenway и/или Siberian Wellness."
     )
 
 
@@ -392,12 +481,12 @@ def _photo_prompt(cosmetics_category: str) -> str:
         "Освещение, камера, фильтры и макияж могут искажать картину. Если качество фото недостаточное, "
         "честно сообщи об этом и не придумывай признаки. Не диагностируй заболевания, не назначай препараты, "
         "не обещай лечение или гарантированный эффект. Составь персональный план на русском, на «ты», "
-        "дружелюбно и без медицинского жаргона. Начни с «🌸 ТВОЙ ПЕРСОНАЛЬНЫЙ УХОД». "
+        "дружелюбно и без медицинского жаргона. Внутри answer не используй markdown-звёздочки или markdown-списки. " + "Начни с «🌸 ТВОЙ ПЕРСОНАЛЬНЫЙ УХОД». "
         "Учитывай предпочтение пользователя: " + cosmetics_category + ". "
         "Структура answer: что учитываем; ☀️ утренний ритуал; 🌙 вечерний ритуал; подходящие компоненты; "
         "предостережения по чувствительности и переносимости; 🤍 маленький совет. "
         "В подходящих этапах приводи 1–2 конкретных примера из разрешённой матрицы. "
-        + _product_matrix_prompt()
+        + _product_matrix_prompt(cosmetics_category)
     )
 
 
@@ -417,7 +506,7 @@ def _quiz_prompt(answers: dict[str, str]) -> str:
         "🌙 вечерний ритуал; подходящие компоненты; предостережения; 🤍 маленький совет. "
         "В каждом уместном этапе приводи 1–2 точных примера из матрицы, не заполняй ненужные этапы. "
         "Не используй одновременно несколько сильных активов без необходимости. "
-        + _product_matrix_prompt()
+        + _product_matrix_prompt(answers.get("brand_pref", ""))
         + "\n\nОтветы пользователя:\n" + details
     )
 
@@ -629,7 +718,7 @@ async def answer_care_quiz(callback: CallbackQuery, state: FSMContext) -> None:
         await state.set_state(CareStates.generating_result)
         order = await asyncio.to_thread(get_care_order_sync, order_id, user_id)
         answers = (order or {}).get("answers", {})
-        await send_care_result(callback.message, order_id, user_id, _quiz_prompt(answers))
+        await send_care_result(callback.message, order_id, user_id, _quiz_prompt(answers), cosmetics_category=answers.get("brand_pref"))
         await state.clear()
 
 
@@ -667,6 +756,7 @@ async def repeat_care_result(callback: CallbackQuery, state: FSMContext) -> None
         await send_care_result(
             callback.message, order_id, user_id,
             _quiz_prompt(order.get("answers") or {}),
+            cosmetics_category=(order.get("answers") or {}).get("brand_pref"),
         )
         await state.clear()
 
@@ -700,6 +790,7 @@ async def process_care_photo(message: Message, state: FSMContext) -> bool:
     if not message.photo:
         await message.answer("Пришли, пожалуйста, фотографию как изображение 🌸")
         return True
+    image_bytes = None
     try:
         # Show activity while Telegram downloads the image and Gemini prepares the analysis.
         await _bot.send_chat_action(chat_id=message.chat.id, action="typing")
@@ -720,8 +811,8 @@ async def process_care_photo(message: Message, state: FSMContext) -> bool:
             await _ask_care_photo_category(message, state, order_id)
             return True
         await _bot.send_chat_action(chat_id=message.chat.id, action="typing")
-        await send_care_result(message, order_id, user_id, _photo_prompt(category), image_bytes=image_bytes)
-        del image_bytes
+        await send_care_result(message, order_id, user_id, _photo_prompt(category),
+                                  image_bytes=image_bytes, cosmetics_category=category)
         await state.clear()
         return True
     except asyncio.CancelledError:
@@ -733,6 +824,10 @@ async def process_care_photo(message: Message, state: FSMContext) -> bool:
             reply_markup=care_result_keyboard(order_id),
         )
         return True
+    finally:
+        image_bytes = None
+        if "buffer" in locals():
+            buffer.close()
 
 
 
@@ -754,7 +849,7 @@ async def process_care_text(message: Message, state: FSMContext) -> bool:
         await message.answer("Сначала выбери категорию ухода кнопкой 🌸", reply_markup=care_photo_category_keyboard(order_id))
         return True
     if current == CareStates.waiting_for_photo.state:
-        await message.answer("Жду одно чёткое фото лица при дневном освещении 🌸")
+        await message.answer("📸 Пожалуйста, отправь именно фотографию лица крупным планом, чтобы я могла оценить состояние кожи.")
         return True
     if current == CareStates.survey_skin_type.state and order_id:
         await message.answer("Выбери тип кожи кнопкой 👇", reply_markup=care_quiz_keyboard("skin", order_id))
