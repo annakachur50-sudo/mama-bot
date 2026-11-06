@@ -4736,8 +4736,6 @@ async def handle_text(message: Message, state: FSMContext) -> None:
         return
 
     user_id = message.from_user.id
-    if await process_care_text(message, state):
-        return
     event_key = (user_id, message.message_id)
     if event_key in feedback_sent_events or event_key in feedback_inflight:
         return
@@ -4753,6 +4751,8 @@ async def handle_text(message: Message, state: FSMContext) -> None:
         radiance_states.pop(user_id, None)
         if prompt != MENU_BUTTONS[5]:
             pending_kids_age.discard(user_id)
+    elif await process_care_text(message, state):
+        return
 
     if user_id in pending_kids_age and prompt not in MENU_BUTTONS:
         parsed_ages = parse_child_ages(prompt)
