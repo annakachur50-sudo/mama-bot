@@ -44,8 +44,8 @@ class CareProductMatrixTests(unittest.TestCase):
         buttons = [button for row in keyboard.inline_keyboard for button in row]
         urls = [button.url for button in buttons if button.url]
         self.assertEqual(urls, [REF_LINK_GREENWAY])
-        self.assertIn("Повторить подбор", [button.text for button in buttons])
-        self.assertIn("В главное меню", [button.text for button in buttons])
+        self.assertIn("🔄 Повторить подбор", [button.text for button in buttons])
+        self.assertIn("🏠 В главное меню", [button.text for button in buttons])
 
     def test_siberian_wellness_only_shows_sw_button(self):
         _, brands = _parse_care_response(
