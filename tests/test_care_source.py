@@ -22,6 +22,14 @@ class CareSourceSyntaxTests(unittest.TestCase):
         self.assertIn('logger.exception("Care vision error: %s", error)', source)
         self.assertIn("timeout=125", source)
 
+    def test_care_inline_step_messages_are_deleted_on_transitions(self):
+        root = Path(__file__).resolve().parents[1]
+        source = (root / "handlers_care.py").read_text(encoding="utf-8")
+        self.assertIn("async def _delete_callback_message(callback: CallbackQuery)", source)
+        self.assertGreaterEqual(source.count("await _delete_callback_message(callback)"), 5)
+        self.assertIn("await callback.message.delete()", source)
+        self.assertIn("await send_care_result(callback.message", source)
+
     def test_shared_gemini_http_timeout_and_care_model_fallback(self):
         root = Path(__file__).resolve().parents[1]
         source = (root / "main.py").read_text(encoding="utf-8")
