@@ -362,6 +362,8 @@ async def choose_care_mode(callback: CallbackQuery, state: FSMContext) -> None:
     if mode == "photo":
         has_consent = await asyncio.to_thread(has_care_photo_consent_sync, user_id)
         if has_consent:
+            # Carry the profile-level consent onto this order so photo validation is consistent.
+            await asyncio.to_thread(record_care_photo_consent_sync, order_id, user_id)
             await _ask_care_photo_category(callback.message, state, order_id)
         else:
             await state.set_state(CareStates.waiting_for_consent)
@@ -426,7 +428,7 @@ async def choose_care_photo_category(callback: CallbackQuery, state: FSMContext)
     if len(bits) != 4:
         await callback.answer("Не удалось распознать выбор", show_alert=True)
         return
-    _, _, _, category, order_id = bits
+    _, _, category, order_id = bits
     categories = {
         "natural": "Натуральные эко-линейки и растительные компоненты",
         "korean": "Корейский уход и современные активы",
@@ -529,6 +531,8 @@ async def repeat_care_result(callback: CallbackQuery, state: FSMContext) -> None
     if order.get("mode") == "photo":
         has_consent = await asyncio.to_thread(has_care_photo_consent_sync, user_id)
         if has_consent:
+            # Carry the profile-level consent onto this repeated order as well.
+            await asyncio.to_thread(record_care_photo_consent_sync, order_id, user_id)
             await _ask_care_photo_category(callback.message, state, order_id)
         else:
             await state.set_state(CareStates.waiting_for_consent)
