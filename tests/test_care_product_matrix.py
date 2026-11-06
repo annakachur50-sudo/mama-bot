@@ -92,7 +92,7 @@ class CareProductMatrixTests(unittest.TestCase):
         self.assertNotIn("*", _format_result("**Утро**\\n* очищение"))
 
     def test_existing_photo_and_quiz_prompts_keep_both_modes(self):
-        self.assertIn("visible", _photo_prompt("корейский").lower())
+        self.assertIn("видимые особенности", _photo_prompt("корейский").lower())
         self.assertIn("Ответы пользователя", _quiz_prompt({"skin_type": "сухая"}))
 
 
