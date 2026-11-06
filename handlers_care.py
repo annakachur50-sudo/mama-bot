@@ -152,6 +152,22 @@ def care_result_keyboard(order_id: str, recommended_brands: list[str] | None = N
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
+def _brand_is_positive_recommendation(answer: str, brand: str) -> bool:
+    """Reject an explicit negative mention without misreading unrelated warnings on the same line."""
+    sentences = re.split(r"(?<=[.!?])\s+|\n+", answer)
+    negative = re.compile(
+        r"(?:"
+        + re.escape(brand)
+        + r"\s+не\s+(?:подходит|рекомендую|советую|используй|выбирай)"
+        + r"|не\s+(?:подходит|рекомендую|советую|используй|выбирай)\s+(?:бренд\s+)?"
+        + re.escape(brand)
+        + r")",
+        re.IGNORECASE,
+    )
+    mentions = [sentence for sentence in sentences if brand.casefold() in sentence.casefold()]
+    return bool(mentions) and any(not negative.search(sentence) for sentence in mentions)
+
+
 def _parse_care_response(raw: str) -> tuple[str, list[str]]:
     """Malformed JSON may still show text, but never creates referral buttons."""
     try:
@@ -170,17 +186,10 @@ def _parse_care_response(raw: str) -> tuple[str, list[str]]:
             isinstance(brand, str)
             and brand in REFERRAL_BRANDS
             and brand in ALLOWED_BRANDS
-            and re.search(r"(?im)^.*" + re.escape(brand) + r".*$", answer)
+            and _brand_is_positive_recommendation(answer, brand)
             and brand not in valid
         ):
-            matching_lines = [line for line in answer.splitlines() if brand.casefold() in line.casefold()]
-            negative = re.compile(
-                r"не\s+(подходит|рекомендую|советую|используй|выбирай)|"
-                r"избегай|исключи|откажись|нежелательн",
-                re.IGNORECASE,
-            )
-            if matching_lines and not all(negative.search(line) for line in matching_lines):
-                valid.append(brand)
+            valid.append(brand)
     return answer, valid
 
 async def _delete_callback_message(callback: CallbackQuery) -> None:
