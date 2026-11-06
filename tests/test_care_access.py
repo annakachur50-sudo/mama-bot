@@ -31,6 +31,8 @@ class FakeConnection:
             return FakeResult((123456, Decimal("99.00"), "RUB", "pending", None))
         if "INSERT INTO public.care_access" in query:
             return FakeResult(rowcount=1 if self.access_inserted else 0)
+        if "SET status = 'cancelled'" in query:
+            return FakeResult(row=("cancelled-order",))
         return FakeResult(rowcount=1)
 
 
