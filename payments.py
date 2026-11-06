@@ -47,6 +47,36 @@ def init_payment_tables_sync() -> None:
                 paid_at TIMESTAMPTZ
             )
         """)
+
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS public.care_orders (
+                order_id UUID PRIMARY KEY,
+                telegram_user_id BIGINT NOT NULL,
+                mode TEXT,
+                amount NUMERIC(10, 2) NOT NULL DEFAULT 99.00,
+                currency TEXT NOT NULL DEFAULT 'RUB',
+                status TEXT NOT NULL DEFAULT 'pending',
+                payment_id TEXT UNIQUE,
+                answers JSONB NOT NULL DEFAULT '{}'::jsonb,
+                result_text TEXT,
+                result_status TEXT NOT NULL DEFAULT 'pending',
+                photo_consent_at TIMESTAMPTZ,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                paid_at TIMESTAMPTZ
+            )
+        """)
+        connection.execute("""
+            CREATE UNIQUE INDEX IF NOT EXISTS care_orders_one_pending_per_user
+            ON public.care_orders (telegram_user_id)
+            WHERE status = 'pending'
+        """)
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS public.care_access (
+                telegram_user_id BIGINT PRIMARY KEY,
+                order_id UUID NOT NULL UNIQUE REFERENCES public.care_orders(order_id),
+                granted_at TIMESTAMPTZ NOT NULL DEFAULT now()
+            )
+        """)
         connection.execute("""
             CREATE TABLE IF NOT EXISTS public.stylist_access (
                 telegram_user_id BIGINT PRIMARY KEY,
@@ -121,7 +151,7 @@ def validate_succeeded_payment(
         raise PaymentValidationError("Payment user metadata mismatch")
 
 
-async def create_yookassa_payment(order_id: str, telegram_user_id: int) -> dict[str, Any]:
+async def create_yookassa_payment(order_id: str, telegram_user_id: int, service_type: str = "stylist") -> dict[str, Any]:
     import aiohttp
 
     shop_id = os.getenv("YOOKASSA_SHOP_ID")
@@ -132,12 +162,21 @@ async def create_yookassa_payment(order_id: str, telegram_user_id: int) -> dict[
             "YOOKASSA_SHOP_ID, YOOKASSA_SECRET_KEY and YOOKASSA_RETURN_URL must be configured"
         )
 
+    if service_type not in {"stylist", "care"}:
+        raise ValueError("Unsupported YooKassa service type")
+    amount_value = "99.00" if service_type == "care" else "49.00"
+    description = (
+        "Консультационная услуга по подбору ухода"
+        if service_type == "care"
+        else "Персональный AI-гардероб"
+    )
     payload = {
-        "amount": {"value": "49.00", "currency": PAYMENT_CURRENCY},
+        "amount": {"value": amount_value, "currency": PAYMENT_CURRENCY},
         "capture": True,
         "confirmation": {"type": "redirect", "return_url": return_url},
-        "description": "Персональный AI-гардероб",
+        "description": description,
         "metadata": {
+            "service_type": service_type,
             "order_id": order_id,
             "telegram_user_id": str(telegram_user_id),
         },
@@ -225,3 +264,208 @@ def grant_access_from_payment_sync(payment: dict[str, Any]) -> tuple[int, bool]:
             ON CONFLICT (telegram_user_id) DO NOTHING
         """, (telegram_user_id, payment["id"]))
         return telegram_user_id, inserted.rowcount == 1
+
+
+
+CARE_PAYMENT_AMOUNT = Decimal("99.00")
+
+
+def create_care_pending_order_sync(telegram_user_id: int) -> str:
+    """Return the user's existing pending care order or create exactly one."""
+    import uuid
+
+    with _db_connect() as connection:
+        connection.execute("SELECT pg_advisory_xact_lock(%s)", (int(telegram_user_id),))
+        row = connection.execute("""
+            SELECT order_id FROM public.care_orders
+            WHERE telegram_user_id = %s AND status = 'pending'
+            ORDER BY created_at DESC LIMIT 1
+        """, (telegram_user_id,)).fetchone()
+        if row:
+            return str(row[0])
+        order_id = str(uuid.uuid4())
+        connection.execute("""
+            INSERT INTO public.care_orders
+                (order_id, telegram_user_id, amount, currency, status)
+            VALUES (%s::uuid, %s, %s, 'RUB', 'pending')
+        """, (order_id, telegram_user_id, CARE_PAYMENT_AMOUNT))
+    return order_id
+
+
+def save_care_payment_id_sync(order_id: str, payment_id: str) -> None:
+    with _db_connect() as connection:
+        connection.execute("""
+            UPDATE public.care_orders
+            SET payment_id = COALESCE(payment_id, %s)
+            WHERE order_id = %s::uuid AND status = 'pending'
+              AND (payment_id IS NULL OR payment_id = %s)
+        """, (payment_id, order_id, payment_id))
+
+
+def mark_care_order_cancelled_sync(payment_id: str) -> bool:
+    with _db_connect() as connection:
+        row = connection.execute("""
+            UPDATE public.care_orders
+            SET status = 'cancelled'
+            WHERE payment_id = %s AND status = 'pending'
+            RETURNING order_id
+        """, (payment_id,)).fetchone()
+    return row is not None
+
+
+def has_care_access_sync(telegram_user_id: int) -> bool:
+    with _db_connect() as connection:
+        row = connection.execute("""
+            SELECT 1 FROM public.care_access WHERE telegram_user_id = %s
+        """, (telegram_user_id,)).fetchone()
+    return row is not None
+
+
+def get_care_access_order_sync(telegram_user_id: int) -> str | None:
+    with _db_connect() as connection:
+        row = connection.execute("""
+            SELECT order_id FROM public.care_access WHERE telegram_user_id = %s
+        """, (telegram_user_id,)).fetchone()
+    return str(row[0]) if row else None
+
+
+def validate_care_payment(
+    payment: dict[str, Any], *, order_id: str, telegram_user_id: int
+) -> None:
+    """Validate the authenticated YooKassa payment before granting care access."""
+    metadata = payment.get("metadata") or {}
+    if metadata.get("service_type") != "care":
+        raise PaymentValidationError("Payment is not a care order")
+    if str(metadata.get("order_id", "")) != order_id:
+        raise PaymentValidationError("Care payment order metadata mismatch")
+    try:
+        metadata_user_id = int(metadata.get("telegram_user_id"))
+        actual_amount = Decimal(str((payment.get("amount") or {}).get("value", ""))).quantize(Decimal("0.01"))
+    except (TypeError, ValueError, InvalidOperation):
+        raise PaymentValidationError("Invalid care payment metadata or amount") from None
+    amount = payment.get("amount") or {}
+    if metadata_user_id != telegram_user_id:
+        raise PaymentValidationError("Care payment user metadata mismatch")
+    if payment.get("status") != "succeeded" or payment.get("paid") is not True:
+        raise PaymentValidationError("Care payment is not succeeded")
+    if actual_amount != CARE_PAYMENT_AMOUNT or amount.get("currency") != "RUB":
+        raise PaymentValidationError("Care payment amount or currency mismatch")
+    if not payment.get("id"):
+        raise PaymentValidationError("Missing care payment id")
+
+
+def grant_care_access_from_payment_sync(payment: dict[str, Any]) -> tuple[int, bool, str]:
+    """Validate a fetched YooKassa payment and atomically grant care access."""
+    metadata = payment.get("metadata") or {}
+    order_id = str(metadata.get("order_id", ""))
+    try:
+        telegram_user_id = int(metadata.get("telegram_user_id"))
+    except (TypeError, ValueError):
+        raise PaymentValidationError("Invalid care Telegram user id") from None
+    validate_care_payment(
+        payment, order_id=order_id, telegram_user_id=telegram_user_id
+    )
+
+
+    with _db_connect() as connection:
+        order = connection.execute("""
+            SELECT telegram_user_id, amount, currency, status, payment_id
+            FROM public.care_orders WHERE order_id = %s::uuid FOR UPDATE
+        """, (order_id,)).fetchone()
+        if order is None:
+            raise PaymentValidationError("Care order was not found")
+        owner, stored_amount, currency, status, stored_payment_id = order
+        if int(owner) != telegram_user_id:
+            raise PaymentValidationError("Care order belongs to another user")
+        if Decimal(str(stored_amount)).quantize(Decimal("0.01")) != CARE_PAYMENT_AMOUNT or currency != "RUB":
+            raise PaymentValidationError("Stored care order amount mismatch")
+        if status not in {"pending", "succeeded"}:
+            raise PaymentValidationError("Care order is not payable")
+        if stored_payment_id and stored_payment_id != payment["id"]:
+            raise PaymentValidationError("Care payment id mismatch")
+        connection.execute("""
+            UPDATE public.care_orders
+            SET payment_id = COALESCE(payment_id, %s), status = 'succeeded',
+                paid_at = COALESCE(paid_at, now())
+            WHERE order_id = %s::uuid
+        """, (payment["id"], order_id))
+        inserted = connection.execute("""
+            INSERT INTO public.care_access (telegram_user_id, order_id)
+            VALUES (%s, %s::uuid)
+            ON CONFLICT (telegram_user_id) DO NOTHING
+        """, (telegram_user_id, order_id))
+        return telegram_user_id, inserted.rowcount == 1, order_id
+
+
+def set_care_order_mode_sync(order_id: str, telegram_user_id: int, mode: str) -> bool:
+    if mode not in {"photo", "quiz"}:
+        return False
+    with _db_connect() as connection:
+        row = connection.execute("""
+            UPDATE public.care_orders
+            SET mode = %s
+            WHERE order_id = %s::uuid AND telegram_user_id = %s AND status = 'succeeded'
+            RETURNING order_id
+        """, (mode, order_id, telegram_user_id)).fetchone()
+    return row is not None
+
+
+def record_care_photo_consent_sync(order_id: str, telegram_user_id: int) -> bool:
+    with _db_connect() as connection:
+        row = connection.execute("""
+            UPDATE public.care_orders SET photo_consent_at = now()
+            WHERE order_id = %s::uuid AND telegram_user_id = %s AND status = 'succeeded'
+            RETURNING order_id
+        """, (order_id, telegram_user_id)).fetchone()
+    return row is not None
+
+
+def update_care_order_answers_sync(order_id: str, telegram_user_id: int, answers: dict[str, str]) -> bool:
+    import json
+
+    with _db_connect() as connection:
+        row = connection.execute("""
+            UPDATE public.care_orders
+            SET answers = answers || %s::jsonb
+            WHERE order_id = %s::uuid AND telegram_user_id = %s AND status = 'succeeded'
+            RETURNING order_id
+        """, (json.dumps(answers, ensure_ascii=False), order_id, telegram_user_id)).fetchone()
+    return row is not None
+
+
+def get_care_order_sync(order_id: str, telegram_user_id: int) -> dict[str, Any] | None:
+    with _db_connect() as connection:
+        row = connection.execute("""
+            SELECT mode, answers, result_text, result_status, status, photo_consent_at
+            FROM public.care_orders
+            WHERE order_id = %s::uuid AND telegram_user_id = %s
+        """, (order_id, telegram_user_id)).fetchone()
+    if not row:
+        return None
+    return {
+        "mode": row[0],
+        "answers": row[1] or {},
+        "result_text": row[2],
+        "result_status": row[3],
+        "status": row[4],
+        "photo_consent_at": row[5],
+    }
+
+
+def save_care_result_sync(order_id: str, telegram_user_id: int, result: str) -> None:
+    with _db_connect() as connection:
+        connection.execute("""
+            UPDATE public.care_orders
+            SET result_text = %s, result_status = 'completed'
+            WHERE order_id = %s::uuid AND telegram_user_id = %s AND status = 'succeeded'
+        """, (result, order_id, telegram_user_id))
+
+
+def mark_care_result_status_sync(order_id: str, telegram_user_id: int, status: str) -> None:
+    if status not in {"pending", "processing", "failed", "completed"}:
+        raise ValueError("Invalid care result status")
+    with _db_connect() as connection:
+        connection.execute("""
+            UPDATE public.care_orders SET result_status = %s
+            WHERE order_id = %s::uuid AND telegram_user_id = %s AND status = 'succeeded'
+        """, (status, order_id, telegram_user_id))

@@ -1,0 +1,27 @@
+name: Care Module Syntax and Tests
+
+on:
+  pull_request:
+    paths:
+      - "main.py"
+      - "payments.py"
+      - "handlers_care.py"
+      - "tests/**"
+      - ".github/workflows/care-module-check.yml"
+
+jobs:
+  care-module-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install application dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Compile all care integration modules
+        run: python -m py_compile main.py handlers_care.py payments.py
+      - name: Run complete unittest suite
+        run: python -m unittest discover -s tests -v
