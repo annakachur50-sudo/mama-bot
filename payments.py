@@ -318,24 +318,43 @@ def get_care_access_order_sync(telegram_user_id: int) -> str | None:
     return str(row[0]) if row else None
 
 
-def grant_care_access_from_payment_sync(payment: dict[str, Any]) -> tuple[int, bool, str]:
-    """Validate a fetched YooKassa payment and atomically grant care access."""
+def validate_care_payment(
+    payment: dict[str, Any], *, order_id: str, telegram_user_id: int
+) -> None:
+    """Validate the authenticated YooKassa payment before granting care access."""
     metadata = payment.get("metadata") or {}
     if metadata.get("service_type") != "care":
         raise PaymentValidationError("Payment is not a care order")
-    order_id = str(metadata.get("order_id", ""))
+    if str(metadata.get("order_id", "")) != order_id:
+        raise PaymentValidationError("Care payment order metadata mismatch")
     try:
-        telegram_user_id = int(metadata.get("telegram_user_id"))
+        metadata_user_id = int(metadata.get("telegram_user_id"))
         actual_amount = Decimal(str((payment.get("amount") or {}).get("value", ""))).quantize(Decimal("0.01"))
     except (TypeError, ValueError, InvalidOperation):
         raise PaymentValidationError("Invalid care payment metadata or amount") from None
     amount = payment.get("amount") or {}
+    if metadata_user_id != telegram_user_id:
+        raise PaymentValidationError("Care payment user metadata mismatch")
     if payment.get("status") != "succeeded" or payment.get("paid") is not True:
         raise PaymentValidationError("Care payment is not succeeded")
     if actual_amount != CARE_PAYMENT_AMOUNT or amount.get("currency") != "RUB":
         raise PaymentValidationError("Care payment amount or currency mismatch")
-    if not order_id or not payment.get("id"):
-        raise PaymentValidationError("Missing care order or payment id")
+    if not payment.get("id"):
+        raise PaymentValidationError("Missing care payment id")
+
+
+def grant_care_access_from_payment_sync(payment: dict[str, Any]) -> tuple[int, bool, str]:
+    """Validate a fetched YooKassa payment and atomically grant care access."""
+    metadata = payment.get("metadata") or {}
+    order_id = str(metadata.get("order_id", ""))
+    try:
+        telegram_user_id = int(metadata.get("telegram_user_id"))
+    except (TypeError, ValueError):
+        raise PaymentValidationError("Invalid care Telegram user id") from None
+    validate_care_payment(
+        payment, order_id=order_id, telegram_user_id=telegram_user_id
+    )
+
 
     with _db_connect() as connection:
         order = connection.execute("""
