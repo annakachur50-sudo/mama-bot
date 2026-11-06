@@ -38,7 +38,7 @@ care_router = Router(name="care")
 
 _bot = None
 _client = None
-_model = "gemini-2.5-flash"
+_model = "gemini-3.5-flash-lite"
 
 
 class CareStates(StatesGroup):
@@ -55,6 +55,7 @@ class CareStates(StatesGroup):
 def configure_care_handlers(bot: Any, gemini_client: Any, model: str) -> None:
     global _bot, _client, _model
     _bot, _client, _model = bot, gemini_client, model
+    logger.info("Care Gemini client configured: model=%s", _model)
 
 
 def care_mode_keyboard(order_id: str) -> InlineKeyboardMarkup:
@@ -187,6 +188,12 @@ async def send_care_result(message: Message, order_id: str, user_id: int, prompt
     try:
         parts = [types.Part.from_text(text=prompt)]
         if image_bytes is not None:
+            # Telegram photo messages are delivered as JPEG; keep the original bytes in memory.
+            logger.info(
+                "Care vision request: model=%s mime_type=image/jpeg image_bytes=%d",
+                _model,
+                len(image_bytes),
+            )
             parts.append(types.Part.from_bytes(data=image_bytes, mime_type="image/jpeg"))
         response = await asyncio.wait_for(
             asyncio.to_thread(
@@ -194,7 +201,9 @@ async def send_care_result(message: Message, order_id: str, user_id: int, prompt
                 model=_model,
                 contents=[types.Content(role="user", parts=parts)],
             ),
-            timeout=65,
+            # The shared SDK client has a 120s HTTP timeout; keep this outer
+            # guard slightly longer so the SDK can return its actual API error.
+            timeout=125,
         )
         result = (response.text or "").strip()
         if not result:
@@ -215,7 +224,10 @@ async def send_care_result(message: Message, order_id: str, user_id: int, prompt
     except asyncio.CancelledError:
         raise
     except Exception as error:
-        logger.warning("Care generation failed (%s)", type(error).__name__)
+        if image_bytes is not None:
+            logger.exception("Care vision error: %s", error)
+        else:
+            logger.exception("Care generation error: %s", error)
         try:
             await asyncio.to_thread(mark_care_result_status_sync, order_id, user_id, "failed")
         except Exception:
@@ -489,7 +501,7 @@ async def process_care_photo(message: Message, state: FSMContext) -> bool:
     except asyncio.CancelledError:
         raise
     except Exception as error:
-        logger.warning("Care photo processing failed (%s)", type(error).__name__)
+        logger.exception("Care photo processing error: %s", error)
         await message.answer(
             "Не получилось обработать фото. Оплата сохранена — попробуй ещё раз, повторно платить не нужно 🌸",
             reply_markup=care_result_keyboard(order_id),
