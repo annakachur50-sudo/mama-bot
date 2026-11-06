@@ -451,8 +451,8 @@ def _product_matrix_prompt(cosmetics_category: str) -> str:
         return (
             "ИЗОЛИРОВАННАЯ МАТРИЦА КОРЕЙСКОГО УХОДА. Используй ТОЛЬКО корейские бренды: "
             "Anua, Manyo, Round Lab, SKIN1004, Beauty of Joseon, Medicube, Jigott, COSRX. "
-            "Не упоминай Greenway, Siberian Wellness, аптечные бренды, масс-маркет и любые "
-            "другие категории. Не выдумывай конкретные продукты и составы; если точная позиция "
+            "Не упоминай другие категории и бренды вне этой матрицы. Не выдумывай конкретные продукты "
+            "и составы; если точная позиция "
             "не подтверждена, назови только тип средства. recommended_brands всегда []."
         )
     if _is_pharmacy_category(category):
@@ -718,10 +718,7 @@ async def answer_care_quiz(callback: CallbackQuery, state: FSMContext) -> None:
         await state.set_state(CareStates.generating_result)
         order = await asyncio.to_thread(get_care_order_sync, order_id, user_id)
         answers = (order or {}).get("answers", {})
-        await send_care_result(
-            callback.message, order_id, user_id, _quiz_prompt(answers),
-            cosmetics_category=answers.get("brand_pref"),
-        )
+        await send_care_result(callback.message, order_id, user_id, _quiz_prompt(answers), cosmetics_category=answers.get("brand_pref"))
         await state.clear()
 
 
