@@ -34,7 +34,7 @@ from payments import (
     PaymentConfigurationError, PaymentValidationError, create_pending_order_sync,
     create_yookassa_payment, fetch_yookassa_payment, grant_access_from_payment_sync,
     has_stylist_access_sync, init_payment_tables_sync, mark_order_failed_sync,
-    save_payment_id_sync, has_care_access_sync, grant_care_access_from_payment_sync,
+    save_payment_id_sync, has_care_access_sync, grant_care_access_from_payment_sync,\n    mark_care_order_cancelled_sync,
 )
 from handlers_care import (
     care_router, care_mode_keyboard, configure_care_handlers,
@@ -2393,7 +2393,8 @@ async def stylist_payment_preview(callback: CallbackQuery, state: FSMContext) ->
 async def yookassa_webhook(request: web.Request) -> web.Response:
     try:
         notification = await request.json()
-        if notification.get("event") != "payment.succeeded":
+        event = notification.get("event")
+        if event not in {"payment.succeeded", "payment.canceled"}:
             return web.json_response({"ok": True})
         notified_payment = notification.get("object") or {}
         payment_id = notified_payment.get("id")
@@ -2405,6 +2406,10 @@ async def yookassa_webhook(request: web.Request) -> web.Response:
         if verified_payment.get("id") != payment_id:
             raise PaymentValidationError("Webhook payment id mismatch")
         service_type = (verified_payment.get("metadata") or {}).get("service_type", "stylist")
+        if event == "payment.canceled":
+            if service_type == "care" and verified_payment.get("status") == "canceled":
+                await asyncio.to_thread(mark_care_order_cancelled_sync, str(payment_id))
+            return web.json_response({"ok": True})
         if service_type == "care":
             user_id, access_granted, care_order_id = await asyncio.to_thread(
                 grant_care_access_from_payment_sync, verified_payment
