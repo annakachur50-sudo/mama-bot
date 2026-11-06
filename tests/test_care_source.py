@@ -120,7 +120,7 @@ class CarePhotoFlowRuntimeTests(unittest.IsolatedAsyncioTestCase):
         callback.message.answer.assert_awaited_once()
         sent_text = callback.message.answer.await_args.args[0]
         self.assertIn("Пришли мне одно чёткое селфи", sent_text)
-        self.assertIn("дневному свету", sent_text)
+        self.assertIn("дневном свете", sent_text)
         self.assertIn("текстуру пор", sent_text)
         self.assertEqual(callback.message.answer.await_args.kwargs.get("parse_mode"), "HTML")
 
@@ -129,6 +129,12 @@ class CarePhotoFlowRuntimeTests(unittest.IsolatedAsyncioTestCase):
         source = (root / "main.py").read_text(encoding="utf-8")
         self.assertIn("@dispatcher.message(CareStates.waiting_for_photo, F.photo)", source)
         self.assertIn("await process_care_photo(message, state)", source)
+
+    async def test_photo_analysis_uses_visible_skin_texture_status(self):
+        root = Path(__file__).resolve().parents[1]
+        source = (root / "handlers_care.py").read_text(encoding="utf-8")
+        self.assertIn('"Изучаю текстуру кожи... ✨" if image_bytes is not None', source)
+        self.assertIn('types.Part.from_bytes(data=image_bytes, mime_type="image/jpeg")', source)
 
 
 if __name__ == "__main__":
