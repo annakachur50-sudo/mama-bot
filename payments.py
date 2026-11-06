@@ -74,7 +74,21 @@ def init_payment_tables_sync() -> None:
             CREATE TABLE IF NOT EXISTS public.care_access (
                 telegram_user_id BIGINT PRIMARY KEY,
                 order_id UUID NOT NULL UNIQUE REFERENCES public.care_orders(order_id),
-                granted_at TIMESTAMPTZ NOT NULL DEFAULT now()
+                granted_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                has_care_photo_consent BOOLEAN NOT NULL DEFAULT FALSE
+            )
+        """)
+        connection.execute("""
+            ALTER TABLE public.care_access
+            ADD COLUMN IF NOT EXISTS has_care_photo_consent BOOLEAN NOT NULL DEFAULT FALSE
+        """)
+        connection.execute("""
+            UPDATE public.care_access AS access
+            SET has_care_photo_consent = TRUE
+            WHERE EXISTS (
+                SELECT 1 FROM public.care_orders AS orders
+                WHERE orders.telegram_user_id = access.telegram_user_id
+                  AND orders.photo_consent_at IS NOT NULL
             )
         """)
         connection.execute("""
@@ -410,14 +424,30 @@ def set_care_order_mode_sync(order_id: str, telegram_user_id: int, mode: str) ->
     return row is not None
 
 
+def has_care_photo_consent_sync(telegram_user_id: int) -> bool:
+    with _db_connect() as connection:
+        row = connection.execute("""
+            SELECT has_care_photo_consent FROM public.care_access
+            WHERE telegram_user_id = %s
+        """, (telegram_user_id,)).fetchone()
+    return bool(row and row[0])
+
+
 def record_care_photo_consent_sync(order_id: str, telegram_user_id: int) -> bool:
     with _db_connect() as connection:
         row = connection.execute("""
-            UPDATE public.care_orders SET photo_consent_at = now()
+            UPDATE public.care_orders SET photo_consent_at = COALESCE(photo_consent_at, now())
             WHERE order_id = %s::uuid AND telegram_user_id = %s AND status = 'succeeded'
             RETURNING order_id
         """, (order_id, telegram_user_id)).fetchone()
-    return row is not None
+        if row is None:
+            return False
+        updated = connection.execute("""
+            UPDATE public.care_access SET has_care_photo_consent = TRUE
+            WHERE telegram_user_id = %s
+            RETURNING telegram_user_id
+        """, (telegram_user_id,)).fetchone()
+    return updated is not None
 
 
 def update_care_order_answers_sync(order_id: str, telegram_user_id: int, answers: dict[str, str]) -> bool:
