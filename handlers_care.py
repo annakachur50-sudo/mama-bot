@@ -315,7 +315,7 @@ async def send_care_result(message: Message, order_id: str, user_id: int, prompt
         formatted = _format_result(result)
         if recommended_brands:
             formatted += (
-                "\\n\\nНекоторые ссылки могут быть реферальными. "
+                "\n\nНекоторые ссылки могут быть реферальными. "
                 "Это не влияет на стоимость товаров для тебя."
             )
         chunks = _split_text(formatted)
@@ -407,7 +407,7 @@ def _quiz_prompt(answers: dict[str, str]) -> str:
         "concern": "Что хочется улучшить",
         "brand_pref": "Предпочтения по уходу",
     }
-    details = "\\n".join(f"{labels.get(key, key)}: {value}" for key, value in answers.items())
+    details = "\n".join(f"{labels.get(key, key)}: {value}" for key, value in answers.items())
     return (
         "Ты — бережный ИИ-помощник по уходу за кожей. Составь персональный базовый план только на основании "
         "ответов пользователя. Не выдумывай аллергию, заболевания, продукты и составы. При чувствительности "
@@ -418,7 +418,7 @@ def _quiz_prompt(answers: dict[str, str]) -> str:
         "В каждом уместном этапе приводи 1–2 точных примера из матрицы, не заполняй ненужные этапы. "
         "Не используй одновременно несколько сильных активов без необходимости. "
         + _product_matrix_prompt()
-        + "\\n\\nОтветы пользователя:\\n" + details
+        + "\n\nОтветы пользователя:\n" + details
     )
 
 
