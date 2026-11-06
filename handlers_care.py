@@ -27,6 +27,7 @@ from payments import (
     has_care_access_sync,
     mark_care_result_status_sync,
     record_care_photo_consent_sync,
+    has_care_photo_consent_sync,
     save_care_payment_id_sync,
     save_care_result_sync,
     set_care_order_mode_sync,
@@ -45,6 +46,7 @@ class CareStates(StatesGroup):
     waiting_for_mode = State()
     waiting_for_payment = State()
     waiting_for_consent = State()
+    waiting_for_photo_category = State()
     waiting_for_photo = State()
     survey_skin_type = State()
     survey_concern = State()
@@ -78,6 +80,27 @@ def care_consent_keyboard(order_id: str) -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="✅ Согласна, продолжить", callback_data=f"care:consent:yes:{order_id}")],
         [InlineKeyboardButton(text="↩️ Назад к выбору", callback_data=f"care:back:mode:{order_id}")],
     ])
+
+
+def care_photo_category_keyboard(order_id: str) -> InlineKeyboardMarkup:
+    options = [
+        ("🌿 Натуральные эко-линейки и травы", "natural"),
+        ("✨ Корейский уход и современные активы", "korean"),
+        ("🧴 Аптека и базовый комфорт", "pharmacy"),
+        ("💛 Не принципиально / Микс", "mix"),
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=label, callback_data=f"care:photo_category:{key}:{order_id}")]
+        for label, key in options
+    ] + [[InlineKeyboardButton(text="🏠 В главное меню", callback_data="menu:main")]])
+
+
+async def _ask_care_photo_category(message: Message, state: FSMContext, order_id: str) -> None:
+    await state.set_state(CareStates.waiting_for_photo_category)
+    await message.answer(
+        "Шаг: Какому уходу отдаёшь предпочтение? 🌸",
+        reply_markup=care_photo_category_keyboard(order_id),
+    )
 
 
 def care_quiz_keyboard(question: str, order_id: str) -> InlineKeyboardMarkup:
@@ -258,7 +281,7 @@ async def send_care_result(message: Message, order_id: str, user_id: int, prompt
             )
 
 
-def _photo_prompt() -> str:
+def _photo_prompt(cosmetics_category: str) -> str:
     return (
         "Ты — бережный ИИ-помощник по уходу за кожей. Анализируй только видимые особенности кожи на фото. "
         "Не ставь диагнозы и не утверждай наличие акне, розацеа, дерматита или иных заболеваний. "
@@ -270,7 +293,14 @@ def _photo_prompt() -> str:
         "💧 Что учитываем; ☀️ Утренний ритуал (очищение, основной уход, увлажнение, SPF); "
         "🌙 Вечерний ритуал (очищение, основной актив или сыворотка, восстановление и увлажнение); "
         "✨ Подходящие компоненты (2–3); 🧴 На что обратить внимание при выборе косметики; 🤍 Маленький совет. "
-        "Рекомендуй категории средств, а не выдуманные бренды или конкретные продукты. "
+        "Предпочтительная категория косметики пользователя: " + cosmetics_category + ". "
+        "Подбирай рекомендации предметно внутри выбранного сегмента и приводи 2–3 конкретных примера типов линеек/средств: "
+        "для натурального сегмента — растительные и сибирские эко-серии; для корейского — пептидные и современные активные линейки; "
+        "для аптечного — барьерные кремы и базовые дерматокосметические серии. Не выдумывай названия брендов, конкретных линеек, "
+        "составы или наличие товаров: если не уверен в существовании конкретного продукта, опиши тип линейки без названия. "
+        "Запрещено использовать списки со звёздочками (* пункт). Вместо маркерных точек используй тематические эмодзи "
+        "в начале строк: 💧, 🌿, ☀️, 🌙, ✨, 🧴. Текст должен быть эстетичным, с абзацами и выделением ключевых активов "
+        "жирным шрифтом, без markdown-маркеров списков. "
         "Укажи вводить новые средства постепенно и сделать патч-тест."
     )
 
@@ -291,7 +321,10 @@ def _quiz_prompt(answers: dict[str, str]) -> str:
         "(очищение, основной уход, увлажнение, SPF); 🌙 Вечерний ритуал (очищение, основной актив или сыворотка, "
         "восстановление и увлажнение); ✨ Подходящие компоненты (2–3); 🧴 На что обратить внимание при выборе косметики; "
         "🤍 Маленький совет. Предлагай категории средств, не выдумывай конкретные бренды и товары. "
-        "Объясни постепенное введение новых средств и патч-тест.\n\nОтветы пользователя:\n" + details
+        "Объясни постепенное введение новых средств и патч-тест. "
+        "Запрещено использовать списки со звёздочками (* пункт). Вместо маркерных точек используй тематические эмодзи "
+        "в начале строк: 💧, 🌿, ☀️, 🌙, ✨, 🧴. Текст должен быть эстетичным, с абзацами и выделением ключевых активов "
+        "жирным шрифтом, без markdown-маркеров списков.\n\nОтветы пользователя:\n" + details
     )
 
 
@@ -327,15 +360,19 @@ async def choose_care_mode(callback: CallbackQuery, state: FSMContext) -> None:
     await state.clear()
     await state.update_data(order_id=order_id, chosen_mode=mode)
     if mode == "photo":
-        await state.set_state(CareStates.waiting_for_consent)
-        await callback.message.answer(
-            "Перед началом важно твоё согласие 🤍\n\n"
-            "Фото будет передано в Gemini API через подключённый сервис для автоматического анализа. "
-            "Оно используется только для подготовки ответа: бот не сохраняет фотографию на постоянном диске. "
-            "По фото можно описать лишь видимые особенности, это не медицинская диагностика.\n\n"
-            "Согласна передать фото для обработки?",
-            reply_markup=care_consent_keyboard(order_id),
-        )
+        has_consent = await asyncio.to_thread(has_care_photo_consent_sync, user_id)
+        if has_consent:
+            await _ask_care_photo_category(callback.message, state, order_id)
+        else:
+            await state.set_state(CareStates.waiting_for_consent)
+            await callback.message.answer(
+                "Перед началом важно твоё согласие 🤍\n\n"
+                "Фото будет передано в Gemini API через подключённый сервис для автоматического анализа. "
+                "Оно используется только для подготовки ответа: бот не сохраняет фотографию на постоянном диске. "
+                "По фото можно описать лишь видимые особенности, это не медицинская диагностика.\n\n"
+                "Согласна передать фото для обработки?",
+                reply_markup=care_consent_keyboard(order_id),
+            )
     else:
         await state.set_state(CareStates.survey_skin_type)
         await callback.message.answer(
@@ -359,13 +396,8 @@ async def accept_care_photo_consent(callback: CallbackQuery, state: FSMContext) 
     await _delete_callback_message(callback)
     await state.clear()
     await state.update_data(order_id=order_id, chosen_mode="photo")
-    await state.set_state(CareStates.waiting_for_photo)
     if callback.message:
-        await callback.message.answer(
-            "Пришли одно чёткое фото лица при дневном освещении 🌸\n\n"
-            "Лучше без плотного макияжа, фильтров и сильной обработки. "
-            "Фото нужно только для предварительной оценки видимых особенностей кожи."
-        )
+        await _ask_care_photo_category(callback.message, state, order_id)
 
 
 @care_router.callback_query(F.data.startswith("care:back:mode:"))
@@ -383,6 +415,46 @@ async def back_to_care_mode(callback: CallbackQuery, state: FSMContext) -> None:
             "Как тебе удобнее подобрать уход? 🌸",
             reply_markup=care_mode_keyboard(order_id),
         )
+
+
+@care_router.callback_query(F.data.startswith("care:photo_category:"))
+async def choose_care_photo_category(callback: CallbackQuery, state: FSMContext) -> None:
+    if not callback.data or callback.message is None:
+        await callback.answer()
+        return
+    bits = callback.data.split(":")
+    if len(bits) != 4:
+        await callback.answer("Не удалось распознать выбор", show_alert=True)
+        return
+    _, _, _, category, order_id = bits
+    categories = {
+        "natural": "Натуральные эко-линейки и растительные компоненты",
+        "korean": "Корейский уход и современные активы",
+        "pharmacy": "Аптечная дерматокосметика и базовый комфорт",
+        "mix": "Не принципиально, микс подходов",
+    }
+    if category not in categories:
+        await callback.answer("Такого варианта нет", show_alert=True)
+        return
+    user_id = callback.from_user.id
+    if not await asyncio.to_thread(has_care_access_sync, user_id):
+        await callback.answer("Доступ не найден", show_alert=True)
+        return
+    if not await asyncio.to_thread(has_care_photo_consent_sync, user_id):
+        await callback.answer("Сначала подтверди согласие на обработку фото", show_alert=True)
+        return
+    if not await asyncio.to_thread(update_care_order_answers_sync, order_id, user_id, {"photo_cosmetics_category": categories[category]}):
+        await callback.answer("Не удалось сохранить выбор", show_alert=True)
+        return
+    await callback.answer()
+    await _delete_callback_message(callback)
+    await state.update_data(order_id=order_id, chosen_mode="photo", photo_cosmetics_category=categories[category])
+    await state.set_state(CareStates.waiting_for_photo)
+    await callback.message.answer(
+        "Пришли одно чёткое фото лица при дневном освещении 🌸\n\n"
+        "Лучше без плотного макияжа, фильтров и сильной обработки. "
+        "Фото нужно только для предварительной оценки видимых особенностей кожи."
+    )
 
 
 @care_router.callback_query(F.data.startswith("care:quiz:"))
@@ -455,11 +527,17 @@ async def repeat_care_result(callback: CallbackQuery, state: FSMContext) -> None
     await state.clear()
     await state.update_data(order_id=order_id, chosen_mode=order.get("mode"))
     if order.get("mode") == "photo":
-        await state.set_state(CareStates.waiting_for_consent)
-        await callback.message.answer(
-            "Для нового разбора пришли свежее фото. Оно снова будет передано в Gemini API только после твоего согласия.",
-            reply_markup=care_consent_keyboard(order_id),
-        )
+        has_consent = await asyncio.to_thread(has_care_photo_consent_sync, user_id)
+        if has_consent:
+            await _ask_care_photo_category(callback.message, state, order_id)
+        else:
+            await state.set_state(CareStates.waiting_for_consent)
+            await callback.message.answer(
+                "Перед началом важно твоё согласие 🤍\n\n"
+                "Фото будет передано в Gemini API через подключённый сервис только для подготовки ответа. "
+                "Бот не сохраняет фотографию на постоянном диске. Согласна продолжить?",
+                reply_markup=care_consent_keyboard(order_id),
+            )
     else:
         await state.set_state(CareStates.generating_result)
         await send_care_result(
@@ -511,7 +589,11 @@ async def process_care_photo(message: Message, state: FSMContext) -> bool:
             await message.answer("Не удалось прочитать фото. Попробуй отправить его ещё раз 🌿")
             return True
         await state.set_state(CareStates.generating_result)
-        await send_care_result(message, order_id, user_id, _photo_prompt(), image_bytes=image_bytes)
+        category = (order.get("answers") or {}).get("photo_cosmetics_category")
+        if not category:
+            await _ask_care_photo_category(message, state, order_id)
+            return True
+        await send_care_result(message, order_id, user_id, _photo_prompt(category), image_bytes=image_bytes)
         del image_bytes
         await state.clear()
         return True
@@ -540,6 +622,9 @@ async def process_care_text(message: Message, state: FSMContext) -> bool:
         return True
     if current == CareStates.waiting_for_consent.state and order_id:
         await message.answer("Нажми кнопку согласия или вернись к выбору режима 🤍", reply_markup=care_consent_keyboard(order_id))
+        return True
+    if current == CareStates.waiting_for_photo_category.state and order_id:
+        await message.answer("Сначала выбери категорию ухода кнопкой 🌸", reply_markup=care_photo_category_keyboard(order_id))
         return True
     if current == CareStates.waiting_for_photo.state:
         await message.answer("Жду одно чёткое фото лица при дневном освещении 🌸")
