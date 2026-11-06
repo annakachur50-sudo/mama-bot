@@ -34,6 +34,46 @@ class CareProductMatrixTests(unittest.TestCase):
         self.assertNotIn("Greenway Cactus", korean)
         self.assertNotIn("La Roche-Posay", korean)
 
+    def test_korean_matrix_contains_only_korean_catalog(self):
+        prompt = _photo_prompt("Корейский уход и современные активы")
+        for brand in ("Anua", "Manyo", "Round Lab", "SKIN1004",
+                      "Beauty of Joseon", "Medicube", "Jigott", "COSRX"):
+            self.assertIn(brand, prompt)
+        for foreign in ("Greenway", "Siberian Wellness", "La Roche-Posay",
+                        "CeraVe", "Bioderma", "Avène"):
+            self.assertNotIn(foreign, prompt)
+
+    def test_pharmacy_matrix_contains_only_dermatological_catalog(self):
+        prompt = _photo_prompt("Аптека и базовый комфорт")
+        for brand in ("La Roche-Posay", "CeraVe", "Bioderma", "Avène"):
+            self.assertIn(brand, prompt)
+        for foreign in ("Anua", "Manyo", "Round Lab", "SKIN1004",
+                        "Beauty of Joseon", "Medicube", "Jigott", "COSRX",
+                        "Greenway", "Siberian Wellness", "Art&Fact", "Icon Skin"):
+            self.assertNotIn(foreign, prompt)
+
+    def test_mix_is_the_only_combined_catalog(self):
+        mix = _photo_prompt("Не принципиально / Микс")
+        for brand in ("Greenway", "Siberian Wellness", "Anua", "COSRX",
+                      "La Roche-Posay", "CeraVe", "Bioderma", "Avène"):
+            self.assertIn(brand, mix)
+        korean = _photo_prompt("Корейский уход")
+        pharmacy = _photo_prompt("Аптека")
+        self.assertNotIn("Bioderma", korean)
+        self.assertNotIn("Anua", pharmacy)
+
+    def test_parser_rejects_cross_category_brands(self):
+        cases = (
+            ('{"answer":"Anua подходит для ухода вместе с Greenway Cactus.",'
+             '"recommended_brands":[]}', "Корейский уход", "строго в выбранной корейской"),
+            ('{"answer":"La Roche-Posay подходит, а COSRX можно добавить.",'
+             '"recommended_brands":[]}', "Аптека", "строго в выбранной аптечной"),
+        )
+        for raw, category, expected in cases:
+            answer, brands = _parse_care_response(raw, category)
+            self.assertIn(expected, answer)
+            self.assertEqual(brands, [])
+
     def test_markdown_wrapped_json_is_parsed(self):
         raw = """```json
 {"answer":"Greenway Cactus подходит для увлажнения.","recommended_brands":["Greenway"]}
