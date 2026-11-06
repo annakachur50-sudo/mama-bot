@@ -108,6 +108,18 @@ def care_result_keyboard(order_id: str) -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="🏠 В главное меню", callback_data="menu:main")],
     ])
 
+async def _delete_callback_message(callback: CallbackQuery) -> None:
+    """Remove a consumed inline-keyboard message without interrupting the flow."""
+    if callback.message is None:
+        return
+    try:
+        await callback.message.delete()
+    except Exception as error:
+        # Telegram may reject deletion (for example, for an old/inaccessible message).
+        # The next step should still be delivered so the user is never stuck.
+        logger.debug("Could not delete care step message: %s", error)
+
+
 
 def _format_result(value: str) -> str:
     safe = html.escape(value.strip(), quote=False)
@@ -311,6 +323,7 @@ async def choose_care_mode(callback: CallbackQuery, state: FSMContext) -> None:
         await callback.answer("Не удалось сохранить выбор", show_alert=True)
         return
     await callback.answer()
+    await _delete_callback_message(callback)
     await state.clear()
     await state.update_data(order_id=order_id, chosen_mode=mode)
     if mode == "photo":
@@ -343,6 +356,7 @@ async def accept_care_photo_consent(callback: CallbackQuery, state: FSMContext) 
         await callback.answer("Заказ не найден", show_alert=True)
         return
     await callback.answer()
+    await _delete_callback_message(callback)
     await state.clear()
     await state.update_data(order_id=order_id, chosen_mode="photo")
     await state.set_state(CareStates.waiting_for_photo)
@@ -361,6 +375,7 @@ async def back_to_care_mode(callback: CallbackQuery, state: FSMContext) -> None:
         await callback.answer("Доступ не найден", show_alert=True)
         return
     await callback.answer()
+    await _delete_callback_message(callback)
     await state.clear()
     await state.set_state(CareStates.waiting_for_mode)
     if callback.message:
@@ -402,6 +417,7 @@ async def answer_care_quiz(callback: CallbackQuery, state: FSMContext) -> None:
         await callback.answer("Не удалось сохранить ответ", show_alert=True)
         return
     await callback.answer()
+    await _delete_callback_message(callback)
     await state.update_data(order_id=order_id, chosen_mode="quiz")
     if question == "skin":
         await state.set_state(CareStates.survey_concern)
@@ -435,6 +451,7 @@ async def repeat_care_result(callback: CallbackQuery, state: FSMContext) -> None
         await callback.answer("Заказ не найден", show_alert=True)
         return
     await callback.answer()
+    await _delete_callback_message(callback)
     await state.clear()
     await state.update_data(order_id=order_id, chosen_mode=order.get("mode"))
     if order.get("mode") == "photo":
