@@ -360,14 +360,31 @@ async def choose_care_mode(callback: CallbackQuery, state: FSMContext) -> None:
     if not await asyncio.to_thread(set_care_order_mode_sync, order_id, user_id, mode):
         await callback.message.answer("Не удалось сохранить выбор. Попробуй ещё раз 🌿")
         return
+    has_consent = False
+    if mode == "photo":
+        # Do all consent reads/writes before deleting the visible menu. If storage
+        # is temporarily unavailable, the user can retry instead of being stranded.
+        try:
+            has_consent = await asyncio.to_thread(has_care_photo_consent_sync, user_id)
+            if has_consent:
+                consent_recorded = await asyncio.to_thread(
+                    record_care_photo_consent_sync, order_id, user_id
+                )
+                if not consent_recorded:
+                    raise RuntimeError("Could not carry photo consent to the current order")
+        except Exception:
+            logger.exception("Could not prepare care photo consent for order %s", order_id)
+            await callback.message.answer(
+                "Не получилось подготовить шаг с фотографией. Ничего не потерялось — "
+                "нажми «Подобрать по фото» ещё раз чуть позже 🌿"
+            )
+            return
+
     await _delete_callback_message(callback)
     await state.clear()
     await state.update_data(order_id=order_id, chosen_mode=mode)
     if mode == "photo":
-        has_consent = await asyncio.to_thread(has_care_photo_consent_sync, user_id)
         if has_consent:
-            # Carry the profile-level consent onto this order so photo validation is consistent.
-            await asyncio.to_thread(record_care_photo_consent_sync, order_id, user_id)
             await _ask_care_photo_category(callback.message, state, order_id)
         else:
             await state.set_state(CareStates.waiting_for_consent)
