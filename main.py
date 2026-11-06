@@ -2319,14 +2319,15 @@ async def cancel_radiance_selfie(callback: CallbackQuery) -> None:
 
 
 @dispatcher.callback_query(F.data.startswith("radiance:locked:"))
-async def show_radiance_locked_card(callback: CallbackQuery) -> None:
-    await callback.answer()
+async def show_radiance_locked_card(callback: CallbackQuery, state: FSMContext) -> None:
     if callback.message is None or not callback.data:
+        await callback.answer()
         return
     feature = callback.data.rsplit(":", 1)[-1]
     if feature == "care":
-        await start_care_checkout(callback)
+        await start_care_checkout(callback, state)
         return
+    await callback.answer()
     card = RADIANCE_LOCKED_CARDS.get(feature)
     if card is not None:
         await callback.message.answer(
@@ -4283,6 +4284,9 @@ async def cancel_wardrobe_flow(
                 callback.from_user.id,
                 wardrobe_is_unlocked=await asyncio.to_thread(
                     has_stylist_access_sync, callback.from_user.id
+                ),
+                care_is_unlocked=await asyncio.to_thread(
+                    has_care_access_sync, callback.from_user.id
                 ),
             ),
         )
