@@ -343,19 +343,20 @@ async def choose_care_mode(callback: CallbackQuery, state: FSMContext) -> None:
     if len(bits) != 4 or bits[2] not in {"photo", "quiz"}:
         await callback.answer("Не удалось определить режим", show_alert=True)
         return
+    # Acknowledge the tap immediately; database checks below may take noticeable time.
+    await callback.answer()
     mode, order_id = bits[2], bits[3]
     user_id = callback.from_user.id
     if not await asyncio.to_thread(has_care_access_sync, user_id):
-        await callback.answer("Сначала нужна подтверждённая оплата", show_alert=True)
+        await callback.message.answer("Сначала нужна подтверждённая оплата 🌿")
         return
     order = await asyncio.to_thread(get_care_order_sync, order_id, user_id)
     if not order or order.get("status") != "succeeded":
-        await callback.answer("Заказ не найден", show_alert=True)
+        await callback.message.answer("Оплаченный заказ не найден. Напиши в поддержку, пожалуйста.")
         return
     if not await asyncio.to_thread(set_care_order_mode_sync, order_id, user_id, mode):
-        await callback.answer("Не удалось сохранить выбор", show_alert=True)
+        await callback.message.answer("Не удалось сохранить выбор. Попробуй ещё раз 🌿")
         return
-    await callback.answer()
     await _delete_callback_message(callback)
     await state.clear()
     await state.update_data(order_id=order_id, chosen_mode=mode)
@@ -452,10 +453,13 @@ async def choose_care_photo_category(callback: CallbackQuery, state: FSMContext)
     await _delete_callback_message(callback)
     await state.update_data(order_id=order_id, chosen_mode="photo", photo_cosmetics_category=categories[category])
     await state.set_state(CareStates.waiting_for_photo)
+    # This is a new message, not the consumed inline-keyboard message above:
+    # keep it visible so the user can send the selfie in the active FSM state.
     await callback.message.answer(
-        "Пришли одно чёткое фото лица при дневном освещении 🌸\n\n"
-        "Лучше без плотного макияжа, фильтров и сильной обработки. "
-        "Фото нужно только для предварительной оценки видимых особенностей кожи."
+        "📸 <b>Пришли мне одно чёткое селфи</b> лица крупным планом при дневном свете "
+        "(без плотного тонального крема и фильтров). Я бережно оценю текстуру пор, "
+        "тон и уровень увлажнённости ✨",
+        parse_mode="HTML",
     )
 
 
@@ -581,6 +585,8 @@ async def process_care_photo(message: Message, state: FSMContext) -> bool:
         await message.answer("Пришли, пожалуйста, фотографию как изображение 🌸")
         return True
     try:
+        # Show activity while Telegram downloads the image and Gemini prepares the analysis.
+        await _bot.send_chat_action(chat_id=message.chat.id, action="typing")
         file_info = await _bot.get_file(message.photo[-1].file_id)
         if file_info.file_size and file_info.file_size > 10 * 1024 * 1024:
             await message.answer("Фото слишком большое. Пришли изображение размером до 10 МБ 🌿")
@@ -597,6 +603,7 @@ async def process_care_photo(message: Message, state: FSMContext) -> bool:
         if not category:
             await _ask_care_photo_category(message, state, order_id)
             return True
+        await _bot.send_chat_action(chat_id=message.chat.id, action="typing")
         await send_care_result(message, order_id, user_id, _photo_prompt(category), image_bytes=image_bytes)
         del image_bytes
         await state.clear()
