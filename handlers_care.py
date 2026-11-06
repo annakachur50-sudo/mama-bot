@@ -200,7 +200,7 @@ def _format_result(value: str) -> str:
     safe = html.escape(value.strip(), quote=False)
     safe = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", safe, flags=re.DOTALL)
     safe = safe.replace("**", "")
-    return re.sub(r"(?<!\\*)\\*(?!\\*)", "", safe)
+    return safe.replace("*", "")
 
 
 def _split_text(value: str, limit: int = 3600) -> list[str]:
