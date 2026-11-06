@@ -38,7 +38,7 @@ from payments import (
     mark_care_order_cancelled_sync,
 )
 from handlers_care import (
-    care_router, care_mode_keyboard, configure_care_handlers,
+    CareStates, care_router, care_mode_keyboard, configure_care_handlers,
     process_care_photo, process_care_text, start_care_checkout,
 )
 
@@ -439,6 +439,12 @@ bot = Bot(token=TELEGRAM_BOT_TOKEN)
 dispatcher = Dispatcher()
 configure_care_handlers(bot, client, os.getenv("CARE_GEMINI_MODEL", GEMINI_MODEL))
 dispatcher.include_router(care_router)
+
+@dispatcher.message(CareStates.waiting_for_photo, F.photo)
+async def handle_care_selfie(message: Message, state: FSMContext) -> None:
+    """Route a selfie only while the paid skincare photo flow is waiting for it."""
+    await process_care_photo(message, state)
+
 
 class AnalyticsCallbackMiddleware(BaseMiddleware):
     async def __call__(self, handler, event, data):
