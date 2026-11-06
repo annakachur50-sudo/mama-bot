@@ -139,7 +139,7 @@ class CarePhotoFlowRuntimeTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_care_photo_category_callback_sends_persistent_selfie_invitation(self):
         callback = SimpleNamespace(
-            data="care:photo_category:natural:order-123",
+            data="care:photo_category:n:order-123",
             from_user=SimpleNamespace(id=777),
             message=SimpleNamespace(
                 answer=AsyncMock(),
