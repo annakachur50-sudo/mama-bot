@@ -60,8 +60,8 @@ class CareSourceSyntaxTests(unittest.TestCase):
         source = (root / "handlers_care.py").read_text(encoding="utf-8")
         self.assertIn("def _photo_prompt(cosmetics_category: str)", source)
         self.assertIn("photo_cosmetics_category", source)
-        self.assertIn("без markdown-маркеров списков", source)
-        self.assertIn("Запрещено использовать списки со звёздочками", source)
+        self.assertIn("не используй markdown-звёздочки", source)
+        self.assertIn("разрешённую матрицу", source)
 
     def test_care_intro_is_cosmetologist_not_old_stylist_placeholder(self):
         root = Path(__file__).resolve().parents[1]
