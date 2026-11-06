@@ -4,7 +4,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
-from handlers_care import CareStates, choose_care_photo_category
+from handlers_care import CareStates, choose_care_mode, choose_care_photo_category
 
 
 class CareSourceSyntaxTests(unittest.TestCase):
@@ -96,6 +96,35 @@ class CareSourceSyntaxTests(unittest.TestCase):
 
 
 class CarePhotoFlowRuntimeTests(unittest.IsolatedAsyncioTestCase):
+    async def test_photo_mode_keeps_menu_until_consent_is_ready_and_sends_next_step(self):
+        callback = SimpleNamespace(
+            data="care:mode:photo:order-123",
+            from_user=SimpleNamespace(id=777),
+            message=SimpleNamespace(
+                answer=AsyncMock(),
+                delete=AsyncMock(),
+            ),
+            answer=AsyncMock(),
+        )
+        state = SimpleNamespace(
+            clear=AsyncMock(),
+            update_data=AsyncMock(),
+            set_state=AsyncMock(),
+        )
+        order = {"status": "succeeded", "mode": "photo"}
+
+        with patch(
+            "handlers_care.asyncio.to_thread",
+            new=AsyncMock(side_effect=[True, order, True, True, True]),
+        ):
+            await choose_care_mode(callback, state)
+
+        callback.answer.assert_awaited_once_with()
+        callback.message.delete.assert_awaited_once_with()
+        state.set_state.assert_awaited_once_with(CareStates.waiting_for_photo_category)
+        callback.message.answer.assert_awaited_once()
+        self.assertIn("Какому уходу отдаёшь предпочтение", callback.message.answer.await_args.args[0])
+
     async def test_care_photo_category_callback_sends_persistent_selfie_invitation(self):
         callback = SimpleNamespace(
             data="care:photo_category:natural:order-123",
