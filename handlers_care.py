@@ -493,3 +493,36 @@ async def process_care_photo(message: Message, state: FSMContext) -> bool:
             reply_markup=care_result_keyboard(order_id),
         )
         return True
+
+
+
+async def process_care_text(message: Message, state: FSMContext) -> bool:
+    """Keep free text from escaping an active button/photo step into general chat."""
+    current = await state.get_state()
+    data = await state.get_data()
+    order_id = data.get("order_id")
+    if current == CareStates.waiting_for_mode.state and order_id:
+        await message.answer("Выбери один из двух способов кнопкой 🌸", reply_markup=care_mode_keyboard(order_id))
+        return True
+    if current == CareStates.waiting_for_payment.state:
+        await message.answer("Сначала заверши оплату по ссылке ЮKassa. Если ссылка потерялась, снова открой «Подобрать уход и косметику» 🌿")
+        return True
+    if current == CareStates.waiting_for_consent.state and order_id:
+        await message.answer("Нажми кнопку согласия или вернись к выбору режима 🤍", reply_markup=care_consent_keyboard(order_id))
+        return True
+    if current == CareStates.waiting_for_photo.state:
+        await message.answer("Жду одно чёткое фото лица при дневном освещении 🌸")
+        return True
+    if current == CareStates.survey_skin_type.state and order_id:
+        await message.answer("Выбери тип кожи кнопкой 👇", reply_markup=care_quiz_keyboard("skin", order_id))
+        return True
+    if current == CareStates.survey_concern.state and order_id:
+        await message.answer("Выбери, что хочется улучшить 👇", reply_markup=care_quiz_keyboard("concern", order_id))
+        return True
+    if current == CareStates.survey_brand_pref.state and order_id:
+        await message.answer("Выбери предпочтительный уход 👇", reply_markup=care_quiz_keyboard("brand", order_id))
+        return True
+    if current == CareStates.generating_result.state:
+        await message.answer("Уже собираю рекомендации — секундочку 🌸")
+        return True
+    return False
