@@ -37,8 +37,8 @@ class CareHandlerStructureTests(unittest.TestCase):
         self.assertIn("care:quiz:{question}:{key}:{order_id}", self.source)
 
     def test_photo_and_quiz_prompts_include_safety_limits(self):
-        self.assertIn("Не ставь диагнозы", self.source)
-        self.assertIn("Не ставь медицинские диагнозы", self.source)
+        self.assertIn("не ставь диагнозы", self.source.lower())
+        self.assertIn("не диагностируй заболевания", self.source.lower())
         self.assertIn("types.Part.from_bytes", self.source)
 
     def test_result_keyboard_offers_repeat_without_checkout(self):
