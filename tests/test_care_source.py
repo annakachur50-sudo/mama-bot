@@ -4,7 +4,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
-from handlers_care import (CareStates, care_photo_category_keyboard, choose_care_mode, choose_care_photo_category)
+from handlers_care import (CareStates, care_photo_category_keyboard, choose_care_mode, choose_care_photo_category, process_care_text)
 
 
 class CareSourceSyntaxTests(unittest.TestCase):
@@ -170,6 +170,24 @@ class CarePhotoFlowRuntimeTests(unittest.IsolatedAsyncioTestCase):
         source = (root / "main.py").read_text(encoding="utf-8")
         self.assertIn("@dispatcher.message(CareStates.waiting_for_photo, F.photo)", source)
         self.assertIn("await process_care_photo(message, state)", source)
+
+    async def test_text_and_voice_like_non_photo_inputs_keep_waiting_state(self):
+        for kind in ("text", "voice"):
+            state = SimpleNamespace(
+                get_state=AsyncMock(return_value=CareStates.waiting_for_photo.state),
+                get_data=AsyncMock(return_value={"order_id": "order-123"}),
+            )
+            message = SimpleNamespace(answer=AsyncMock())
+            handled = await process_care_text(message, state)
+            self.assertTrue(handled, kind)
+            self.assertIn("Пожалуйста, отправь именно фотографию лица", message.answer.await_args.args[0])
+            state.get_state.assert_awaited_once_with()
+
+    async def test_main_registers_non_photo_catch_all_for_selfie_state(self):
+        root = Path(__file__).resolve().parents[1]
+        source = (root / "main.py").read_text(encoding="utf-8")
+        self.assertIn("@dispatcher.message(CareStates.waiting_for_photo, ~F.photo)", source)
+        self.assertIn("async def reject_non_photo_care_message", source)
 
     async def test_photo_analysis_uses_visible_skin_texture_status(self):
         root = Path(__file__).resolve().parents[1]
