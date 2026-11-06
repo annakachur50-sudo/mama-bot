@@ -446,6 +446,16 @@ async def handle_care_selfie(message: Message, state: FSMContext) -> None:
     await process_care_photo(message, state)
 
 
+@dispatcher.message(CareStates.waiting_for_photo, ~F.photo)
+async def reject_non_photo_care_message(message: Message, state: FSMContext) -> None:
+    """Keep the selfie FSM active and gently request an actual face photo."""
+    if await state.get_state() == CareStates.waiting_for_photo.state:
+        await message.answer(
+            "📸 Пожалуйста, отправь именно фотографию лица крупным планом, "
+            "чтобы я могла оценить состояние кожи."
+        )
+
+
 class AnalyticsCallbackMiddleware(BaseMiddleware):
     async def __call__(self, handler, event, data):
         user = getattr(event, "from_user", None)
