@@ -219,7 +219,10 @@ async def send_care_result(message: Message, order_id: str, user_id: int, prompt
         await message.answer("Анализ временно недоступен. Попробуй ещё раз чуть позже 🌿")
         return
     await asyncio.to_thread(mark_care_result_status_sync, order_id, user_id, "processing")
-    status = await message.answer("🌸 Подбираю уход и собираю рекомендации…")
+    status = await message.answer(
+        "Изучаю текстуру кожи... ✨" if image_bytes is not None
+        else "🌸 Подбираю уход и собираю рекомендации…"
+    )
     try:
         parts = [types.Part.from_text(text=prompt)]
         if image_bytes is not None:
@@ -388,14 +391,17 @@ async def choose_care_mode(callback: CallbackQuery, state: FSMContext) -> None:
 async def accept_care_photo_consent(callback: CallbackQuery, state: FSMContext) -> None:
     order_id = (callback.data or "").rsplit(":", 1)[-1]
     user_id = callback.from_user.id
+    # Acknowledge immediately so slow database work cannot make the button appear dead.
+    await callback.answer()
     if not await asyncio.to_thread(has_care_access_sync, user_id):
-        await callback.answer("Доступ не найден", show_alert=True)
+        if callback.message:
+            await callback.message.answer("Доступ не найден 🌿")
         return
     ok = await asyncio.to_thread(record_care_photo_consent_sync, order_id, user_id)
     if not ok:
-        await callback.answer("Заказ не найден", show_alert=True)
+        if callback.message:
+            await callback.message.answer("Заказ не найден 🌿")
         return
-    await callback.answer()
     await _delete_callback_message(callback)
     await state.clear()
     await state.update_data(order_id=order_id, chosen_mode="photo")
@@ -440,16 +446,18 @@ async def choose_care_photo_category(callback: CallbackQuery, state: FSMContext)
         await callback.answer("Такого варианта нет", show_alert=True)
         return
     user_id = callback.from_user.id
+    # Acknowledge before any database round-trips; the invitation is sent below
+    # as a fresh chat message after the inline menu is consumed.
+    await callback.answer()
     if not await asyncio.to_thread(has_care_access_sync, user_id):
-        await callback.answer("Доступ не найден", show_alert=True)
+        await callback.message.answer("Доступ не найден 🌿")
         return
     if not await asyncio.to_thread(has_care_photo_consent_sync, user_id):
-        await callback.answer("Сначала подтверди согласие на обработку фото", show_alert=True)
+        await callback.message.answer("Сначала подтверди согласие на обработку фото 🤍")
         return
     if not await asyncio.to_thread(update_care_order_answers_sync, order_id, user_id, {"photo_cosmetics_category": categories[category]}):
-        await callback.answer("Не удалось сохранить выбор", show_alert=True)
+        await callback.message.answer("Не удалось сохранить выбор. Попробуй ещё раз 🌿")
         return
-    await callback.answer()
     await _delete_callback_message(callback)
     await state.update_data(order_id=order_id, chosen_mode="photo", photo_cosmetics_category=categories[category])
     await state.set_state(CareStates.waiting_for_photo)
