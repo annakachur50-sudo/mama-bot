@@ -430,13 +430,14 @@ client = genai.Client(
     api_key=GOOGLE_API_KEY,
     http_options={
         "base_url": "https://api.proxyapi.ru/google",
-        # Ограничиваем один запрос к Gemini 30 секундами, чтобы бот не зависал.
-        "timeout": 30000,
+        # ProxyAPI Vision и подробные протоколы могут отвечать дольше обычного текста.
+        # Значение задаётся в миллисекундах; оставляем запас для анализа фото.
+        "timeout": 120000,
     },
 )
 bot = Bot(token=TELEGRAM_BOT_TOKEN)
 dispatcher = Dispatcher()
-configure_care_handlers(bot, client, os.getenv("CARE_GEMINI_MODEL", "gemini-2.5-flash"))
+configure_care_handlers(bot, client, os.getenv("CARE_GEMINI_MODEL", GEMINI_MODEL))
 dispatcher.include_router(care_router)
 
 class AnalyticsCallbackMiddleware(BaseMiddleware):
