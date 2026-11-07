@@ -290,10 +290,6 @@ class CarePhotoFlowRuntimeTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('types.Part.from_bytes(data=image_bytes, mime_type="image/jpeg")', source)
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
     def test_photo_and_quiz_prompts_share_strict_care_routine_rules(self):
         root = Path(__file__).resolve().parents[1]
         source = (root / "handlers_care.py").read_text(encoding="utf-8")
@@ -319,6 +315,9 @@ if __name__ == "__main__":
         self.assertIn("Выбирай, с чего начнём:", main)
         self.assertIn('callback_data="care:open"', main)
         self.assertIn("async def open_care_from_menu", care)
+
+if __name__ == "__main__":
+    unittest.main()
 
 if __name__ == "__main__":
     unittest.main()
