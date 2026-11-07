@@ -30,6 +30,23 @@ class CareHandlerStructureTests(unittest.TestCase):
         self.assertIn("Анализ кожи по селфи", self.source)
         self.assertIn("Ответить на 3 вопроса", self.source)
 
+    def test_paid_care_mode_keyboard_has_exact_choices_and_radiance_back(self):
+        from handlers_care import CARE_MODE_INTRO_TEXT, care_mode_keyboard
+
+        keyboard = care_mode_keyboard("order-123")
+        buttons = [button for row in keyboard.inline_keyboard for button in row]
+        self.assertIn("Твой персональный AI-косметолог", CARE_MODE_INTRO_TEXT)
+        self.assertEqual([button.text for button in buttons], [
+            "📸 По фото лица",
+            "📝 По быстрым вопросам",
+            "⬅️ Назад в Сияние",
+        ])
+        self.assertEqual([button.callback_data for button in buttons], [
+            "care:mode:photo:order-123",
+            "care:mode:quiz:order-123",
+            "menu_radiance",
+        ])
+
     def test_quiz_is_button_only_and_has_three_question_sets(self):
         self.assertIn('"skin": [', self.source)
         self.assertIn('"concern": [', self.source)
