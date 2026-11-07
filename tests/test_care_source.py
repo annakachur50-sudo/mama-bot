@@ -150,7 +150,7 @@ class CareSourceSyntaxTests(unittest.TestCase):
                          "Siberian Wellness Siberian Code", "ниацинамид", "цинк",
                          "гидролат календулы или берёзы"):
             self.assertIn(expected, rules)
-        self.assertNotIn("(тип средства без бренда)", rules)
+        self.assertIn("техническую заглушку", rules)
         eco_rules = _care_routine_system_rules("Натуральные эко-линейки")
         korean_rules = _care_routine_system_rules("Корейский уход")
         pharmacy_rules = _care_routine_system_rules("Аптечная дерматокосметика")
