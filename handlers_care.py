@@ -940,6 +940,9 @@ async def process_care_text(message: Message, state: FSMContext) -> bool:
     if current == CareStates.waiting_for_photo_category.state and order_id:
         await message.answer("Сначала выбери категорию ухода кнопкой 🌸", reply_markup=care_photo_category_keyboard(order_id))
         return True
+    if current == CareStates.waiting_for_photo_source.state and order_id:
+        await message.answer("Выбери кнопкой: оставить прежнее фото или загрузить новое 📸", reply_markup=care_photo_source_keyboard(order_id))
+        return True
     if current == CareStates.waiting_for_photo.state:
         await message.answer("📸 Пожалуйста, отправь именно фотографию лица крупным планом, чтобы я могла оценить состояние кожи.")
         return True
