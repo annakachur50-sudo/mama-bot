@@ -81,11 +81,19 @@ def configure_care_handlers(bot: Any, gemini_client: Any, model: str) -> None:
     logger.info("Care Gemini client configured: model=%s", _model)
 
 
+CARE_MODE_INTRO_TEXT = (
+    "✨ <b>Твой персональный AI-косметолог</b>\n\n"
+    "Каждая мама заслуживает сиять, даже когда за плечами бессонная ночь, а за окном сибирские морозы и сухой воздух от батарей.\n\n"
+    "Я помогу бережно оценить состояние твоей кожи, подберу работающие активы и соберу понятный пошаговый ритуал заботы (утро + вечер) без лишних баночек.\n\n"
+    "Выбери, как тебе комфортнее провести разбор:"
+)
+
+
 def care_mode_keyboard(order_id: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📸 Анализ кожи по селфи", callback_data=f"care:mode:photo:{order_id}")],
-        [InlineKeyboardButton(text="📝 Ответить на 3 вопроса", callback_data=f"care:mode:quiz:{order_id}")],
-        [InlineKeyboardButton(text="🏠 В главное меню", callback_data="menu:main")],
+        [InlineKeyboardButton(text="📸 По фото лица", callback_data=f"care:mode:photo:{order_id}")],
+        [InlineKeyboardButton(text="📝 По быстрым вопросам", callback_data=f"care:mode:quiz:{order_id}")],
+        [InlineKeyboardButton(text="⬅️ Назад в Сияние", callback_data="menu_radiance")],
     ])
 
 
@@ -331,7 +339,7 @@ async def start_care_checkout(callback: CallbackQuery, state: FSMContext | None 
                 await state.set_state(CareStates.waiting_for_mode)
                 await state.update_data(order_id=order_id)
             await callback.message.answer(
-                "Доступ к персональному уходу уже открыт 🌸\n\nКак тебе удобнее подобрать уход?",
+                CARE_MODE_INTRO_TEXT,
                 reply_markup=care_mode_keyboard(order_id),
             )
             return
@@ -642,7 +650,7 @@ async def back_to_care_mode(callback: CallbackQuery, state: FSMContext) -> None:
     await state.set_state(CareStates.waiting_for_mode)
     if callback.message:
         await callback.message.answer(
-            "Как тебе удобнее подобрать уход? 🌸",
+            CARE_MODE_INTRO_TEXT,
             reply_markup=care_mode_keyboard(order_id),
         )
 
@@ -929,7 +937,7 @@ async def process_care_text(message: Message, state: FSMContext) -> bool:
     data = await state.get_data()
     order_id = data.get("order_id")
     if current == CareStates.waiting_for_mode.state and order_id:
-        await message.answer("Выбери один из двух способов кнопкой 🌸", reply_markup=care_mode_keyboard(order_id))
+        await message.answer(CARE_MODE_INTRO_TEXT, reply_markup=care_mode_keyboard(order_id))
         return True
     if current == CareStates.waiting_for_payment.state:
         await message.answer("Сначала заверши оплату по ссылке ЮKassa. Если ссылка потерялась, снова открой «Подобрать уход и косметику» 🌿")
