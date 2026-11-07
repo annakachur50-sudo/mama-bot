@@ -81,11 +81,20 @@ def configure_care_handlers(bot: Any, gemini_client: Any, model: str) -> None:
     logger.info("Care Gemini client configured: model=%s", _model)
 
 
+CARE_ENTRY_TEXT = (
+    "✨ <b>Твой персональный AI-косметолог</b>\n\n"
+    "Я помогу бережно оценить особенности твоей кожи, подобрать уход и косметику "
+    "с учётом твоих предпочтений и собрать понятный пошаговый ритуал заботы — "
+    "без лишних баночек 🌸\n\n"
+    "Выбери, как тебе комфортнее провести разбор:"
+)
+
+
 def care_mode_keyboard(order_id: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📸 Анализ кожи по селфи", callback_data=f"care:mode:photo:{order_id}")],
-        [InlineKeyboardButton(text="📝 Ответить на 3 вопроса", callback_data=f"care:mode:quiz:{order_id}")],
-        [InlineKeyboardButton(text="🏠 В главное меню", callback_data="menu:main")],
+        [InlineKeyboardButton(text="📸 По фото лица", callback_data=f"care:mode:photo:{order_id}")],
+        [InlineKeyboardButton(text="📝 По быстрым вопросам", callback_data=f"care:mode:quiz:{order_id}")],
+        [InlineKeyboardButton(text="⬅️ Назад в Сияние", callback_data="menu_radiance")],
     ])
 
 
@@ -331,8 +340,9 @@ async def start_care_checkout(callback: CallbackQuery, state: FSMContext | None 
                 await state.set_state(CareStates.waiting_for_mode)
                 await state.update_data(order_id=order_id)
             await callback.message.answer(
-                "Доступ к персональному уходу уже открыт 🌸\n\nКак тебе удобнее подобрать уход?",
+                CARE_ENTRY_TEXT,
                 reply_markup=care_mode_keyboard(order_id),
+                parse_mode="HTML",
             )
             return
         order_id = await asyncio.to_thread(create_care_pending_order_sync, user_id)
