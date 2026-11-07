@@ -60,7 +60,8 @@ class CareSourceSyntaxTests(unittest.TestCase):
         source = (root / "handlers_care.py").read_text(encoding="utf-8")
         self.assertIn("def _photo_prompt(cosmetics_category: str)", source)
         self.assertIn("photo_cosmetics_category", source)
-        self.assertIn("не используй markdown-звёздочки", source)
+        self.assertIn("Markdown-жирное выделение только для заголовков и названий этапов", source)
+        self.assertNotIn("**Название шага:**", source)
         self.assertIn("разрешённой матрицы", source)
 
     def test_care_intro_is_cosmetologist_not_old_stylist_placeholder(self):
@@ -95,10 +96,25 @@ class CareSourceSyntaxTests(unittest.TestCase):
         start = source.index("async def process_care_photo")
         end = source.index("async def process_care_text", start)
         handler = source[start:end]
-        self.assertIn('action="typing"', handler)
-        self.assertIn("await send_care_result(message", handler)
+        helper_start = source.index("async def _analyze_care_photo_file")
+        helper_end = source.index("async def process_care_photo", helper_start)
+        photo_helper = source[helper_start:helper_end]
+        self.assertIn('action="typing"', photo_helper)
+        self.assertIn("await send_care_result(", photo_helper)
+        self.assertIn("last_photo_file_id=file_id", photo_helper)
         self.assertIn("CareStates.waiting_for_photo.state", handler)
         self.assertIn('types.Part.from_bytes(data=image_bytes, mime_type="image/jpeg")', source)
+
+    def test_photo_cache_is_stored_only_after_successful_analysis(self):
+        root = Path(__file__).resolve().parents[1]
+        source = (root / "handlers_care.py").read_text(encoding="utf-8")
+        start = source.index("async def _analyze_care_photo_file")
+        end = source.index("async def process_care_photo", start)
+        helper = source[start:end]
+        self.assertLess(helper.index("if success:"), helper.index("last_photo_file_id=file_id"))
+        self.assertIn("await state.set_state(None)", helper)
+        self.assertIn("care:photo_source:same", source)
+        self.assertIn("care:photo_source:new", source)
 
     def test_shared_gemini_http_timeout_and_care_model_fallback(self):
         root = Path(__file__).resolve().parents[1]
@@ -149,6 +165,7 @@ class CarePhotoFlowRuntimeTests(unittest.IsolatedAsyncioTestCase):
         )
         state = SimpleNamespace(
             update_data=AsyncMock(),
+            get_data=AsyncMock(return_value={}),
             set_state=AsyncMock(),
         )
 
@@ -164,6 +181,31 @@ class CarePhotoFlowRuntimeTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("дневном свете", sent_text)
         self.assertIn("текстуру пор", sent_text)
         self.assertEqual(callback.message.answer.await_args.kwargs.get("parse_mode"), "HTML")
+
+    async def test_care_photo_category_with_cached_photo_offers_reuse_or_new(self):
+        callback = SimpleNamespace(
+            data="care:photo_category:k:order-123",
+            from_user=SimpleNamespace(id=777),
+            message=SimpleNamespace(answer=AsyncMock(), delete=AsyncMock()),
+            answer=AsyncMock(),
+        )
+        state = SimpleNamespace(
+            update_data=AsyncMock(),
+            get_data=AsyncMock(return_value={"last_photo_file_id": "telegram-file-123"}),
+            set_state=AsyncMock(),
+        )
+        with patch("handlers_care.asyncio.to_thread", new=AsyncMock(side_effect=[True, True, True])):
+            await choose_care_photo_category(callback, state)
+        state.set_state.assert_awaited_once_with(CareStates.waiting_for_photo_source)
+        kwargs = callback.message.answer.await_args.kwargs
+        self.assertIsNotNone(kwargs.get("reply_markup"))
+        texts = [
+            button.text
+            for row in kwargs["reply_markup"].inline_keyboard
+            for button in row
+        ]
+        self.assertIn("📸 Оставить то же фото", texts)
+        self.assertIn("🔄 Загрузить новое селфи", texts)
 
     async def test_main_registers_photo_handler_for_waiting_for_photo_state(self):
         root = Path(__file__).resolve().parents[1]
