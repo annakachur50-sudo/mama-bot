@@ -4,7 +4,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
-from handlers_care import (CareStates, care_photo_category_keyboard, choose_care_mode, choose_care_photo_category, process_care_text)
+from handlers_care import (CareStates, care_mode_keyboard, care_photo_category_keyboard, choose_care_mode, choose_care_photo_category, process_care_text)
 
 
 class CareSourceSyntaxTests(unittest.TestCase):
@@ -64,12 +64,36 @@ class CareSourceSyntaxTests(unittest.TestCase):
         self.assertNotIn("**Название шага:**", source)
         self.assertIn("разрешённой матрицы", source)
 
-    def test_care_intro_is_cosmetologist_not_old_stylist_placeholder(self):
+    def test_radiance_welcome_and_care_intro_are_separated(self):
         root = Path(__file__).resolve().parents[1]
-        source = (root / "main.py").read_text(encoding="utf-8")
-        self.assertIn("Твой персональный AI-косметолог", source)
-        self.assertIn("Каждая мама заслуживает сиять", source)
-        self.assertNotIn("Твой личный AI-стилист и бьюти-помощник", source)
+        main_source = (root / "main.py").read_text(encoding="utf-8")
+        care_source = (root / "handlers_care.py").read_text(encoding="utf-8")
+        self.assertIn("Твоё персональное пространство красоты и стиля", main_source)
+        self.assertIn("Выбирай, что создадим прямо сейчас", main_source)
+        self.assertIn("Определим твои лучшие природные оттенки", main_source)
+        self.assertIn("Соберём гармоничный и удобный образ", main_source)
+        self.assertIn("Подберём бережный пошаговый ритуал ухода", main_source)
+        self.assertNotIn("Твой персональный AI-косметолог", main_source)
+        self.assertIn("Твой персональный AI-косметолог", care_source)
+        self.assertIn("CARE_ENTRY_TEXT", care_source)
+        self.assertIn("CARE_ENTRY_TEXT", care_source[care_source.index("async def start_care_checkout"):])
+        self.assertNotIn("Твой личный AI-стилист и бьюти-помощник", main_source)
+
+    def test_care_mode_keyboard_has_photo_quiz_and_radiance_back(self):
+        keyboard = care_mode_keyboard("order-123")
+        buttons = [button for row in keyboard.inline_keyboard for button in row]
+        self.assertEqual(
+            [button.text for button in buttons],
+            ["📸 По фото лица", "📝 По быстрым вопросам", "⬅️ Назад в Сияние"],
+        )
+        self.assertEqual(
+            [button.callback_data for button in buttons],
+            [
+                "care:mode:photo:order-123",
+                "care:mode:quiz:order-123",
+                "menu_radiance",
+            ],
+        )
 
     def test_photo_mode_acknowledges_callback_before_database_checks(self):
         root = Path(__file__).resolve().parents[1]
