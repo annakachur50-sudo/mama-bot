@@ -16,7 +16,7 @@ class CareProductMatrixTests(unittest.TestCase):
     def test_prompts_isolate_the_selected_product_matrix(self):
         eco = _photo_prompt("Натуральные эко-линейки и растительные компоненты")
         for allowed in (
-            "Greenway", "Cactus", "Happy Dew", "Anny Rey", "Nice Code",
+            "Greenway", "Cactus", "Happy Dew", "Nice Code",
             "Sharme Minerals", "Siberian Wellness", "Experalta Biomelle",
             "Chronolong", "Experalta Platinum", "бакучиол", "10% ниацинамид",
             "Siberian Code", "Levrana", "Леврана",
@@ -31,6 +31,8 @@ class CareProductMatrixTests(unittest.TestCase):
         ):
             self.assertNotIn(forbidden, eco)
         self.assertIn("Greenway Hemp строго запрещён", eco)
+        self.assertNotIn("Anny Rey", eco)
+        self.assertNotIn("Anny Rey", _photo_prompt("Не принципиально / Микс"))
         self.assertNotIn("Endemix", eco)
         self.assertNotIn("Endemix", _photo_prompt("Не принципиально / Микс"))
         for forbidden_category in ("корей", "аптеч", "масс-маркет"):
@@ -209,6 +211,9 @@ class CareProductMatrixTests(unittest.TestCase):
             self.assertIn("**Утренний ритуал:**", prompt)
             self.assertIn("**Вечерний ритуал:**", prompt)
             self.assertIn("**Название компонента**", prompt)
+            self.assertIn("**Название этапа:**", prompt)
+            self.assertNotIn("**Название шага:**", prompt)
+            self.assertNotIn("Шаг:", prompt)
             self.assertIn("🤍 Маленький совет", prompt)
             self.assertIn("⚠️ Предостережения", prompt)
 
@@ -220,6 +225,28 @@ class CareProductMatrixTests(unittest.TestCase):
         self.assertIn("восстановление защитного барьера", eco)
         self.assertIn("антиоксидантная защита", eco)
         self.assertNotIn("Endemix", eco)
+
+    def test_photo_source_keyboard_offers_reuse_or_new_upload(self):
+        from handlers_care import care_photo_source_keyboard
+        keyboard = care_photo_source_keyboard("order-cache")
+        buttons = [button for row in keyboard.inline_keyboard for button in row]
+        self.assertEqual(
+            [button.text for button in buttons[:2]],
+            ["📸 Оставить то же фото", "🔄 Загрузить новое селфи"],
+        )
+        self.assertEqual(
+            [button.callback_data for button in buttons[:2]],
+            ["care:photo_source:same:order-cache", "care:photo_source:new:order-cache"],
+        )
+
+    def test_greenway_matrix_has_only_current_lines(self):
+        for prompt in (
+            _photo_prompt("Натуральные эко-линейки и травы"),
+            _photo_prompt("Не принципиально / Микс"),
+        ):
+            self.assertNotIn("Anny Rey", prompt)
+            self.assertIn("Nice Code (сыворотки)", prompt)
+            self.assertIn("Sharme Minerals (сухие маски и средства для умывания)", prompt)
 
     def test_existing_photo_and_quiz_prompts_keep_both_modes(self):
         self.assertIn("видимые особенности", _photo_prompt("корейский").lower())
