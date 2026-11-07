@@ -272,7 +272,7 @@ def _is_korean_category(category: str | None) -> bool:
 
 def _is_pharmacy_category(category: str | None) -> bool:
     value = (category or "").casefold()
-    return any(token in value for token in ("аптек", "pharmacy", "базов"))
+    return any(token in value for token in ("аптек", "аптеч", "pharmacy", "базов"))
 
 
 def _contains_foreign_category_brand(answer: str, category: str) -> bool:
