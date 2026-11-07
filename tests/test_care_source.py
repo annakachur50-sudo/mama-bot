@@ -84,6 +84,42 @@ class CareSourceSyntaxTests(unittest.TestCase):
         self.assertIn('text="⬅️ Назад в Сияние"', source)
         self.assertIn('callback_data="menu_radiance"', source)
 
+    def test_care_prompts_enforce_morning_evening_and_product_rules(self):
+        root = Path(__file__).resolve().parents[1]
+        source = (root / "handlers_care.py").read_text(encoding="utf-8")
+        rules_start = source.index("def _care_routine_rules")
+        rules_end = source.index("def _photo_prompt", rules_start)
+        rules = source[rules_start:rules_end]
+        self.assertIn("Сухое очищение Sharme Minerals утром СТРОГО ЗАПРЕЩЕНО", rules)
+        self.assertIn("ИСКЛЮЧИТЕЛЬНО вечером", rules)
+        self.assertIn("2–3 раза в неделю", rules)
+        self.assertIn("выбери ОДНО базовое средство", rules)
+        self.assertIn("дневной крем-флюид Siberian Wellness Siberian Code", rules)
+        self.assertIn("ниацинамид помогает регулировать себум", rules)
+        self.assertIn("цинк помогает контролировать жирный блеск", rules)
+        self.assertIn("гидролат календулы или берёзы", rules)
+        photo_start = source.index("def _photo_prompt")
+        quiz_start = source.index("def _quiz_prompt", photo_start)
+        care_flow_start = source.index("@care_router.callback_query", quiz_start)
+        photo_prompt = source[photo_start:quiz_start]
+        quiz_prompt = source[quiz_start:care_flow_start]
+        self.assertIn("_care_routine_rules(cosmetics_category)", photo_prompt)
+        self.assertIn('_care_routine_rules(answers.get("brand_pref", ""))', quiz_prompt)
+
+    def test_care_mode_intro_uses_html_parse_mode_on_entry_and_back(self):
+        root = Path(__file__).resolve().parents[1]
+        source = (root / "handlers_care.py").read_text(encoding="utf-8")
+        entry_start = source.index("async def start_care_checkout")
+        entry_end = source.index("async def send_care_result", entry_start)
+        entry = source[entry_start:entry_end]
+        self.assertIn("CARE_MODE_INTRO_TEXT", entry)
+        self.assertIn('parse_mode="HTML"', entry)
+        back_start = source.index("async def back_to_care_mode")
+        back_end = source.index("@care_router.callback_query", back_start + 1)
+        back = source[back_start:back_end]
+        self.assertIn("CARE_MODE_INTRO_TEXT", back)
+        self.assertIn('parse_mode="HTML"', back)
+
     def test_photo_mode_acknowledges_callback_before_database_checks(self):
         root = Path(__file__).resolve().parents[1]
         source = (root / "handlers_care.py").read_text(encoding="utf-8")
@@ -249,6 +285,20 @@ class CarePhotoFlowRuntimeTests(unittest.IsolatedAsyncioTestCase):
         source = (root / "handlers_care.py").read_text(encoding="utf-8")
         self.assertIn('"Изучаю текстуру кожи... ✨" if image_bytes is not None', source)
         self.assertIn('types.Part.from_bytes(data=image_bytes, mime_type="image/jpeg")', source)
+
+    def test_radiance_entry_shows_general_beauty_space_welcome(self):
+        root = Path(__file__).resolve().parents[1]
+        main = (root / "main.py").read_text(encoding="utf-8")
+        care = (root / "handlers_care.py").read_text(encoding="utf-8")
+        welcome = main[main.index("RADIANCE_MENU_TEXT"):main.index("WARDROBE_STYLIST_PROMPT")]
+        self.assertIn("Твоё персональное пространство красоты и стиля", welcome)
+        self.assertIn("Выбирай, с чего начнём:", welcome)
+        self.assertIn("Определим твои лучшие природные оттенки", welcome)
+        self.assertIn("Соберём гармоничный и удобный образ на день", welcome)
+        self.assertIn("Подберём бережный пошаговый ритуал ухода за кожей", welcome)
+        self.assertNotIn("AI-косметолог", welcome)
+        self.assertIn('callback_data="care:open"', main)
+        self.assertIn("async def open_care_from_menu", care)
 
 
 if __name__ == "__main__":
