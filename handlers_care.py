@@ -538,7 +538,7 @@ def _care_routine_rules(cosmetics_category: str) -> str:
         "5. Все примеры средств и компонентов обязаны принадлежать только выбранной продуктовой матрице. "
         "Не переноси бренды из другой категории даже ради примера. Учитывай чувствительность и вводи активы постепенно.",
     ])
-    return "\\n\\n" + "\\n".join(rules)
+    return "\n\n" + "\n".join(rules)
 
 
 def _photo_prompt(cosmetics_category: str) -> str:
