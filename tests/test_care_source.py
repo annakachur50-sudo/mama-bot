@@ -318,6 +318,3 @@ class CarePhotoFlowRuntimeTests(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
-if __name__ == "__main__":
-    unittest.main()
