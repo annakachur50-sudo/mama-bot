@@ -27,8 +27,8 @@ class CareHandlerStructureTests(unittest.TestCase):
     def test_paid_user_gets_two_distinct_modes(self):
         self.assertIn("care:mode:photo:{order_id}", self.source)
         self.assertIn("care:mode:quiz:{order_id}", self.source)
-        self.assertIn("Анализ кожи по селфи", self.source)
-        self.assertIn("Ответить на 3 вопроса", self.source)
+        self.assertIn("По фото лица", self.source)
+        self.assertIn("По быстрым вопросам", self.source)
 
     def test_paid_care_mode_keyboard_has_exact_choices_and_radiance_back(self):
         from handlers_care import CARE_MODE_INTRO_TEXT, care_mode_keyboard
