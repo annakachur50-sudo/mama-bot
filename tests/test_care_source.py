@@ -292,3 +292,29 @@ class CarePhotoFlowRuntimeTests(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+    def test_photo_and_quiz_prompts_share_strict_care_routine_rules(self):
+        root = Path(__file__).resolve().parents[1]
+        source = (root / "handlers_care.py").read_text(encoding="utf-8")
+        self.assertIn("def _care_routine_system_rules()", source)
+        photo = source[source.index("def _photo_prompt"):source.index("def _quiz_prompt")]
+        quiz = source[source.index("def _quiz_prompt"):source.index('@care_router.callback_query(F.data == "care:open")')]
+        for prompt in (photo, quiz):
+            self.assertIn("_care_routine_system_rules()", prompt)
+        rules = source[source.index("def _care_routine_system_rules"):source.index("def _care_layout_rules")]
+        for expected in ("Сухое очищение Sharme Minerals", "категорически запрещено", "исключительно вечером",
+                         "2–3 раза в неделю", "ОДНО базовое средство", "Siberian Wellness Siberian Code",
+                         "ниацинамид", "цинк", "гидролат календулы или берёзы"):
+            self.assertIn(expected, rules)
+        self.assertNotIn("(тип средства без бренда)", rules)
+
+    def test_care_entry_message_uses_html_and_general_radiance_copy(self):
+        root = Path(__file__).resolve().parents[1]
+        care = (root / "handlers_care.py").read_text(encoding="utf-8")
+        main = (root / "main.py").read_text(encoding="utf-8")
+        start = care[care.index("async def start_care_checkout"):care.index("async def send_care_result")]
+        self.assertIn("CARE_MODE_INTRO_TEXT,", start)
+        self.assertIn('parse_mode="HTML"', start)
+        self.assertIn("Выбирай, с чего начнём:", main)
+        self.assertIn('callback_data="care:open"', main)
+        self.assertIn("async def open_care_from_menu", care)
