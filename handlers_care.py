@@ -51,7 +51,7 @@ REF_LINK_SW = (
 REFERRAL_BRANDS = {"Greenway", "Siberian Wellness"}
 ALLOWED_BRANDS = REFERRAL_BRANDS
 ECO_ALLOWED_TERMS = (
-    "Greenway", "Cactus", "Happy Dew", "Anny Rey", "Nice Code", "Sharme Minerals",
+    "Greenway", "Cactus", "Happy Dew", "Nice Code", "Sharme Minerals",
     "Siberian Wellness", "Experalta Biomelle", "Chronolong", "Experalta Platinum",
     "бакучиол", "10% ниацинамид", "Siberian Code",
     "Levrana", "Леврана", "Green Mama", "Грин Мама",
@@ -68,6 +68,7 @@ class CareStates(StatesGroup):
     waiting_for_consent = State()
     waiting_for_photo_category = State()
     waiting_for_photo = State()
+    waiting_for_photo_source = State()
     survey_skin_type = State()
     survey_concern = State()
     survey_brand_pref = State()
@@ -115,10 +116,18 @@ def care_photo_category_keyboard(order_id: str) -> InlineKeyboardMarkup:
     ] + [[InlineKeyboardButton(text="🏠 В главное меню", callback_data="menu:main")]])
 
 
+def care_photo_source_keyboard(order_id: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📸 Оставить то же фото", callback_data=f"care:photo_source:same:{order_id}")],
+        [InlineKeyboardButton(text="🔄 Загрузить новое селфи", callback_data=f"care:photo_source:new:{order_id}")],
+        [InlineKeyboardButton(text="🏠 В главное меню", callback_data="menu:main")],
+    ])
+
+
 async def _ask_care_photo_category(message: Message, state: FSMContext, order_id: str) -> None:
     await state.set_state(CareStates.waiting_for_photo_category)
     await message.answer(
-        "Шаг: Какому уходу отдаёшь предпочтение? 🌸",
+        "Какому уходу отдаёшь предпочтение? 🌸",
         reply_markup=care_photo_category_keyboard(order_id),
     )
 
@@ -236,12 +245,12 @@ KOREAN_ALLOWED_BRANDS = (
 )
 PHARMACY_ALLOWED_BRANDS = ("La Roche-Posay", "CeraVe", "Bioderma", "Avene", "Avène")
 NON_KOREAN_BRANDS = (
-    "Greenway", "Cactus", "Happy Dew", "Anny Rey", "Nice Code", "Sharme Minerals",
+    "Greenway", "Cactus", "Happy Dew", "Nice Code", "Sharme Minerals",
     "Siberian Wellness", "Experalta", "Chronolong", "Siberian Code",
     "La Roche-Posay", "CeraVe", "Bioderma", "Avene", "Avène", "Art&Fact", "Icon Skin",
 )
 NON_PHARMACY_BRANDS = (
-    "Greenway", "Cactus", "Happy Dew", "Anny Rey", "Nice Code", "Sharme Minerals",
+    "Greenway", "Cactus", "Happy Dew", "Nice Code", "Sharme Minerals",
     "Siberian Wellness", "Experalta", "Chronolong", "Siberian Code",
     "Anua", "Manyo", "Round Lab", "SKIN1004", "Beauty of Joseon", "Medicube",
     "Jigott", "COSRX", "Art&Fact", "Icon Skin",
@@ -354,10 +363,10 @@ async def start_care_checkout(callback: CallbackQuery, state: FSMContext | None 
 
 async def send_care_result(message: Message, order_id: str, user_id: int, prompt: str,
                            image_bytes: bytes | None = None,
-                           cosmetics_category: str | None = None) -> None:
+                           cosmetics_category: str | None = None) -> bool:
     if _client is None:
         await message.answer("Анализ временно недоступен. Попробуй ещё раз чуть позже 🌿")
-        return
+        return False
     await asyncio.to_thread(mark_care_result_status_sync, order_id, user_id, "processing")
     status = await message.answer(
         "Изучаю текстуру кожи... ✨" if image_bytes is not None
@@ -408,6 +417,7 @@ async def send_care_result(message: Message, order_id: str, user_id: int, prompt
             await status.delete()
         except Exception:
             pass
+        return True
     except asyncio.CancelledError:
         raise
     except Exception as error:
@@ -431,6 +441,7 @@ async def send_care_result(message: Message, order_id: str, user_id: int, prompt
                 "Попробуй повторить позже — второй раз платить не нужно.",
                 reply_markup=care_result_keyboard(order_id),
             )
+        return False
 
 
 def _product_matrix_prompt(cosmetics_category: str) -> str:
@@ -439,7 +450,7 @@ def _product_matrix_prompt(cosmetics_category: str) -> str:
     if _is_eco_category(category):
         return (
             "ИЗОЛИРОВАННАЯ ЭКО-МАТРИЦА. Используй исключительно эти линейки и бренды: "
-            "Greenway: Cactus, Happy Dew, Anny Rey, Nice Code, Sharme Minerals. "
+            "Greenway: Cactus, Happy Dew, Nice Code (сыворотки), Sharme Minerals (сухие маски и средства для умывания). "
             "Greenway Hemp строго запрещён: не упоминай его ни в каком контексте. "
             "Siberian Wellness: Siberian Code (Сибирский код) — базовый уход, восстановление защитного барьера "
             "и антиоксидантная защита; Experalta Biomelle — восстановление и поддержка барьера; "
@@ -471,7 +482,7 @@ def _product_matrix_prompt(cosmetics_category: str) -> str:
         )
     return (
         "ИЗОЛИРОВАННАЯ МАТРИЦА МИКС. Только в этом сценарии разрешено комбинировать "
-        "категории. Доступны Greenway: Cactus, Happy Dew, Anny Rey, Nice Code, Sharme Minerals; "
+        "категории. Доступны Greenway: Cactus, Happy Dew, Nice Code (сыворотки), Sharme Minerals (сухие маски и средства для умывания); "
         "Siberian Wellness: Siberian Code (Сибирский код), Experalta Biomelle, Chronolong, "
         "Experalta Platinum; корейские бренды: Anua, Manyo, Round Lab, SKIN1004, Beauty of Joseon, "
         "Medicube, Jigott, COSRX; аптечные бренды: La Roche-Posay, CeraVe, Bioderma, Avène; "
@@ -483,7 +494,7 @@ def _product_matrix_prompt(cosmetics_category: str) -> str:
 
 
 def _care_layout_rules() -> str:
-    return "ОБЯЗАТЕЛЬНЫЕ ПРАВИЛА ВЁРСТКИ ОТВЕТА (НЕ НАРУШАТЬ):\n1. Запрещён сплошной текст одной простынёй. Каждый этап ритуала — отдельная строка; между каждым этапом и смысловым блоком оставляй пустую строку (двойной перевод строки).\n2. Утренний и вечерний ритуалы оформляй строго так: отдельный заголовок «☀️ **Утренний ритуал:**» / «🌙 **Вечерний ритуал:**», затем каждый этап с новой строки по шаблону «Эмодзи **Название шага:** Средство и актив *(конкретный пример продукта в скобках)*.» Между этапами — пустая строка. Не объединяй шаги в один абзац.\n3. В каждом уместном этапе указывай 1–2 конкретных примера только из выбранной матрицы. Если подтверждённого продукта нет, укажи тип средства без выдуманного названия.\n4. Блок «🌿 Подходящие компоненты» — строго список из 2–3 отдельных пунктов, каждый с новой строки и эмодзи, по шаблону «🌿 **Название компонента** — зачем он коже.» или «💧 **Название компонента** — как работает.»\n5. «🤍 Маленький совет» и «⚠️ Предостережения» — самостоятельные короткие абзацы, каждый отделён пустой строкой. Не смешивай их с ритуалами или списком компонентов.\n6. Сохраняй переносы строк и пустые строки внутри JSON-строки answer через символы \\\\n. Внутри answer используй ** только для выделения названий блоков и шагов; не используй Markdown-нумерацию или длинные сплошные абзацы."
+    return "ОБЯЗАТЕЛЬНЫЕ ПРАВИЛА ВЁРСТКИ ОТВЕТА (НЕ НАРУШАТЬ):\n1. Запрещён сплошной текст одной простынёй. Каждый этап ритуала — отдельная строка; между каждым этапом и смысловым блоком оставляй пустую строку (двойной перевод строки).\n2. Утренний и вечерний ритуалы оформляй строго так: отдельный заголовок «☀️ **Утренний ритуал:**» / «🌙 **Вечерний ритуал:**», затем каждый этап с новой строки по шаблону «Эмодзи **Название этапа:** Средство и актив *(конкретный пример продукта в скобках)*.» Между этапами — пустая строка. Не объединяй этапы в один абзац.\n3. В каждом уместном этапе указывай 1–2 конкретных примера только из выбранной матрицы. Если подтверждённого продукта нет, укажи тип средства без выдуманного названия.\n4. Блок «🌿 Подходящие компоненты» — строго список из 2–3 отдельных пунктов, каждый с новой строки и эмодзи, по шаблону «🌿 **Название компонента** — зачем он коже.» или «💧 **Название компонента** — как работает.»\n5. «🤍 Маленький совет» и «⚠️ Предостережения» — самостоятельные короткие абзацы, каждый отделён пустой строкой. Не смешивай их с ритуалами или списком компонентов.\n6. Сохраняй переносы строк и пустые строки внутри JSON-строки answer через символы \\\\n. Внутри answer используй ** только для выделения названий блоков и шагов; не используй Markdown-нумерацию или длинные сплошные абзацы."
 
 
 def _photo_prompt(cosmetics_category: str) -> str:
@@ -492,7 +503,7 @@ def _photo_prompt(cosmetics_category: str) -> str:
         "Освещение, камера, фильтры и макияж могут искажать картину. Если качество фото недостаточное, "
         "честно сообщи об этом и не придумывай признаки. Не диагностируй заболевания, не назначай препараты, "
         "не обещай лечение или гарантированный эффект. Составь персональный план на русском, на «ты», "
-        "дружелюбно и без медицинского жаргона. Внутри answer не используй markdown-звёздочки или markdown-списки. " + "Начни с «🌸 ТВОЙ ПЕРСОНАЛЬНЫЙ УХОД». "
+        "дружелюбно и без медицинского жаргона. Используй Markdown-жирное выделение только для заголовков и названий этапов. " + "Начни с «🌸 ТВОЙ ПЕРСОНАЛЬНЫЙ УХОД». "
         "Учитывай предпочтение пользователя: " + cosmetics_category + ". "
         "Структура answer: что учитываем; ☀️ утренний ритуал; 🌙 вечерний ритуал; подходящие компоненты; "
         "предостережения по чувствительности и переносимости; 🤍 маленький совет. "
@@ -669,16 +680,64 @@ async def choose_care_photo_category(callback: CallbackQuery, state: FSMContext)
         await callback.message.answer("Не удалось сохранить выбор. Попробуй ещё раз 🌿")
         return
     await _delete_callback_message(callback)
+    cached = (await state.get_data()).get("last_photo_file_id")
     await state.update_data(order_id=order_id, chosen_mode="photo", photo_cosmetics_category=categories[category])
-    await state.set_state(CareStates.waiting_for_photo)
-    # This is a new message, not the consumed inline-keyboard message above:
-    # keep it visible so the user can send the selfie in the active FSM state.
-    await callback.message.answer(
-        "📸 <b>Пришли мне одно чёткое селфи</b> лица крупным планом при дневном свете "
-        "(без плотного тонального крема и фильтров). Я бережно оценю текстуру пор, "
-        "тон и уровень увлажнённости ✨",
-        parse_mode="HTML",
-    )
+    if cached:
+        await state.set_state(CareStates.waiting_for_photo_source)
+        await callback.message.answer(
+            "Фото уже есть в этой сессии 🌸 Используем прежнее селфи или загрузим новое?",
+            reply_markup=care_photo_source_keyboard(order_id),
+        )
+    else:
+        await state.set_state(CareStates.waiting_for_photo)
+        await callback.message.answer(
+            "📸 <b>Пришли мне одно чёткое селфи</b> лица крупным планом при дневном свете "
+            "(без плотного тонального крема и фильтров). Я бережно оценю текстуру пор, "
+            "тон и уровень увлажнённости ✨",
+            parse_mode="HTML",
+        )
+
+
+@care_router.callback_query(F.data.startswith("care:photo_source:"))
+async def choose_care_photo_source(callback: CallbackQuery, state: FSMContext) -> None:
+    if not callback.data or callback.message is None:
+        await callback.answer()
+        return
+    bits = callback.data.split(":")
+    if len(bits) != 4 or bits[2] not in {"same", "new"}:
+        await callback.answer("Не удалось распознать выбор фото", show_alert=True)
+        return
+    source, order_id = bits[2], bits[3]
+    user_id = callback.from_user.id
+    await callback.answer()
+    if not await asyncio.to_thread(has_care_access_sync, user_id):
+        await callback.message.answer("Доступ не найден 🌿")
+        return
+    order = await asyncio.to_thread(get_care_order_sync, order_id, user_id)
+    if not order or order.get("status") != "succeeded" or order.get("mode") != "photo":
+        await callback.message.answer("Оплаченный заказ для анализа фото не найден 🌿")
+        return
+    if not await asyncio.to_thread(has_care_photo_consent_sync, user_id):
+        await callback.message.answer("Сначала подтверди согласие на обработку фото 🤍")
+        await state.set_state(CareStates.waiting_for_consent)
+        return
+    await _delete_callback_message(callback)
+    data = await state.get_data()
+    if source == "new":
+        await state.update_data(order_id=order_id, chosen_mode="photo")
+        await state.set_state(CareStates.waiting_for_photo)
+        await callback.message.answer("📸 Пришли новое чёткое селфи лица крупным планом при дневном свете ✨")
+        return
+    file_id = data.get("last_photo_file_id")
+    category = data.get("photo_cosmetics_category") or (order.get("answers") or {}).get("photo_cosmetics_category")
+    if not file_id or not category:
+        await state.set_state(CareStates.waiting_for_photo)
+        await callback.message.answer("📸 Пришли, пожалуйста, селфи для нового подбора 🌸")
+        return
+    if not await asyncio.to_thread(record_care_photo_consent_sync, order_id, user_id):
+        await callback.message.answer("Не удалось подтвердить согласие для этого заказа. Попробуй ещё раз 🤍")
+        return
+    await _analyze_care_photo_file(callback.message, state, order_id, user_id, file_id, category)
 
 
 @care_router.callback_query(F.data.startswith("care:quiz:"))
@@ -748,8 +807,13 @@ async def repeat_care_result(callback: CallbackQuery, state: FSMContext) -> None
         return
     await callback.answer()
     await _delete_callback_message(callback)
+    previous_data = await state.get_data()
+    cached_photo_file_id = previous_data.get("last_photo_file_id")
     await state.clear()
-    await state.update_data(order_id=order_id, chosen_mode=order.get("mode"))
+    await state.update_data(
+        order_id=order_id, chosen_mode=order.get("mode"),
+        **({"last_photo_file_id": cached_photo_file_id} if cached_photo_file_id else {}),
+    )
     if order.get("mode") == "photo":
         has_consent = await asyncio.to_thread(has_care_photo_consent_sync, user_id)
         if has_consent:
@@ -772,6 +836,51 @@ async def repeat_care_result(callback: CallbackQuery, state: FSMContext) -> None
             cosmetics_category=(order.get("answers") or {}).get("brand_pref"),
         )
         await state.clear()
+
+
+async def _analyze_care_photo_file(message: Message, state: FSMContext, order_id: str,
+                                  user_id: int, file_id: str, category: str) -> bool:
+    """Download a Telegram photo in memory; cache only after successful analysis."""
+    image_bytes = None
+    buffer = io.BytesIO()
+    try:
+        await _bot.send_chat_action(chat_id=message.chat.id, action="typing")
+        file_info = await _bot.get_file(file_id)
+        if file_info.file_size and file_info.file_size > 10 * 1024 * 1024:
+            await message.answer("Фото слишком большое. Пришли изображение размером до 10 МБ 🌿")
+            await state.set_state(CareStates.waiting_for_photo)
+            return False
+        await _bot.download(file_info, destination=buffer)
+        image_bytes = buffer.getvalue()
+        if not image_bytes or len(image_bytes) > 10 * 1024 * 1024:
+            await message.answer("Не удалось прочитать фото. Попробуй отправить его ещё раз 🌿")
+            await state.set_state(CareStates.waiting_for_photo)
+            return False
+        await state.set_state(CareStates.generating_result)
+        success = await send_care_result(
+            message, order_id, user_id, _photo_prompt(category),
+            image_bytes=image_bytes, cosmetics_category=category,
+        )
+        if success:
+            await state.update_data(
+                order_id=order_id, chosen_mode="photo",
+                photo_cosmetics_category=category, last_photo_file_id=file_id,
+            )
+        await state.set_state(None)
+        return success
+    except asyncio.CancelledError:
+        raise
+    except Exception as error:
+        logger.exception("Care photo processing error: %s", error)
+        await message.answer(
+            "Не получилось обработать фото. Оплата сохранена — попробуй повторить позже, повторно платить не нужно 🌸",
+            reply_markup=care_result_keyboard(order_id),
+        )
+        await state.set_state(None)
+        return False
+    finally:
+        image_bytes = None
+        buffer.close()
 
 
 async def process_care_photo(message: Message, state: FSMContext) -> bool:
@@ -803,44 +912,14 @@ async def process_care_photo(message: Message, state: FSMContext) -> bool:
     if not message.photo:
         await message.answer("Пришли, пожалуйста, фотографию как изображение 🌸")
         return True
-    image_bytes = None
-    try:
-        # Show activity while Telegram downloads the image and Gemini prepares the analysis.
-        await _bot.send_chat_action(chat_id=message.chat.id, action="typing")
-        file_info = await _bot.get_file(message.photo[-1].file_id)
-        if file_info.file_size and file_info.file_size > 10 * 1024 * 1024:
-            await message.answer("Фото слишком большое. Пришли изображение размером до 10 МБ 🌿")
-            return True
-        buffer = io.BytesIO()
-        await _bot.download(message.photo[-1], destination=buffer)
-        image_bytes = buffer.getvalue()
-        buffer.close()
-        if not image_bytes or len(image_bytes) > 10 * 1024 * 1024:
-            await message.answer("Не удалось прочитать фото. Попробуй отправить его ещё раз 🌿")
-            return True
-        await state.set_state(CareStates.generating_result)
-        category = (order.get("answers") or {}).get("photo_cosmetics_category")
-        if not category:
-            await _ask_care_photo_category(message, state, order_id)
-            return True
-        await _bot.send_chat_action(chat_id=message.chat.id, action="typing")
-        await send_care_result(message, order_id, user_id, _photo_prompt(category),
-                                  image_bytes=image_bytes, cosmetics_category=category)
-        await state.clear()
+    category = (order.get("answers") or {}).get("photo_cosmetics_category") or data.get("photo_cosmetics_category")
+    if not category:
+        await _ask_care_photo_category(message, state, order_id)
         return True
-    except asyncio.CancelledError:
-        raise
-    except Exception as error:
-        logger.exception("Care photo processing error: %s", error)
-        await message.answer(
-            "Не получилось обработать фото. Оплата сохранена — попробуй ещё раз, повторно платить не нужно 🌸",
-            reply_markup=care_result_keyboard(order_id),
-        )
-        return True
-    finally:
-        image_bytes = None
-        if "buffer" in locals():
-            buffer.close()
+    await _analyze_care_photo_file(
+        message, state, order_id, user_id, message.photo[-1].file_id, category
+    )
+    return True
 
 
 
