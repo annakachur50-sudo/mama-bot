@@ -293,10 +293,11 @@ class CarePhotoFlowRuntimeTests(unittest.IsolatedAsyncioTestCase):
 if __name__ == "__main__":
     unittest.main()
 
+
     def test_photo_and_quiz_prompts_share_strict_care_routine_rules(self):
         root = Path(__file__).resolve().parents[1]
         source = (root / "handlers_care.py").read_text(encoding="utf-8")
-        self.assertIn("def _care_routine_system_rules()", source)
+        self.assertIn("def _care_routine_system_rules(cosmetics_category: str)", source)
         photo = source[source.index("def _photo_prompt"):source.index("def _quiz_prompt")]
         quiz = source[source.index("def _quiz_prompt"):source.index('@care_router.callback_query(F.data == "care:open")')]
         for prompt in (photo, quiz):
@@ -318,3 +319,6 @@ if __name__ == "__main__":
         self.assertIn("Выбирай, с чего начнём:", main)
         self.assertIn('callback_data="care:open"', main)
         self.assertIn("async def open_care_from_menu", care)
+
+if __name__ == "__main__":
+    unittest.main()
