@@ -64,12 +64,25 @@ class CareSourceSyntaxTests(unittest.TestCase):
         self.assertNotIn("**Название шага:**", source)
         self.assertIn("разрешённой матрицы", source)
 
-    def test_care_intro_is_cosmetologist_not_old_stylist_placeholder(self):
+    def test_radiance_menu_has_general_beauty_space_intro_not_cosmetologist_flow(self):
         root = Path(__file__).resolve().parents[1]
         source = (root / "main.py").read_text(encoding="utf-8")
+        self.assertIn("Твоё персональное пространство красоты и стиля", source)
+        self.assertIn("без многочасовых сборов и лишних трат", source)
+        self.assertIn("Определим твои лучшие природные оттенки", source)
+        self.assertIn("Соберём гармоничный и удобный образ на день", source)
+        self.assertIn("Подберём бережный пошаговый ритуал ухода за кожей", source)
+        self.assertNotIn("Твой персональный AI-косметолог", source)
+
+    def test_care_cosmetologist_intro_is_inside_care_mode_flow(self):
+        root = Path(__file__).resolve().parents[1]
+        source = (root / "handlers_care.py").read_text(encoding="utf-8")
         self.assertIn("Твой персональный AI-косметолог", source)
-        self.assertIn("Каждая мама заслуживает сиять", source)
-        self.assertNotIn("Твой личный AI-стилист и бьюти-помощник", source)
+        self.assertIn("Выбери, как тебе комфортнее провести разбор:", source)
+        self.assertIn('text="📸 По фото лица"', source)
+        self.assertIn('text="📝 По быстрым вопросам"', source)
+        self.assertIn('text="⬅️ Назад в Сияние"', source)
+        self.assertIn('callback_data="menu_radiance"', source)
 
     def test_photo_mode_acknowledges_callback_before_database_checks(self):
         root = Path(__file__).resolve().parents[1]
