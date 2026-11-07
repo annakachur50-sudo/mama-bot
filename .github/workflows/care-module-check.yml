@@ -1,6 +1,16 @@
 name: Care Module Syntax and Tests
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - "main.py"
+      - "payments.py"
+      - "handlers_care.py"
+      - "tests/**"
+      - ".github/workflows/care-module-check.yml"
+  workflow_dispatch:
   pull_request:
     paths:
       - "main.py"
