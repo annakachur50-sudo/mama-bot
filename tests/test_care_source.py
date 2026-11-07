@@ -286,6 +286,20 @@ class CarePhotoFlowRuntimeTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('"Изучаю текстуру кожи... ✨" if image_bytes is not None', source)
         self.assertIn('types.Part.from_bytes(data=image_bytes, mime_type="image/jpeg")', source)
 
+    def test_radiance_entry_shows_general_beauty_space_welcome(self):
+        root = Path(__file__).resolve().parents[1]
+        main = (root / "main.py").read_text(encoding="utf-8")
+        care = (root / "handlers_care.py").read_text(encoding="utf-8")
+        welcome = main[main.index("RADIANCE_MENU_TEXT"):main.index("WARDROBE_STYLIST_PROMPT")]
+        self.assertIn("Твоё персональное пространство красоты и стиля", welcome)
+        self.assertIn("Выбирай, с чего начнём:", welcome)
+        self.assertIn("Определим твои лучшие природные оттенки", welcome)
+        self.assertIn("Соберём гармоничный и удобный образ на день", welcome)
+        self.assertIn("Подберём бережный пошаговый ритуал ухода за кожей", welcome)
+        self.assertNotIn("AI-косметолог", welcome)
+        self.assertIn('callback_data="care:open"', main)
+        self.assertIn("async def open_care_from_menu", care)
+
 
 if __name__ == "__main__":
     unittest.main()
