@@ -4,7 +4,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
-from handlers_care import (CareStates, care_photo_category_keyboard, choose_care_mode, choose_care_photo_category, process_care_text)
+from handlers_care import (CareStates, _care_routine_system_rules, care_photo_category_keyboard, choose_care_mode, choose_care_photo_category, process_care_text)
 
 
 class CareSourceSyntaxTests(unittest.TestCase):
@@ -139,11 +139,11 @@ class CareSourceSyntaxTests(unittest.TestCase):
     def test_photo_and_quiz_prompts_share_strict_care_routine_rules(self):
         root = Path(__file__).resolve().parents[1]
         source = (root / "handlers_care.py").read_text(encoding="utf-8")
-        self.assertIn("def _care_routine_system_rules()", source)
+        self.assertIn("def _care_routine_system_rules(cosmetics_category: str)", source)
         photo = source[source.index("def _photo_prompt"):source.index("def _quiz_prompt")]
         quiz = source[source.index("def _quiz_prompt"):source.index('@care_router.callback_query(F.data == "care:open")')]
         for prompt in (photo, quiz):
-            self.assertIn("_care_routine_system_rules()", prompt)
+            self.assertIn("_care_routine_system_rules(", prompt)
         rules = source[source.index("def _care_routine_system_rules"):source.index("def _care_layout_rules")]
         for expected in ("Сухое очищение Sharme Minerals", "категорически запрещено",
                          "исключительно вечером", "2–3 раза в неделю", "ОДНО базовое средство",
@@ -151,6 +151,14 @@ class CareSourceSyntaxTests(unittest.TestCase):
                          "гидролат календулы или берёзы"):
             self.assertIn(expected, rules)
         self.assertNotIn("(тип средства без бренда)", rules)
+        eco_rules = _care_routine_system_rules("Натуральные эко-линейки")
+        korean_rules = _care_routine_system_rules("Корейский уход")
+        pharmacy_rules = _care_routine_system_rules("Аптечная дерматокосметика")
+        self.assertIn("Sharme Minerals", eco_rules)
+        self.assertNotIn("Sharme Minerals", korean_rules)
+        self.assertNotIn("Sharme Minerals", pharmacy_rules)
+        self.assertIn("Siberian Wellness Siberian Code", eco_rules)
+        self.assertNotIn("Siberian Wellness", korean_rules)
 
     def test_care_intro_uses_html_parse_mode_and_radiance_copy_is_general(self):
         root = Path(__file__).resolve().parents[1]
