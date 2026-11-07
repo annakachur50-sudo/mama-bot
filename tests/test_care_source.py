@@ -297,7 +297,7 @@ class CarePhotoFlowRuntimeTests(unittest.IsolatedAsyncioTestCase):
         photo = source[source.index("def _photo_prompt"):source.index("def _quiz_prompt")]
         quiz = source[source.index("def _quiz_prompt"):source.index('@care_router.callback_query(F.data == "care:open")')]
         for prompt in (photo, quiz):
-            self.assertIn("_care_routine_system_rules()", prompt)
+            self.assertIn("_care_routine_system_rules(", prompt)
         rules = source[source.index("def _care_routine_system_rules"):source.index("def _care_layout_rules")]
         for expected in ("Сухое очищение Sharme Minerals", "категорически запрещено", "исключительно вечером",
                          "2–3 раза в неделю", "ОДНО базовое средство", "Siberian Wellness Siberian Code",
